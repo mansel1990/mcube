@@ -1,11 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 
 export default function StocksLoginPage() {
-  const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -28,8 +26,8 @@ export default function StocksLoginPage() {
         return;
       }
 
-      router.push("/stocks");
-    } catch (err) {
+      window.location.href = "/stocks";
+    } catch {
       setError("Network error — please try again");
       setLoading(false);
     }

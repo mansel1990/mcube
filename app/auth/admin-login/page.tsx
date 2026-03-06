@@ -1,12 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { authClient } from "@/lib/auth-client";
 
 export default function AdminLoginPage() {
-  const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -29,8 +27,8 @@ export default function AdminLoginPage() {
         return;
       }
 
-      router.push("/admin");
-    } catch (err) {
+      window.location.href = "/admin";
+    } catch {
       setError("Network error — please try again");
       setLoading(false);
     }

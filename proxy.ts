@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 // Cookie name used by Better Auth
 const SESSION_COOKIE = "better-auth.session_token";
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const sessionCookie = request.cookies.get(SESSION_COOKIE);
 
