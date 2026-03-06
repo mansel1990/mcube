@@ -16,18 +16,23 @@ export default function StocksLoginPage() {
     setLoading(true);
     setError("");
 
-    const { error: authError } = await authClient.signIn.username({
-      username,
-      password,
-    });
+    try {
+      const { error: authError } = await authClient.signIn.username({
+        username,
+        password,
+      });
 
-    if (authError) {
-      setError(authError.message || "Invalid credentials");
+      if (authError) {
+        setError(authError.message || "Invalid credentials");
+        setLoading(false);
+        return;
+      }
+
+      router.push("/stocks");
+    } catch (err) {
+      setError("Network error — please try again");
       setLoading(false);
-      return;
     }
-
-    router.push("/stocks");
   }
 
   return (

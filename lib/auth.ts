@@ -18,10 +18,12 @@ function getAuthInstance(): AnyAuth {
     );
   }
   if (!globalForMongo._auth) {
+    const appUrl = process.env.BETTER_AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
     globalForMongo._auth = betterAuth({
       database: mongodbAdapter(globalForMongo._betterAuthMongoClient.db()),
-      baseURL: process.env.BETTER_AUTH_URL || "http://localhost:3000",
+      baseURL: appUrl,
       secret: process.env.AUTH_SECRET,
+      trustedOrigins: [appUrl],
       emailAndPassword: {
         enabled: true,
       },
