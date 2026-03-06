@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(openssl rand -base64 32)",
+      "Bash(npm install better-auth mongoose mongodb dotenv)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); exports=d.get\\(''exports'',{}\\); [print\\(k\\) for k in exports if ''mongo'' in k.lower\\(\\)]\")",
+      "Bash(node -e \"const d = require\\(''c:/Projects/mcube/node_modules/better-auth/package.json''\\); const exp = d.exports || {}; Object.keys\\(exp\\).filter\\(k => k.toLowerCase\\(\\).includes\\(''mongo''\\)\\).forEach\\(k => console.log\\(k\\)\\)\")",
+      "Bash(node -e \"const d = require\\(''c:/Projects/mcube/node_modules/better-auth/package.json''\\); console.log\\(JSON.stringify\\(d.exports[''./adapters/mongodb''], null, 2\\)\\)\")",
+      "Bash(npm install @better-auth/mongo-adapter)",
+      "Bash(node -e \"const m = require\\(''c:/Projects/mcube/node_modules/@better-auth/mongo-adapter''\\); console.log\\(Object.keys\\(m\\)\\)\")",
+      "Bash(npm run build)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill /PID 11620 /F)",
+      "Bash(cmd /c \"taskkill /PID 11620 /F\")",
+      "Bash(cmd /c \"taskkill /PID 11620 /F 2>&1\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(powershell -Command \"Stop-Process -Id 11620 -Force -ErrorAction SilentlyContinue; Write-Host ''Done''\")",
+      "Bash(node -e \"const m = require\\(''c:/Projects/mcube/node_modules/better-auth''\\); console.log\\(Object.keys\\(m\\).filter\\(k => k.toLowerCase\\(\\).includes\\(''user''\\)\\)\\)\")",
+      "Bash(node -e \"const m = require\\(''c:/Projects/mcube/node_modules/better-auth/plugins''\\); console.log\\(Object.keys\\(m\\).slice\\(0,30\\)\\)\")",
+      "Bash(xargs grep -l \"username\")",
+      "Bash(node -e \"const m = require\\(''c:/Projects/mcube/node_modules/better-auth/dist/plugins/index.mjs''\\); console.log\\(Object.keys\\(m\\).filter\\(k => k.toLowerCase\\(\\).includes\\(''user''\\)\\)\\)\")",
+      "Bash(node -e \"const m = require\\(''c:/Projects/mcube/node_modules/better-auth/dist/client/plugins/index.mjs''\\); console.log\\(Object.keys\\(m\\).filter\\(k => k.toLowerCase\\(\\).includes\\(''user''\\)\\)\\)\")",
+      "Bash(node -e \"const m = require\\(''c:/Projects/mcube/node_modules/better-auth/dist/client/plugins/index.mjs''\\); console.log\\(Object.keys\\(m\\)\\)\")",
+      "Bash(npm run lint)"
+    ]
+  }
+}

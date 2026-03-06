@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
+import { auth } from "@/lib/auth";
+import { AppShell } from "@/components/app-shell";
 
 export default async function AdminLayout({
   children,
@@ -9,10 +10,16 @@ export default async function AdminLayout({
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
 
-  // No session or wrong section → back to login
   if (!session || (session.user as Record<string, unknown>).section !== "admin") {
     redirect("/auth/admin-login");
   }
 
-  return <>{children}</>;
+  const user = session.user as Record<string, unknown>;
+  const username = (user.username as string) || (user.name as string) || "admin";
+
+  return (
+    <AppShell section="admin" username={username}>
+      {children}
+    </AppShell>
+  );
 }
