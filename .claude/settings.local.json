@@ -22,7 +22,9 @@
       "Bash(node -e \"const m = require\\(''c:/Projects/mcube/node_modules/better-auth/dist/plugins/index.mjs''\\); console.log\\(Object.keys\\(m\\).filter\\(k => k.toLowerCase\\(\\).includes\\(''user''\\)\\)\\)\")",
       "Bash(node -e \"const m = require\\(''c:/Projects/mcube/node_modules/better-auth/dist/client/plugins/index.mjs''\\); console.log\\(Object.keys\\(m\\).filter\\(k => k.toLowerCase\\(\\).includes\\(''user''\\)\\)\\)\")",
       "Bash(node -e \"const m = require\\(''c:/Projects/mcube/node_modules/better-auth/dist/client/plugins/index.mjs''\\); console.log\\(Object.keys\\(m\\)\\)\")",
-      "Bash(npm run lint)"
+      "Bash(npm run lint)",
+      "Bash(node -e \"const x = require\\(''c:/Projects/mcube/node_modules/better-auth''\\); console.log\\(Object.keys\\(x\\)\\)\")",
+      "Bash(ls /c/Projects/mcube/*.ts /c/Projects/mcube/*.tsx)"
     ]
   }
 }
