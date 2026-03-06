@@ -2,18 +2,19 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, ListTodo, Wallet, LogOut, Settings } from "lucide-react";
+import { LayoutDashboard, Users, Wallet, LogOut, Settings, TrendingUp } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 
 // Nav config lives here (client side) — icons are functions and can't
 // be serialized across the server→client boundary.
 const NAV_CONFIG = {
   admin: [
-    { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
-    { label: "Plans", href: "/admin/plans", icon: ListTodo },
+    { label: "Dashboard", href: "/admin", icon: LayoutDashboard, exact: true },
+    { label: "Finances", href: "/admin/finances", icon: TrendingUp, exact: false },
+    { label: "Clients", href: "/admin/clients", icon: Users, exact: false },
   ],
   stocks: [
-    { label: "Budget", href: "/stocks", icon: Wallet },
+    { label: "Budget", href: "/stocks", icon: Wallet, exact: true },
   ],
 } as const;
 
@@ -39,7 +40,8 @@ export function AppShell({ section, username, children }: AppShellProps) {
     router.push(section === "admin" ? "/auth/admin-login" : "/auth/stocks-login");
   }
 
-  function isActive(href: string) {
+  function isActive(href: string, exact = false) {
+    if (exact) return pathname === href;
     return pathname === href || pathname.startsWith(href + "/");
   }
 
@@ -83,7 +85,7 @@ export function AppShell({ section, username, children }: AppShellProps) {
           <nav className="flex-1 px-2 py-4 flex flex-col gap-0.5">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const active = isActive(item.href);
+              const active = isActive(item.href, item.exact);
               return (
                 <Link
                   key={item.href}
