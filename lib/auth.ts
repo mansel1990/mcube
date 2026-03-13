@@ -16,6 +16,9 @@ function getAuthInstance(): AnyAuth {
     globalForMongo._betterAuthMongoClient = new MongoClient(
       process.env.MONGODB_URI!
     );
+    // Fire-and-forget: start the Atlas TCP handshake immediately so it's
+    // ready (or nearly ready) when the first auth query arrives.
+    globalForMongo._betterAuthMongoClient.connect().catch(() => {});
   }
   if (!globalForMongo._auth) {
     const appUrl = process.env.BETTER_AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";

@@ -25,7 +25,10 @@
       "Bash(npm run lint)",
       "Bash(node -e \"const x = require\\(''c:/Projects/mcube/node_modules/better-auth''\\); console.log\\(Object.keys\\(x\\)\\)\")",
       "Bash(ls /c/Projects/mcube/*.ts /c/Projects/mcube/*.tsx)",
-      "Bash(npm install recharts)"
+      "Bash(npm install recharts)",
+      "Bash(ls -la /c/Projects/Backend/bulls_eye_stocks_app/*.py)",
+      "Bash(grep -r \"Flask\\\\|FastAPI\\\\|app\\\\|@app\\\\|route\" /c/Projects/Backend/bulls_eye_stocks_app/*.py)",
+      "Bash(npm install:*)"
     ]
   }
 }

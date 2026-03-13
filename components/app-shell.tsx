@@ -14,7 +14,7 @@ const NAV_CONFIG = {
     { label: "Clients", href: "/admin/clients", icon: Users, exact: false },
   ],
   stocks: [
-    { label: "Budget", href: "/stocks", icon: Wallet, exact: true },
+    { label: "Stocks", href: "/stocks", icon: TrendingUp, exact: true },
   ],
 } as const;
 
