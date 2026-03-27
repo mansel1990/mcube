@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/stocks/push/send?event=open",
+      "schedule": "45 3 * * 1-5"
+    },
+    {
+      "path": "/api/stocks/push/send?event=close",
+      "schedule": "30 9 * * 1-5"
+    }
+  ]
+}

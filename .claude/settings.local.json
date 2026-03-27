@@ -1,6 +1,7 @@
 {
   "permissions": {
     "allow": [
+      "Bash(*)",
       "Bash(openssl rand -base64 32)",
       "Bash(npm install better-auth mongoose mongodb dotenv)",
       "Bash(npx tsc --noEmit)",
@@ -28,7 +29,9 @@
       "Bash(npm install recharts)",
       "Bash(ls -la /c/Projects/Backend/bulls_eye_stocks_app/*.py)",
       "Bash(grep -r \"Flask\\\\|FastAPI\\\\|app\\\\|@app\\\\|route\" /c/Projects/Backend/bulls_eye_stocks_app/*.py)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Skill(update-config)",
+      "Skill(update-config:*)"
     ]
   }
 }
