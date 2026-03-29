@@ -41,9 +41,10 @@ function fmtPct(p: string | null) {
 
 interface Props {
   suggestion: StockSuggestion;
+  currentPrice?: { price: number; change: number; changePct: number };
 }
 
-export function SuggestionCard({ suggestion: s }: Props) {
+export function SuggestionCard({ suggestion: s, currentPrice }: Props) {
   const isOpen = s.status === "OPEN";
   const pnl = s.pnl_pct ? parseFloat(s.pnl_pct) : null;
   const isProfit = pnl !== null && pnl >= 0;
@@ -74,15 +75,41 @@ export function SuggestionCard({ suggestion: s }: Props) {
             </div>
           </div>
 
-          {/* Entry */}
-          <div className="flex items-center justify-between rounded-lg bg-white/4 px-3 py-2.5">
-            <div>
-              <p className="text-[9px] text-foreground/35 uppercase tracking-widest mb-0.5">Entry Price</p>
-              <p className="text-base font-bold text-foreground">{fmtPrice(s.entry_price)}</p>
+          {/* Entry + Current Price + Unrealized P&L */}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-lg bg-white/4 px-3 py-2.5">
+              <p className="text-[9px] text-foreground/35 uppercase tracking-widest mb-0.5">Entry</p>
+              <p className="text-sm font-bold text-foreground">{fmtPrice(s.entry_price)}</p>
+              <p className="text-[10px] text-foreground/40 mt-0.5">{fmtDate(s.entry_date)}</p>
             </div>
-            <div className="text-right">
-              <p className="text-[9px] text-foreground/35 uppercase tracking-widest mb-0.5">Date</p>
-              <p className="text-xs text-foreground/50">{fmtDate(s.entry_date)}</p>
+            <div className="rounded-lg bg-white/4 px-3 py-2.5">
+              <p className="text-[9px] text-foreground/35 uppercase tracking-widest mb-0.5">Current</p>
+              <p className="text-sm font-bold text-foreground">
+                {currentPrice ? fmtPrice(String(currentPrice.price)) : "—"}
+              </p>
+              {currentPrice && (
+                <p className={`text-[10px] mt-0.5 ${currentPrice.changePct >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                  {currentPrice.changePct >= 0 ? "+" : ""}{currentPrice.changePct.toFixed(2)}%
+                </p>
+              )}
+            </div>
+            <div className="rounded-lg bg-white/4 px-3 py-2.5">
+              <p className="text-[9px] text-foreground/35 uppercase tracking-widest mb-0.5">Unreal. P&L</p>
+              {currentPrice && s.entry_price ? (() => {
+                const entry = parseFloat(s.entry_price);
+                const pnlPct = ((currentPrice.price - entry) / entry) * 100;
+                const isPos = pnlPct >= 0;
+                return (
+                  <>
+                    <p className={`text-sm font-bold ${isPos ? "text-emerald-400" : "text-red-400"}`}>
+                      {isPos ? "+" : ""}{pnlPct.toFixed(2)}%
+                    </p>
+                    <p className={`text-[10px] mt-0.5 ${isPos ? "text-emerald-400/60" : "text-red-400/60"}`}>
+                      {isPos ? "▲" : "▼"} ₹{Math.abs(currentPrice.price - entry).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                    </p>
+                  </>
+                );
+              })() : <p className="text-sm font-bold text-foreground/30">—</p>}
             </div>
           </div>
 

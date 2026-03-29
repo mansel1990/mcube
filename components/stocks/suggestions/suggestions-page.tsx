@@ -3,12 +3,16 @@
 import { useEffect, useState } from "react";
 import { SuggestionCard, StockSuggestion } from "./suggestion-card";
 import { HistoryDashboard } from "./history-dashboard";
+import { TradesDashboard } from "./trades-dashboard";
+
+type CurrentPriceData = { price: number; change: number; changePct: number } | null;
 
 export function SuggestionsPage() {
   const [all, setAll] = useState<StockSuggestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"active" | "history">("active");
+  const [tab, setTab] = useState<"active" | "trades" | "history">("active");
+  const [currentPrices, setCurrentPrices] = useState<Record<string, CurrentPriceData>>({});
 
   useEffect(() => {
     fetch("/api/stocks/suggestions")
@@ -16,7 +20,16 @@ export function SuggestionsPage() {
         if (!r.ok) throw new Error("Failed to load");
         return r.json();
       })
-      .then(setAll)
+      .then((data: StockSuggestion[]) => {
+        setAll(data);
+        const openTickers = [...new Set(data.filter((s) => s.status === "OPEN").map((s) => s.ticker))];
+        if (openTickers.length > 0) {
+          fetch(`/api/stocks/current-price?tickers=${openTickers.join(",")}`)
+            .then((r) => r.ok ? r.json() : null)
+            .then((prices) => { if (prices) setCurrentPrices(prices); })
+            .catch(() => {});
+        }
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
@@ -24,30 +37,29 @@ export function SuggestionsPage() {
   const open = all.filter((s) => s.status === "OPEN");
   const closed = all.filter((s) => s.status !== "OPEN");
 
+  const tabs = [
+    { key: "active" as const, label: `Signals${!loading ? ` (${open.length})` : ""}` },
+    { key: "trades" as const, label: "Buy & Sell" },
+    { key: "history" as const, label: `History${!loading ? ` (${closed.length})` : ""}` },
+  ];
+
   return (
     <div className="flex flex-col min-h-0 h-full">
       {/* Tab bar */}
       <div className="px-4 pt-4 pb-2 flex gap-2 shrink-0">
-        <button
-          onClick={() => setTab("active")}
-          className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer ${
-            tab === "active"
-              ? "bg-primary text-white"
-              : "text-foreground/50 hover:text-foreground bg-white/5"
-          }`}
-        >
-          Signals {!loading && `(${open.length})`}
-        </button>
-        <button
-          onClick={() => setTab("history")}
-          className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer ${
-            tab === "history"
-              ? "bg-primary text-white"
-              : "text-foreground/50 hover:text-foreground bg-white/5"
-          }`}
-        >
-          History {!loading && `(${closed.length})`}
-        </button>
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer ${
+              tab === t.key
+                ? "bg-primary text-white"
+                : "text-foreground/50 hover:text-foreground bg-white/5"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
       {/* Content */}
@@ -71,11 +83,15 @@ export function SuggestionsPage() {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
                 {open.map((s) => (
-                  <SuggestionCard key={s.id} suggestion={s} />
+                  <SuggestionCard key={s.id} suggestion={s} currentPrice={currentPrices[s.ticker] ?? undefined} />
                 ))}
               </div>
             )}
           </>
+        )}
+
+        {!loading && !error && tab === "trades" && (
+          <TradesDashboard all={all} />
         )}
 
         {!loading && !error && tab === "history" && (
