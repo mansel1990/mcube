@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Users, LogOut, Settings, TrendingUp, Zap, BarChart2, Bell } from "lucide-react";
+import { LayoutDashboard, Users, LogOut, Settings, TrendingUp, Zap, BarChart2, Bell, Home, Building2, ScrollText } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { useState, useEffect, useRef } from "react";
 
@@ -18,11 +18,23 @@ const NAV_CONFIG = {
     { label: "Signals", href: "/stocks", icon: Zap, exact: true },
     { label: "Chart", href: "/stocks/chart", icon: BarChart2, exact: false },
   ],
+  loans: [
+    { label: "Overview", href: "/house-loan", icon: Home, exact: true },
+    { label: "Creditors", href: "/house-loan/creditors", icon: Building2, exact: false },
+    { label: "History", href: "/house-loan/history", icon: ScrollText, exact: false },
+  ],
 } as const;
+
+const SECTION_LABEL: Record<string, string> = {
+  admin: "Admin",
+  stocks: "Stocks",
+  loans: "Casa Loans",
+};
 
 const SETTINGS_HREF = {
   admin: "/admin/settings",
   stocks: "/stocks/settings",
+  loans: "/admin/settings",
 } as const;
 
 interface NotificationEntry {
@@ -46,7 +58,7 @@ function timeAgo(dateStr: string) {
 }
 
 interface AppShellProps {
-  section: "admin" | "stocks";
+  section: "admin" | "stocks" | "loans";
   username: string;
   children: React.ReactNode;
 }
@@ -95,7 +107,7 @@ export function AppShell({ section, username, children }: AppShellProps) {
 
   async function handleLogout() {
     await authClient.signOut();
-    router.push(section === "admin" ? "/auth/admin-login" : "/auth/stocks-login");
+    router.push(section === "stocks" ? "/auth/stocks-login" : "/auth/admin-login");
   }
 
   function isActive(href: string, exact = false) {
@@ -111,7 +123,7 @@ export function AppShell({ section, username, children }: AppShellProps) {
           <span className="font-bold text-foreground tracking-tight">MCube</span>
           <span className="text-foreground/20">·</span>
           <span className="text-sm font-medium text-primary">
-            {section === "admin" ? "Admin" : "Stocks"}
+            {SECTION_LABEL[section] ?? section}
           </span>
         </div>
 
@@ -230,7 +242,25 @@ export function AppShell({ section, username, children }: AppShellProps) {
             })}
           </nav>
 
-          <div className="px-2 pb-4 border-t border-white/5 pt-3">
+          <div className="px-2 pb-4 border-t border-white/5 pt-3 flex flex-col gap-0.5">
+            {section === "admin" && (
+              <Link
+                href="/house-loan"
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-foreground/40 hover:text-primary hover:bg-primary/5 transition-colors"
+              >
+                <Home size={17} />
+                Casa Loans
+              </Link>
+            )}
+            {section === "loans" && (
+              <Link
+                href="/admin"
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-foreground/40 hover:text-foreground hover:bg-white/5 transition-colors"
+              >
+                <LayoutDashboard size={17} />
+                Admin
+              </Link>
+            )}
             <button
               onClick={handleLogout}
               className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-foreground/40 hover:text-red-400 hover:bg-red-400/10 transition-colors w-full"
