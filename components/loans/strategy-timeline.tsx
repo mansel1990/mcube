@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { formatINR, formatINRCompact, formatMonthYear } from "./format";
-import { PiggyBank, CheckCircle, Trophy, ChevronRight } from "lucide-react";
+import { PiggyBank, CheckCircle, Trophy, ChevronRight, Home } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -17,7 +17,7 @@ interface PhasePayment {
   label: string;
   amount: number;     // per month
   color: string;
-  badge?: "closed" | "savings" | "final" | "last-emi";
+  badge?: "closed" | "savings" | "final" | "last-emi" | "house-fund";
 }
 
 interface PhaseTotalRow {
@@ -25,6 +25,13 @@ interface PhaseTotalRow {
   label: string;
   color: string;
   total: number;
+}
+
+interface SavingsGoal {
+  target: number;
+  alreadySaved: number;        // from prior phases
+  achievedFromBudget: number;  // from this phase
+  supplementNeeded: number;
 }
 
 interface Phase {
@@ -42,6 +49,7 @@ interface Phase {
   momAfter: number;
   milestones: string[];
   isFinal?: boolean;
+  savingsGoal?: SavingsGoal;
 }
 
 // ── Colors ─────────────────────────────────────────────────────────────────────
@@ -52,6 +60,7 @@ const C = {
   anantha: "#ef4444",
   cc:      "#10b981",
   nive:    "#8b5cf6",
+  house:   "#14b8a6",
 };
 
 // ── Computation ────────────────────────────────────────────────────────────────
@@ -64,30 +73,42 @@ function computePhases(creditors: Creditor[]): Phase[] {
   const ANT_MO   = Math.round(ANT_BAL / 10);  // ₹1,00,000
 
   // ── Phase 2: Breathing space — EMI + Mom ₹1L + Anantha savings ──────────────
-  const P2_MOM   = 100_000;                   // ₹1,00,000/mo to Mom
+  const P2_MOM   = 100_000;
 
-  // ── Phase 3: Full budget — EMI + Mom (remainder) + Anantha savings ───────────
-  const p3MomMo  = 350_000 - EMI - ANT_MO;  // ₹1,41,530/mo
+  // ── Phase 3: Full budget — EMI + Mom ₹1L + Anantha + House Fund (remainder) ──
+  const p3MomMo     = 100_000;
+  const p3HouseFund = 350_000 - EMI - p3MomMo - ANT_MO; // ₹41,530/mo — fills to ₹3.5L
 
   // ── Mom running total ─────────────────────────────────────────────────────────
-  const momAfterP1 = MOM_BAL;                            // Mom untouched in Phase 1
+  const momAfterP1 = MOM_BAL;
   const momAfterP2 = MOM_BAL - P2_MOM * 2;              // ₹68,00,000
-  const momAfterP3 = momAfterP2 - p3MomMo * 8;          // ₹56,67,760
+  const momAfterP3 = momAfterP2 - p3MomMo * 8;          // ₹60,00,000
 
-  // ── Phase 4: Heads Down — EMI + Mom until Mom closes ─────────────────────────
-  const p4MomMo     = 350_000 - EMI;                     // ₹2,41,530/mo
-  const p4FullMonths = Math.floor(momAfterP3 / p4MomMo); // 23 full months
-  const momFinalP4   = momAfterP3 - p4FullMonths * p4MomMo; // ₹1,12,570 — closing balance
+  // ── Phase 4: House Fund Sprint — Apr–Oct 2027 (7 months) ─────────────────────
+  // Mom ₹1L/mo continues; rest goes to registration + interiors savings
+  const HOUSE_TARGET      = 3_000_000;
+  const P4A_MONTHS        = 7;
+  const P4A_MOM           = 100_000;
+  const p4aHouseFund      = 350_000 - EMI - P4A_MOM;          // ₹1,41,530/mo
+  const p3HouseFundTotal  = p3HouseFund * 8;                   // ₹3,32,240 from Phase 3
+  const houseFundTotal    = p4aHouseFund * P4A_MONTHS;         // ₹9,90,710 from Phase 4
+  const houseTotalBudget  = p3HouseFundTotal + houseFundTotal; // ₹13,22,950 combined
+  const houseSupplement   = Math.max(0, HOUSE_TARGET - houseTotalBudget);
+  const momAfterP4a     = momAfterP3 - P4A_MOM * P4A_MONTHS; // ₹53,00,000
+  const t4a = (EMI + P4A_MOM + p4aHouseFund) * P4A_MONTHS;
 
-  // Phase 4: Apr 2027 – Mar 2029 (24 months total)
-  //   Months 1–23: ₹3,50,000/mo    Month 24 (Mar 2029): EMI + momFinalP4 — Mom closes
-  const t4 = 350_000 * p4FullMonths + (EMI + momFinalP4);
+  // ── Phase 5: Heads Down — Nov 2027 — EMI + Mom until Mom closes ──────────────
+  const p5MomMo      = 350_000 - EMI;                    // ₹2,41,530/mo
+  const p5FullMonths = Math.floor(momAfterP4a / p5MomMo); // 21 full months
+  const momFinalP5   = momAfterP4a - p5FullMonths * p5MomMo;
+  // Nov 2027 + 21 full months = Jul 2029; month 22 (Aug 2029) = closing
+  const t5 = 350_000 * p5FullMonths + (EMI + momFinalP5);
 
   // ── Phase totals ──────────────────────────────────────────────────────────────
-  const t1 = EMI + 100_000 + 100_000;           // ₹3,08,470
-  const t2 = (EMI + P2_MOM + ANT_MO) * 2;      // ₹6,16,940
-  const t3 = 350_000 * 8;                       // ₹28,00,000
-  const t5 = LAST_EMI;                          // ₹1,10,000 (Mom already done in P4)
+  const t1  = EMI + 100_000 + 100_000;
+  const t2  = (EMI + P2_MOM + ANT_MO) * 2;
+  const t3  = 350_000 * 8;
+  const t6  = LAST_EMI;
 
   return [
     {
@@ -99,7 +120,7 @@ function computePhases(creditors: Creditor[]): Phase[] {
         { key: "nive", label: "Nive",        amount: 100_000, color: C.nive, badge: "closed" },
       ],
       monthlyTotal: t1, phaseTotal: t1, momAfter: momAfterP1,
-      phaseTotals: [], // single month — payment rows already show amounts
+      phaseTotals: [],
       milestones: ["Credit Card cleared", "Nive cleared"],
     },
     {
@@ -122,15 +143,17 @@ function computePhases(creditors: Creditor[]): Phase[] {
       id: 3, title: "Full Speed", subtitle: "All three running — EMI, Mom and Anantha fund",
       start: "2026-08", end: "2027-03", months: 8, budget: 350_000,
       payments: [
-        { key: "emi",     label: "Bank EMI", amount: EMI,     color: C.bank },
-        { key: "mom",     label: "Mom",      amount: p3MomMo, color: C.mom },
-        { key: "anantha", label: "Anantha",  amount: ANT_MO,  color: C.anantha, badge: "savings" },
+        { key: "emi",     label: "Bank EMI",   amount: EMI,          color: C.bank },
+        { key: "mom",     label: "Mom",        amount: p3MomMo,      color: C.mom },
+        { key: "anantha", label: "Anantha",    amount: ANT_MO,       color: C.anantha, badge: "savings" },
+        { key: "house",   label: "House Fund", amount: p3HouseFund,  color: C.house,   badge: "house-fund" },
       ],
       monthlyTotal: 350_000, phaseTotal: t3, momAfter: momAfterP3,
       phaseTotals: [
-        { key: "emi",     label: "Bank EMI", color: C.bank,    total: EMI * 8 },
-        { key: "mom",     label: "Mom",      color: C.mom,     total: p3MomMo * 8 },
-        { key: "anantha", label: "Anantha",  color: C.anantha, total: ANT_MO * 8 },
+        { key: "emi",     label: "Bank EMI",   color: C.bank,    total: EMI * 8 },
+        { key: "mom",     label: "Mom",        color: C.mom,     total: p3MomMo * 8 },
+        { key: "anantha", label: "Anantha",    color: C.anantha, total: ANT_MO * 8 },
+        { key: "house",   label: "House Fund", color: C.house,   total: p3HouseFundTotal },
       ],
       milestones: [
         "Mom payments increase · Aug 2026",
@@ -138,29 +161,55 @@ function computePhases(creditors: Creditor[]): Phase[] {
       ],
     },
     {
-      id: 4, title: "Heads Down", subtitle: "Bank + Mom every month — Mom closes Mar 2029",
-      start: "2027-04", end: "2029-03", months: 24, budget: 350_000,
+      id: 4,
+      title: "House Fund Sprint",
+      subtitle: "Save for registration & interiors — Mom paused",
+      start: "2027-04", end: "2027-10", months: P4A_MONTHS, budget: 350_000,
       payments: [
-        { key: "emi", label: "Bank EMI", amount: EMI,     color: C.bank },
-        { key: "mom", label: "Mom",      amount: p4MomMo, color: C.mom },
+        { key: "emi",   label: "Bank EMI",   amount: EMI,          color: C.bank },
+        { key: "mom",   label: "Mom",        amount: P4A_MOM,      color: C.mom },
+        { key: "house", label: "House Fund", amount: p4aHouseFund, color: C.house, badge: "house-fund" },
       ],
-      monthlyTotal: 350_000, phaseTotal: t4, momAfter: 0,
+      monthlyTotal: 350_000, phaseTotal: t4a, momAfter: momAfterP4a,
       phaseTotals: [
-        { key: "emi", label: "Bank EMI", color: C.bank, total: EMI * 24 },
-        { key: "mom", label: "Mom",      color: C.mom,  total: p4MomMo * p4FullMonths + momFinalP4 },
+        { key: "emi",   label: "Bank EMI",   color: C.bank,  total: EMI * P4A_MONTHS },
+        { key: "mom",   label: "Mom",        color: C.mom,   total: P4A_MOM * P4A_MONTHS },
+        { key: "house", label: "House Fund", color: C.house, total: houseFundTotal },
       ],
       milestones: [
-        `Mom fully repaid · Mar 2029 (closing balance ${formatINR(momFinalP4)})`,
+        "Registration & interiors fund · Oct 2027",
+      ],
+      savingsGoal: {
+        target: HOUSE_TARGET,
+        alreadySaved: p3HouseFundTotal,
+        achievedFromBudget: houseFundTotal,
+        supplementNeeded: houseSupplement,
+      },
+    },
+    {
+      id: 5, title: "Heads Down", subtitle: "Back to full EMI + Mom — Mom closes Aug 2029",
+      start: "2027-11", end: "2029-08", months: p5FullMonths + 1, budget: 350_000,
+      payments: [
+        { key: "emi", label: "Bank EMI", amount: EMI,     color: C.bank },
+        { key: "mom", label: "Mom",      amount: p5MomMo, color: C.mom },
+      ],
+      monthlyTotal: 350_000, phaseTotal: t5, momAfter: 0,
+      phaseTotals: [
+        { key: "emi", label: "Bank EMI", color: C.bank, total: EMI * (p5FullMonths + 1) },
+        { key: "mom", label: "Mom",      color: C.mom,  total: p5MomMo * p5FullMonths + momFinalP5 },
+      ],
+      milestones: [
+        `Mom fully repaid · Aug 2029 (closing balance ${formatINR(momFinalP5)})`,
       ],
     },
     {
-      id: 5, title: "Last EMI", subtitle: "Mom is done — one final bank payment",
-      start: "2029-04", end: "2029-04", months: 1, budget: 350_000,
+      id: 6, title: "Last EMI", subtitle: "Mom is done — one final bank payment",
+      start: "2029-09", end: "2029-09", months: 1, budget: 350_000,
       payments: [
         { key: "emi", label: "Bank EMI", amount: LAST_EMI, color: C.bank, badge: "last-emi" },
       ],
-      monthlyTotal: t5, phaseTotal: t5, momAfter: 0,
-      phaseTotals: [], // single month
+      monthlyTotal: t6, phaseTotal: t6, momAfter: 0,
+      phaseTotals: [],
       milestones: ["Last EMI paid", "DEBT FREE 🎉"],
       isFinal: true,
     },
@@ -172,16 +221,18 @@ function computePhases(creditors: Creditor[]): Phase[] {
 function Badge({ type }: { type: PhasePayment["badge"] }) {
   if (!type) return null;
   const styles: Record<string, string> = {
-    closed:   "bg-green-50 text-green-600 border-green-200",
-    savings:  "bg-orange-50 text-orange-600 border-orange-200",
-    final:    "bg-blue-50 text-blue-600 border-blue-200",
-    "last-emi": "bg-amber-50 text-amber-600 border-amber-200",
+    closed:       "bg-green-50 text-green-600 border-green-200",
+    savings:      "bg-orange-50 text-orange-600 border-orange-200",
+    final:        "bg-blue-50 text-blue-600 border-blue-200",
+    "last-emi":   "bg-amber-50 text-amber-600 border-amber-200",
+    "house-fund": "bg-teal-50 text-teal-600 border-teal-200",
   };
   const labels: Record<string, React.ReactNode> = {
-    closed:   "closed ✓",
-    savings:  <><PiggyBank size={9} className="inline mr-0.5" />savings</>,
-    final:    "balance cleared ✓",
-    "last-emi": "final EMI",
+    closed:       "closed ✓",
+    savings:      <><PiggyBank size={9} className="inline mr-0.5" />savings</>,
+    final:        "balance cleared ✓",
+    "last-emi":   "final EMI",
+    "house-fund": <><Home size={9} className="inline mr-0.5" />house fund</>,
   };
   return (
     <span className={`inline-flex items-center text-[10px] font-medium border rounded-full px-1.5 py-0.5 leading-none ${styles[type]}`}>
@@ -196,6 +247,7 @@ const PHASE_COLORS = [
   { num: "bg-orange-100 text-orange-700", card: "border-orange-200 bg-orange-50/30", header: "text-orange-700" },
   { num: "bg-slate-100 text-slate-600",   card: "border-slate-200 bg-slate-50/50",   header: "text-slate-700" },
   { num: "bg-blue-100 text-blue-700",     card: "border-blue-200 bg-blue-50/30",     header: "text-blue-700" },
+  { num: "bg-teal-100 text-teal-700",     card: "border-teal-200 bg-teal-50/30",     header: "text-teal-700" },
   { num: "bg-indigo-100 text-indigo-700", card: "border-indigo-200 bg-indigo-50/30", header: "text-indigo-700" },
   { num: "bg-yellow-200 text-yellow-800", card: "border-yellow-300 bg-yellow-50",    header: "text-yellow-800" },
 ];
@@ -295,6 +347,61 @@ function PhaseCard({ phase }: { phase: Phase }) {
           ))}
         </div>
       </div>
+
+      {/* Savings goal tracker */}
+      {phase.savingsGoal && (
+        <div className="px-5 pb-4">
+          <div className="bg-teal-50 border border-teal-200 rounded-xl p-4">
+            <div className="flex items-center gap-1.5 mb-3">
+              <Home size={13} className="text-teal-600" />
+              <p className="text-xs font-semibold text-teal-700">House Fund Goal — Oct 2027</p>
+            </div>
+            {(() => {
+              const total = (phase.savingsGoal.alreadySaved ?? 0) + phase.savingsGoal.achievedFromBudget;
+              const pct   = Math.round((total / phase.savingsGoal.target) * 100);
+              return (
+                <>
+                  <div className="space-y-1.5 mb-3">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Target (registration + interiors)</span>
+                      <span className="font-bold text-slate-800">{formatINR(phase.savingsGoal.target)}</span>
+                    </div>
+                    {(phase.savingsGoal.alreadySaved ?? 0) > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-500">Saved in Full Speed phase</span>
+                        <span className="font-semibold text-teal-600">{formatINR(phase.savingsGoal.alreadySaved!)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Saved this phase</span>
+                      <span className="font-semibold text-teal-700">{formatINR(phase.savingsGoal.achievedFromBudget)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm border-t border-teal-100 pt-1.5">
+                      <span className="text-slate-600 font-medium">Total from budget</span>
+                      <span className="font-bold text-teal-800">{formatINR(total)}</span>
+                    </div>
+                    {phase.savingsGoal.supplementNeeded > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-500">Supplement from savings / bonus</span>
+                        <span className="font-semibold text-orange-600">{formatINR(phase.savingsGoal.supplementNeeded)}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="h-2 bg-teal-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-teal-500 rounded-full"
+                      style={{ width: `${Math.min(100, pct)}%` }}
+                    />
+                  </div>
+                  <p className="text-[10px] text-teal-600 mt-1">
+                    {pct}% covered from ₹3.5L/mo budget
+                  </p>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <div className="border-t border-black/5 bg-black/[0.02]">
@@ -406,15 +513,15 @@ export function StrategyTimeline() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-slate-800">Repayment Strategy</h1>
         <p className="text-sm text-slate-500 mt-1">
-          Your vision — 5 phases from May 2026 to debt freedom in April 2029.
+          6 phases from May 2026 — house fund by Oct 2027, debt freedom by Nov 2029.
         </p>
       </div>
 
       {/* Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
         <Stat label="Total Debt" value={formatINRCompact(totalDebt)} sub={formatINR(totalDebt)} />
-        <Stat label="Freedom Date" value="Apr 2029" sub={`${totalMonths} months`} />
-        <Stat label="Budget (month 1–3)" value="₹3,00,000" sub="Breathing space" />
+        <Stat label="Freedom Date" value="Sep 2029" sub={`${totalMonths} months`} />
+        <Stat label="House Fund Target" value="₹30L" sub="By Oct 2027" />
         <Stat label="Budget (month 4+)" value="₹3,50,000" sub="Full speed" />
       </div>
 
