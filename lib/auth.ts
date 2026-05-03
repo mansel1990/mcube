@@ -1,6 +1,6 @@
 import { betterAuth } from "better-auth";
 import { mongodbAdapter } from "better-auth/adapters/mongodb";
-import { username } from "better-auth/plugins";
+import { username, bearer } from "better-auth/plugins";
 import { MongoClient } from "mongodb";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -38,7 +38,7 @@ function getAuthInstance(): AnyAuth {
         expiresIn: 365 * 24 * 60 * 60, // 1 year — viewers stay logged in
         updateAge: 7 * 24 * 60 * 60,   // refresh session every 7 days
       },
-      plugins: [username()],
+      plugins: [username(), bearer()],
       user: {
         additionalFields: {
           // valid values: "stocks" | "admin" | "viewer"
