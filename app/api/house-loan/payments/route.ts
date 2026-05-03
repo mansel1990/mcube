@@ -7,19 +7,21 @@ import { LoanCreditor } from "@/lib/models/loan-creditor";
 
 async function checkAuth() {
   const session = await auth.api.getSession({ headers: await headers() });
-  if (!session || (session.user as Record<string, unknown>).section !== "admin")
-    return null;
+  const section = (session?.user as Record<string, unknown>)?.section;
+  if (!session || (section !== "admin" && section !== "viewer")) return null;
   return session;
 }
 
 export async function GET(req: NextRequest) {
-  if (!(await checkAuth()))
+  const session = await checkAuth();
+  if (!session)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const isViewer = (session.user as Record<string, unknown>).section === "viewer";
 
   await connectToDatabase();
 
   const { searchParams } = new URL(req.url);
-  const creditorId = searchParams.get("creditorId");
   const startDate = searchParams.get("startDate");
   const endDate = searchParams.get("endDate");
   const method = searchParams.get("method");
@@ -28,7 +30,17 @@ export async function GET(req: NextRequest) {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const filter: Record<string, any> = {};
-  if (creditorId) filter.creditorId = creditorId;
+
+  if (isViewer) {
+    // Lock viewer to payments for their own creditor only
+    const myCreditor = await LoanCreditor.findOne({ userId: session.user.id });
+    if (!myCreditor)
+      return NextResponse.json({ payments: [], total: 0, page, limit });
+    filter.creditorId = myCreditor._id;
+  } else {
+    const creditorId = searchParams.get("creditorId");
+    if (creditorId) filter.creditorId = creditorId;
+  }
   if (method) filter.method = method;
   if (startDate || endDate) {
     filter.date = {};
@@ -49,8 +61,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!(await checkAuth()))
+  const session = await checkAuth();
+  if (!session)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if ((session.user as Record<string, unknown>).section === "viewer")
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   await connectToDatabase();
 

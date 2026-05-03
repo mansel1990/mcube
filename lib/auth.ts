@@ -30,9 +30,14 @@ function getAuthInstance(): AnyAuth {
       emailAndPassword: {
         enabled: true,
       },
+      session: {
+        expiresIn: 365 * 24 * 60 * 60, // 1 year — viewers stay logged in
+        updateAge: 7 * 24 * 60 * 60,   // refresh session every 7 days
+      },
       plugins: [username()],
       user: {
         additionalFields: {
+          // valid values: "stocks" | "admin" | "viewer"
           section: {
             type: "string",
             required: true,

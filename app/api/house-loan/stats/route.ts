@@ -8,19 +8,24 @@ import { LoanSettings } from "@/lib/models/loan-settings";
 
 async function checkAuth() {
   const session = await auth.api.getSession({ headers: await headers() });
-  if (!session || (session.user as Record<string, unknown>).section !== "admin")
-    return null;
+  const section = (session?.user as Record<string, unknown>)?.section;
+  if (!session || (section !== "admin" && section !== "viewer")) return null;
   return session;
 }
 
 export async function GET() {
-  if (!(await checkAuth()))
+  const session = await checkAuth();
+  if (!session)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const isViewer = (session.user as Record<string, unknown>).section === "viewer";
 
   await connectToDatabase();
 
+  const creditorFilter = isViewer ? { userId: session.user.id } : {};
+
   const [creditors, allPayments, settings] = await Promise.all([
-    LoanCreditor.find().sort({ createdAt: 1 }),
+    LoanCreditor.find(creditorFilter).sort({ createdAt: 1 }),
     LoanPayment.find().sort({ date: 1 }),
     LoanSettings.findOne(),
   ]);

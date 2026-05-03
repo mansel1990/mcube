@@ -35,11 +35,42 @@ const USERS = [
     name: "Stocks User 2",
     section: "stocks",
   },
+  {
+    username: "mansel",
+    email: "mansel1990@gmail.com",
+    password: "mansel@123",
+    name: "Admin",
+    section: "admin",
+  },
+  {
+    username: "mithila",
+    email: "mithila.kannan@gmail.com",
+    password: "mithila@123",
+    name: "Admin",
+    section: "admin",
+  },
+];
+
+// Viewer accounts — each linked to a creditor by name in the DB
+// Fill in the real email, password, and creditorName before running
+const VIEWERS = [
+  {
+    username: "mangai",
+    email: "selvanmangai@gmail.com",       // ← change to mom's real email
+    password: "mangai@123",
+    name: "Mangai",
+    section: "viewer",
+    creditorName: "Mom",
+  },
 ];
 
 async function seed() {
   // Dynamic import so env vars are loaded first
   const { auth } = await import("../lib/auth");
+  const { connectToDatabase } = await import("../lib/mongodb");
+  const { LoanCreditor } = await import("../lib/models/loan-creditor");
+
+  await connectToDatabase();
 
   console.log("Seeding users...\n");
 
@@ -54,6 +85,37 @@ async function seed() {
         console.log(`- Skipped: ${user.email} (already exists)`);
       } else {
         console.error(`✗ Failed:  ${user.email} — ${message}`);
+      }
+    }
+  }
+
+  console.log("\nSeeding viewer accounts...\n");
+
+  for (const viewer of VIEWERS) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const res = await auth.api.signUpEmail({ body: { username: viewer.username, email: viewer.email, password: viewer.password, name: viewer.name, section: viewer.section } as any });
+      const userId = (res as Record<string, Record<string, string>>).user?.id;
+      console.log(`✓ Created viewer: ${viewer.email} (id: ${userId})`);
+
+      if (userId && viewer.creditorName) {
+        const updated = await LoanCreditor.findOneAndUpdate(
+          { name: viewer.creditorName },
+          { userId },
+          { new: true }
+        );
+        if (updated) {
+          console.log(`  ↳ Linked to creditor "${updated.name}" (${updated._id})`);
+        } else {
+          console.warn(`  ↳ Warning: creditor "${viewer.creditorName}" not found — link it manually`);
+        }
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes("already exists") || message.includes("duplicate")) {
+        console.log(`- Skipped: ${viewer.email} (already exists)`);
+      } else {
+        console.error(`✗ Failed:  ${viewer.email} — ${message}`);
       }
     }
   }

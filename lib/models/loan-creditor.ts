@@ -8,6 +8,7 @@ export interface ILoanCreditor extends Document {
   notes?: string;
   color: string;
   isActive: boolean;
+  userId?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -25,6 +26,7 @@ const LoanCreditorSchema = new Schema<ILoanCreditor>(
     notes: { type: String },
     color: { type: String, required: true },
     isActive: { type: Boolean, default: true },
+    userId: { type: String },
   },
   { timestamps: true }
 );

@@ -12,18 +12,22 @@ const COLOR_PALETTE = [
 
 async function checkAuth() {
   const session = await auth.api.getSession({ headers: await headers() });
-  if (!session || (session.user as Record<string, unknown>).section !== "admin")
-    return null;
+  const section = (session?.user as Record<string, unknown>)?.section;
+  if (!session || (section !== "admin" && section !== "viewer")) return null;
   return session;
 }
 
 export async function GET() {
-  if (!(await checkAuth()))
+  const session = await checkAuth();
+  if (!session)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const isViewer = (session.user as Record<string, unknown>).section === "viewer";
 
   await connectToDatabase();
 
-  const creditors = await LoanCreditor.find().sort({ createdAt: 1 });
+  const creditorFilter = isViewer ? { userId: session.user.id } : {};
+  const creditors = await LoanCreditor.find(creditorFilter).sort({ createdAt: 1 });
 
   // Aggregate totalPaid per creditor
   const paymentTotals = await LoanPayment.aggregate([
@@ -47,8 +51,11 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  if (!(await checkAuth()))
+  const session = await checkAuth();
+  if (!session)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if ((session.user as Record<string, unknown>).section === "viewer")
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   await connectToDatabase();
 
