@@ -26,7 +26,11 @@ function getAuthInstance(): AnyAuth {
       database: mongodbAdapter(globalForMongo._betterAuthMongoClient.db()),
       baseURL: appUrl,
       secret: process.env.AUTH_SECRET,
-      trustedOrigins: [appUrl],
+      trustedOrigins: [
+        appUrl,
+        "http://localhost:8081",   // Expo Go dev client
+        "http://localhost:19006",  // Expo web dev
+      ],
       emailAndPassword: {
         enabled: true,
       },
