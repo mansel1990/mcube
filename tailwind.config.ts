@@ -11,21 +11,36 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: "#050505", // Deep Charcoal / Void Black
-        foreground: "#f8fafc", // Off-white for readability
-        primary: "#2563EB", // Electric Blue
-        accent: "#06B6D4", // Cyber Cyan
-        surface: "#0F172A", // Deep Slate for bento boxes
-        champagne: "#F2E3C6", // Champagne Gold for the Product side as requested
+        background: "#F8FAFC",   // Clean off-white
+        foreground: "#0F172A",   // Deep slate (readable on light)
+        primary:    "#2563EB",   // Electric Blue
+        accent:     "#7C3AED",   // Vibrant Purple
+        surface:    "#FFFFFF",   // Pure white cards/panels
+        muted:      "#64748B",   // Muted slate for secondary text
+        border:     "#E2E8F0",   // Soft border
+        success:    "#10B981",   // Emerald green
+        danger:     "#EF4444",   // Red
+        warning:    "#F59E0B",   // Amber
+        champagne:  "#F2E3C6",   // Champagne Gold (kept for loans section)
       },
       backgroundImage: {
-         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
-         'glass-gradient': 'linear-gradient(108.8deg, rgba(255, 255, 255, 0.05) 0.6%, rgba(255, 255, 255, 0.01) 85.3%)',
+        'gradient-radial':  'radial-gradient(var(--tw-gradient-stops))',
+        'glass-gradient':   'linear-gradient(108.8deg, rgba(255,255,255,0.8) 0.6%, rgba(255,255,255,0.4) 85.3%)',
+        'hero-gradient':    'linear-gradient(135deg, #2563EB 0%, #7C3AED 100%)',
+        'green-gradient':   'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+        'red-gradient':     'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)',
+        'amber-gradient':   'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)',
       },
       fontFamily: {
         sans: ['var(--font-geist-sans)'],
         mono: ['var(--font-geist-mono)'],
       },
+      boxShadow: {
+        'card':  '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
+        'card-hover': '0 4px 12px rgba(0,0,0,0.1), 0 2px 4px rgba(0,0,0,0.06)',
+        'glow-blue':   '0 0 20px rgba(37,99,235,0.2)',
+        'glow-purple': '0 0 20px rgba(124,58,237,0.2)',
+      }
     },
   },
   plugins: [],
