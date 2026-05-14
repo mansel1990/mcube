@@ -46,9 +46,12 @@ interface PerformanceData {
   stats: StratStats[];
 }
 
-const STRATEGY_META: Record<string, { label: string; color: string; bg: string; border: string }> = {
-  breakout:     { label: "Breakout",     color: "text-violet-700",  bg: "bg-violet-50",  border: "border-violet-200" },
-  ema_pullback: { label: "EMA Pullback", color: "text-emerald-700", bg: "bg-emerald-50", border: "border-emerald-200" },
+const STRATEGY_META: Record<string, { label: string; color: string; bg: string; border: string; activeBtn: string }> = {
+  breakout:      { label: "Breakout",       color: "text-violet-700",  bg: "bg-violet-50",  border: "border-violet-200",  activeBtn: "bg-violet-600 text-white"  },
+  ema_pullback:  { label: "EMA Pullback",   color: "text-emerald-700", bg: "bg-emerald-50", border: "border-emerald-200", activeBtn: "bg-emerald-600 text-white" },
+  vcp:           { label: "VCP",            color: "text-purple-700",  bg: "bg-purple-50",  border: "border-purple-200",  activeBtn: "bg-purple-600 text-white"  },
+  rs_resilience: { label: "RS Resilience",  color: "text-rose-700",    bg: "bg-rose-50",    border: "border-rose-200",    activeBtn: "bg-rose-600 text-white"    },
+  mean_reversion:{ label: "Mean Reversion", color: "text-teal-700",    bg: "bg-teal-50",    border: "border-teal-200",    activeBtn: "bg-teal-600 text-white"    },
 };
 
 const EXIT_META: Record<string, { label: string; color: string; bg: string }> = {
@@ -60,7 +63,7 @@ const EXIT_META: Record<string, { label: string; color: string; bg: string }> = 
 export function PerformanceClient() {
   const [data, setData]       = useState<PerformanceData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab]         = useState<"all" | "breakout" | "ema_pullback">("all");
+  const [tab, setTab]         = useState<"all" | "breakout" | "ema_pullback" | "vcp" | "rs_resilience" | "mean_reversion">("all");
 
   async function fetchData() {
     setLoading(true);
@@ -151,22 +154,29 @@ export function PerformanceClient() {
         </div>
 
         {/* Strategy filter tabs */}
-        <div className="flex gap-2 mt-3">
-          {(["all", "breakout", "ema_pullback"] as const).map(s => (
-            <button
-              key={s}
-              onClick={() => setTab(s)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                tab === s
-                  ? s === "all"          ? "bg-slate-800 text-white"
-                  : s === "breakout"     ? "bg-violet-600 text-white"
-                  :                        "bg-emerald-600 text-white"
-                  : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-              }`}
-            >
-              {s === "all" ? "All Strategies" : s === "breakout" ? "Breakout" : "EMA Pullback"}
-            </button>
-          ))}
+        <div className="flex flex-wrap gap-2 mt-3">
+          <button
+            onClick={() => setTab("all")}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+              tab === "all" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+            }`}
+          >
+            All
+          </button>
+          {(Object.keys(STRATEGY_META) as Array<keyof typeof STRATEGY_META>).map(s => {
+            const meta = STRATEGY_META[s];
+            return (
+              <button
+                key={s}
+                onClick={() => setTab(s as typeof tab)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  tab === s ? meta.activeBtn : `${meta.bg} ${meta.color} hover:opacity-80`
+                }`}
+              >
+                {meta.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 

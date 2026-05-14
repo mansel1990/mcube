@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Activity, RefreshCw } from "lucide-react";
+import { Activity, RefreshCw, Info } from "lucide-react";
 import { SignalCard, SwingSignal } from "@/components/stocks/swing/signal-card";
+import { StrategyInfoDrawer } from "@/components/stocks/swing/strategy-info-drawer";
 
 export function EmaPullbackClient() {
   const [signals, setSignals]         = useState<SwingSignal[]>([]);
   const [loading, setLoading]         = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [infoOpen, setInfoOpen]       = useState(false);
 
   async function fetchSignals() {
     setLoading(true);
@@ -46,6 +48,13 @@ export function EmaPullbackClient() {
                 {lastUpdated.toLocaleTimeString()}
               </span>
             )}
+            <button
+              onClick={() => setInfoOpen(true)}
+              className="w-8 h-8 flex items-center justify-center rounded-lg text-emerald-500 hover:bg-emerald-50 transition-colors"
+              title="How this strategy works"
+            >
+              <Info size={16} />
+            </button>
             <button
               onClick={fetchSignals}
               disabled={loading}
@@ -87,6 +96,8 @@ export function EmaPullbackClient() {
           </>
         )}
       </div>
+
+      <StrategyInfoDrawer strategy="ema" open={infoOpen} onClose={() => setInfoOpen(false)} />
     </div>
   );
 }

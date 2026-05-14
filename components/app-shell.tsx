@@ -6,6 +6,7 @@ import {
   LayoutDashboard, Users, LogOut, Settings, TrendingUp,
   Zap, BarChart2, Bell, Home, Building2, ScrollText,
   TrendingUp as BreakoutIcon, Activity, BarChart3,
+  Layers, Shield, RotateCcw, LayoutGrid, X,
 } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { useState, useEffect, useRef } from "react";
@@ -17,11 +18,14 @@ const NAV_CONFIG = {
     { label: "Clients",   href: "/admin/clients",   icon: Users,           exact: false },
   ],
   stocks: [
-    { label: "Manish Logic",  href: "/stocks",              icon: Zap,          exact: true,  color: "blue"   },
-    { label: "Breakout",      href: "/stocks/breakout",     icon: BreakoutIcon, exact: false, color: "violet" },
-    { label: "EMA Pullback",  href: "/stocks/ema-pullback", icon: Activity,     exact: false, color: "emerald"},
-    { label: "Performance",   href: "/stocks/performance",  icon: BarChart3,    exact: false, color: "amber"  },
-    { label: "Chart",         href: "/stocks/chart",        icon: BarChart2,    exact: false, color: "slate"  },
+    { label: "Manish Logic",   href: "/stocks",                   icon: Zap,          exact: true,  color: "blue"    },
+    { label: "Breakout",       href: "/stocks/breakout",          icon: BreakoutIcon, exact: false, color: "violet"  },
+    { label: "EMA Pullback",   href: "/stocks/ema-pullback",      icon: Activity,     exact: false, color: "emerald" },
+    { label: "VCP",            href: "/stocks/vcp",               icon: Layers,       exact: false, color: "purple"  },
+    { label: "RS Resilience",  href: "/stocks/rs-resilience",     icon: Shield,       exact: false, color: "rose"    },
+    { label: "Mean Reversion", href: "/stocks/mean-reversion",    icon: RotateCcw,    exact: false, color: "teal"    },
+    { label: "Performance",    href: "/stocks/performance",       icon: BarChart3,    exact: false, color: "amber"   },
+    { label: "Chart",          href: "/stocks/chart",             icon: BarChart2,    exact: false, color: "slate"   },
   ],
   loans: [
     { label: "Overview",  href: "/house-loan",             icon: Home,       exact: true  },
@@ -44,12 +48,24 @@ const SETTINGS_HREF = {
 
 // Per-tab accent colours for the stocks section
 const TAB_COLORS: Record<string, { active: string; dot: string }> = {
-  blue:    { active: "bg-blue-50 text-blue-700 shadow-[inset_0_0_0_1px_rgba(37,99,235,0.2)]",    dot: "bg-blue-500"   },
-  violet:  { active: "bg-violet-50 text-violet-700 shadow-[inset_0_0_0_1px_rgba(124,58,237,0.2)]", dot: "bg-violet-500" },
+  blue:    { active: "bg-blue-50 text-blue-700 shadow-[inset_0_0_0_1px_rgba(37,99,235,0.2)]",       dot: "bg-blue-500"    },
+  violet:  { active: "bg-violet-50 text-violet-700 shadow-[inset_0_0_0_1px_rgba(124,58,237,0.2)]",  dot: "bg-violet-500"  },
   emerald: { active: "bg-emerald-50 text-emerald-700 shadow-[inset_0_0_0_1px_rgba(16,185,129,0.2)]", dot: "bg-emerald-500" },
-  amber:   { active: "bg-amber-50 text-amber-700 shadow-[inset_0_0_0_1px_rgba(245,158,11,0.2)]",  dot: "bg-amber-500"  },
-  slate:   { active: "bg-slate-100 text-slate-700 shadow-[inset_0_0_0_1px_rgba(100,116,139,0.2)]", dot: "bg-slate-400"  },
+  purple:  { active: "bg-purple-50 text-purple-700 shadow-[inset_0_0_0_1px_rgba(147,51,234,0.2)]",  dot: "bg-purple-500"  },
+  rose:    { active: "bg-rose-50 text-rose-700 shadow-[inset_0_0_0_1px_rgba(225,29,72,0.2)]",       dot: "bg-rose-500"    },
+  teal:    { active: "bg-teal-50 text-teal-700 shadow-[inset_0_0_0_1px_rgba(13,148,136,0.2)]",      dot: "bg-teal-500"    },
+  amber:   { active: "bg-amber-50 text-amber-700 shadow-[inset_0_0_0_1px_rgba(245,158,11,0.2)]",    dot: "bg-amber-500"   },
+  slate:   { active: "bg-slate-100 text-slate-700 shadow-[inset_0_0_0_1px_rgba(100,116,139,0.2)]",  dot: "bg-slate-400"   },
 };
+
+// Hrefs of strategy items that get grouped into the mobile "Strategies" sheet.
+const STRATEGY_HREFS = new Set([
+  "/stocks/breakout",
+  "/stocks/ema-pullback",
+  "/stocks/vcp",
+  "/stocks/rs-resilience",
+  "/stocks/mean-reversion",
+]);
 
 interface NotificationEntry {
   _id: string;
@@ -87,7 +103,11 @@ export function AppShell({ section, username, children }: AppShellProps) {
   const [bellOpen,     setBellOpen]     = useState(false);
   const [notifs,       setNotifs]       = useState<NotificationEntry[]>([]);
   const [notifsLoading, setNotifsLoading] = useState(false);
+  const [strategiesOpen, setStrategiesOpen] = useState(false);
   const bellRef = useRef<HTMLDivElement>(null);
+
+  // Auto-close strategies sheet on route change
+  useEffect(() => { setStrategiesOpen(false); }, [pathname]);
 
   useEffect(() => {
     if (typeof window !== "undefined" && "Notification" in window) {
@@ -285,29 +305,165 @@ export function AppShell({ section, username, children }: AppShellProps) {
 
       {/* ── Bottom tab bar — mobile only ───────────────────────── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 h-16 border-t border-border bg-white/90 backdrop-blur-xl flex items-stretch">
-        {navItems.map((item) => {
-          const Icon   = item.icon;
-          const active = isActive(item.href, item.exact);
-          const color  = "color" in item ? (item as { color: string }).color : "slate";
-          const activeColor =
-            color === "blue"    ? "text-blue-600"    :
-            color === "violet"  ? "text-violet-600"  :
-            color === "emerald" ? "text-emerald-600" :
-            color === "amber"   ? "text-amber-600"   : "text-slate-600";
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex-1 flex flex-col items-center justify-center gap-1 text-[9px] font-medium tracking-wide uppercase transition-colors ${
-                active ? activeColor : "text-slate-400 hover:text-slate-600"
-              }`}
-            >
-              <Icon size={20} strokeWidth={active ? 2.5 : 1.75} />
-              {item.label}
-            </Link>
-          );
-        })}
+        {section === "stocks" ? (
+          <MobileStocksNav
+            navItems={navItems as ReadonlyArray<{ label: string; href: string; icon: typeof Zap; exact: boolean; color?: string }>}
+            isActive={isActive}
+            onOpenStrategies={() => setStrategiesOpen(true)}
+            strategiesActive={STRATEGY_HREFS.has(pathname) || Array.from(STRATEGY_HREFS).some((h) => pathname.startsWith(h + "/"))}
+          />
+        ) : (
+          navItems.map((item) => {
+            const Icon   = item.icon;
+            const active = isActive(item.href, item.exact);
+            const color  = "color" in item ? (item as { color: string }).color : "slate";
+            const activeColor =
+              color === "blue"    ? "text-blue-600"    :
+              color === "violet"  ? "text-violet-600"  :
+              color === "emerald" ? "text-emerald-600" :
+              color === "amber"   ? "text-amber-600"   : "text-slate-600";
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex-1 flex flex-col items-center justify-center gap-1 text-[9px] font-medium tracking-wide uppercase transition-colors ${
+                  active ? activeColor : "text-slate-400 hover:text-slate-600"
+                }`}
+              >
+                <Icon size={20} strokeWidth={active ? 2.5 : 1.75} />
+                {item.label}
+              </Link>
+            );
+          })
+        )}
       </nav>
+
+      {/* ── Strategies bottom-sheet — mobile only, stocks section ── */}
+      {section === "stocks" && strategiesOpen && (
+        <StrategiesSheet
+          items={(NAV_CONFIG.stocks as ReadonlyArray<{ label: string; href: string; icon: typeof Zap; color?: string }>).filter((i) => STRATEGY_HREFS.has(i.href))}
+          activeHref={pathname}
+          onClose={() => setStrategiesOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Mobile bottom-nav for stocks section: 4 items including grouped "Strategies" ─
+function MobileStocksNav({
+  navItems,
+  isActive,
+  onOpenStrategies,
+  strategiesActive,
+}: {
+  navItems: ReadonlyArray<{ label: string; href: string; icon: typeof Zap; exact: boolean; color?: string }>;
+  isActive: (href: string, exact?: boolean) => boolean;
+  onOpenStrategies: () => void;
+  strategiesActive: boolean;
+}) {
+  // Pick out the 3 standalone tabs
+  const home  = navItems.find((i) => i.href === "/stocks");
+  const perf  = navItems.find((i) => i.href === "/stocks/performance");
+  const chart = navItems.find((i) => i.href === "/stocks/chart");
+
+  function tabClass(active: boolean, color?: string) {
+    const activeColor =
+      color === "blue"    ? "text-blue-600"    :
+      color === "amber"   ? "text-amber-600"   :
+      color === "indigo"  ? "text-indigo-600"  :
+      "text-slate-600";
+    return `flex-1 flex flex-col items-center justify-center gap-1 text-[9px] font-medium tracking-wide uppercase transition-colors ${
+      active ? activeColor : "text-slate-400 hover:text-slate-600"
+    }`;
+  }
+
+  return (
+    <>
+      {home && (
+        <Link href={home.href} className={tabClass(isActive(home.href, home.exact), home.color)}>
+          <home.icon size={20} strokeWidth={isActive(home.href, home.exact) ? 2.5 : 1.75} />
+          {home.label}
+        </Link>
+      )}
+      <button
+        onClick={onOpenStrategies}
+        className={`flex-1 flex flex-col items-center justify-center gap-1 text-[9px] font-medium tracking-wide uppercase transition-colors ${
+          strategiesActive ? "text-indigo-600" : "text-slate-400 hover:text-slate-600"
+        }`}
+      >
+        <LayoutGrid size={20} strokeWidth={strategiesActive ? 2.5 : 1.75} />
+        Strategies
+      </button>
+      {perf && (
+        <Link href={perf.href} className={tabClass(isActive(perf.href, perf.exact), perf.color)}>
+          <perf.icon size={20} strokeWidth={isActive(perf.href, perf.exact) ? 2.5 : 1.75} />
+          {perf.label}
+        </Link>
+      )}
+      {chart && (
+        <Link href={chart.href} className={tabClass(isActive(chart.href, chart.exact), chart.color)}>
+          <chart.icon size={20} strokeWidth={isActive(chart.href, chart.exact) ? 2.5 : 1.75} />
+          {chart.label}
+        </Link>
+      )}
+    </>
+  );
+}
+
+// ─── Bottom-sheet listing all 5 strategies ────────────────────────────────────
+function StrategiesSheet({
+  items,
+  activeHref,
+  onClose,
+}: {
+  items: ReadonlyArray<{ label: string; href: string; icon: typeof Zap; color?: string }>;
+  activeHref: string;
+  onClose: () => void;
+}) {
+  return (
+    <div className="md:hidden fixed inset-0 z-[60]">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-150" onClick={onClose} />
+
+      {/* Sheet */}
+      <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl pb-[env(safe-area-inset-bottom)] animate-in slide-in-from-bottom duration-200">
+        <div className="flex items-center justify-between px-5 pt-4 pb-2">
+          <div>
+            <h2 className="text-base font-bold text-foreground">Strategies</h2>
+            <p className="text-xs text-muted">Pick a scanner to view today's signals</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-9 h-9 flex items-center justify-center rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div className="px-3 pb-4 pt-1 grid grid-cols-1 gap-1.5">
+          {items.map((item) => {
+            const Icon   = item.icon;
+            const active = activeHref === item.href || activeHref.startsWith(item.href + "/");
+            const color  = item.color ?? "slate";
+            const scheme = TAB_COLORS[color] ?? TAB_COLORS.slate;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
+                  active ? scheme.active : "text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${active ? "bg-white/60" : "bg-slate-100"}`}>
+                  <Icon size={16} strokeWidth={2.25} />
+                </span>
+                {item.label}
+                {active && <span className={`ml-auto w-1.5 h-1.5 rounded-full ${scheme.dot}`} />}
+              </Link>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

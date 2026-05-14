@@ -16,9 +16,11 @@ export interface SwingSignal {
   signal_strength: string;
 }
 
+type AccentColor = "blue" | "violet" | "emerald" | "purple" | "rose" | "teal";
+
 interface SignalCardProps {
   signal: SwingSignal;
-  accentColor: "blue" | "violet" | "emerald";
+  accentColor: AccentColor;
   levelLabel: string;  // "Breakout Level" or "20 EMA Support"
 }
 
@@ -26,14 +28,18 @@ export function SignalCard({ signal, accentColor, levelLabel }: SignalCardProps)
   const isStrong = signal.signal_strength === "Strong";
   const riskReward = ((signal.target - signal.entry_min) / (signal.entry_min - signal.stop_loss)).toFixed(1);
 
-  const accent = {
-    blue:    { badge: "bg-blue-100 text-blue-700",    bar: "bg-blue-500",    ring: "ring-blue-200"   },
-    violet:  { badge: "bg-violet-100 text-violet-700", bar: "bg-violet-500",  ring: "ring-violet-200" },
+  const accent: Record<AccentColor, { badge: string; bar: string; ring: string }> = {
+    blue:    { badge: "bg-blue-100 text-blue-700",       bar: "bg-blue-500",    ring: "ring-blue-200"    },
+    violet:  { badge: "bg-violet-100 text-violet-700",   bar: "bg-violet-500",  ring: "ring-violet-200"  },
     emerald: { badge: "bg-emerald-100 text-emerald-700", bar: "bg-emerald-500", ring: "ring-emerald-200" },
-  }[accentColor];
+    purple:  { badge: "bg-purple-100 text-purple-700",   bar: "bg-purple-500",  ring: "ring-purple-200"  },
+    rose:    { badge: "bg-rose-100 text-rose-700",       bar: "bg-rose-500",    ring: "ring-rose-200"    },
+    teal:    { badge: "bg-teal-100 text-teal-700",       bar: "bg-teal-500",    ring: "ring-teal-200"    },
+  };
+  const accentClasses = accent[accentColor];
 
   return (
-    <div className={`bg-white rounded-2xl shadow-card hover:shadow-card-hover transition-all duration-200 ring-1 ${isStrong ? accent.ring : "ring-slate-100"} overflow-hidden`}>
+    <div className={`bg-white rounded-2xl shadow-card hover:shadow-card-hover transition-all duration-200 ring-1 ${isStrong ? accentClasses.ring : "ring-slate-100"} overflow-hidden`}>
       {/* Header */}
       <div className="px-4 pt-4 pb-3 flex items-start justify-between gap-2">
         <div>
@@ -47,7 +53,7 @@ export function SignalCard({ signal, accentColor, levelLabel }: SignalCardProps)
         </div>
         <div className="text-right">
           <p className="text-xs text-muted">{levelLabel}</p>
-          <p className={`text-sm font-bold ${accent.badge.split(" ")[1]}`}>₹{signal.breakout_level}</p>
+          <p className={`text-sm font-bold ${accentClasses.badge.split(" ")[1]}`}>₹{signal.breakout_level}</p>
         </div>
       </div>
 
@@ -70,12 +76,18 @@ export function SignalCard({ signal, accentColor, levelLabel }: SignalCardProps)
         </div>
       </div>
 
-      {/* Volume bar */}
-      <div className="h-1 bg-slate-100">
-        <div
-          className={`h-full ${accent.bar} rounded-full transition-all`}
-          style={{ width: `${Math.min((signal.volume_ratio / 4) * 100, 100)}%` }}
-        />
+      {/* Volume strength bar */}
+      <div className="px-4 pb-3">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[9px] text-muted uppercase tracking-wider font-semibold">Volume strength</span>
+          <span className="text-[9px] text-muted">{signal.volume_ratio}× avg</span>
+        </div>
+        <div className="h-1.5 bg-slate-100 rounded-full">
+          <div
+            className={`h-full ${accentClasses.bar} rounded-full transition-all`}
+            style={{ width: `${Math.min((signal.volume_ratio / 4) * 100, 100)}%` }}
+          />
+        </div>
       </div>
     </div>
   );
@@ -93,9 +105,12 @@ function Stat({ label, value, sub, color }: { label: string; value: string; sub:
 
 function Pill({ label, value, color }: { label: string; value: string; color: string }) {
   const cls =
-    color === "blue"    ? "bg-blue-50 text-blue-700"     :
-    color === "violet"  ? "bg-violet-50 text-violet-700" :
+    color === "blue"    ? "bg-blue-50 text-blue-700"       :
+    color === "violet"  ? "bg-violet-50 text-violet-700"   :
     color === "emerald" ? "bg-emerald-50 text-emerald-700" :
+    color === "purple"  ? "bg-purple-50 text-purple-700"   :
+    color === "rose"    ? "bg-rose-50 text-rose-700"       :
+    color === "teal"    ? "bg-teal-50 text-teal-700"       :
     "bg-slate-100 text-slate-600";
   return (
     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cls}`}>
