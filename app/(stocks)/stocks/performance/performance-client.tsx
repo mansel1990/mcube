@@ -241,7 +241,7 @@ export function PerformanceClient() {
                     <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#94A3B8" }} />
                     <YAxis tick={{ fontSize: 10, fill: "#94A3B8" }} tickFormatter={v => `₹${v}`} />
                     <Tooltip
-                      formatter={(v: number) => [`₹${v}`, "Cumulative P&L"]}
+                      formatter={(v: number | undefined) => [`₹${v ?? 0}`, "Cumulative P&L"]}
                       contentStyle={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 12 }}
                     />
                     <Line
@@ -261,7 +261,7 @@ export function PerformanceClient() {
                     <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#94A3B8" }} />
                     <YAxis tick={{ fontSize: 10, fill: "#94A3B8" }} tickFormatter={v => `₹${v}`} />
                     <Tooltip
-                      formatter={(v: number) => [`₹${v}`, "P&L"]}
+                      formatter={(v: number | undefined) => [`₹${v ?? 0}`, "P&L"]}
                       contentStyle={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 12 }}
                     />
                     <Bar dataKey="pnl" radius={[4, 4, 0, 0]}>
