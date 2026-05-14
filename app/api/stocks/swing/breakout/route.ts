@@ -4,7 +4,7 @@ import { sql } from "@/lib/sql";
 export async function GET() {
   try {
     const rows = await sql`
-      SELECT * FROM swing.signals
+      SELECT * FROM swing.breakout_signals
       WHERE date = CURRENT_DATE
       ORDER BY volume_ratio DESC
     `;
