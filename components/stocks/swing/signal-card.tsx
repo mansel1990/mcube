@@ -16,7 +16,7 @@ export interface SwingSignal {
   signal_strength: string;
 }
 
-type AccentColor = "blue" | "violet" | "emerald" | "purple" | "rose" | "teal";
+type AccentColor = "blue" | "violet" | "emerald" | "purple" | "rose" | "teal" | "cyan";
 
 interface SignalCardProps {
   signal: SwingSignal;
@@ -35,6 +35,7 @@ export function SignalCard({ signal, accentColor, levelLabel }: SignalCardProps)
     purple:  { badge: "bg-purple-100 text-purple-700",   bar: "bg-purple-500",  ring: "ring-purple-200"  },
     rose:    { badge: "bg-rose-100 text-rose-700",       bar: "bg-rose-500",    ring: "ring-rose-200"    },
     teal:    { badge: "bg-teal-100 text-teal-700",       bar: "bg-teal-500",    ring: "ring-teal-200"    },
+    cyan:    { badge: "bg-cyan-100 text-cyan-700",       bar: "bg-cyan-500",    ring: "ring-cyan-200"    },
   };
   const accentClasses = accent[accentColor];
 
@@ -111,6 +112,7 @@ function Pill({ label, value, color }: { label: string; value: string; color: st
     color === "purple"  ? "bg-purple-50 text-purple-700"   :
     color === "rose"    ? "bg-rose-50 text-rose-700"       :
     color === "teal"    ? "bg-teal-50 text-teal-700"       :
+    color === "cyan"    ? "bg-cyan-50 text-cyan-700"       :
     "bg-slate-100 text-slate-600";
   return (
     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cls}`}>

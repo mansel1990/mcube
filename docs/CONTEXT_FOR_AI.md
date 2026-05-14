@@ -24,19 +24,19 @@ app/
     layout.tsx          ← single auth gate for stocks section
     loading.tsx         ← skeleton shown during route transitions (fixes click delay)
     stocks/
-      page.tsx, breakout/, ema-pullback/, vcp/, rs-resilience/, mean-reversion/
+      page.tsx, breakout/, ema-pullback/, vcp/, rs-resilience/, mean-reversion/, fib-pullback/
       performance/, chart/, settings/
   (admin)/, (loans)/
   api/
     auth/[...all]/
-    stocks/swing/{breakout,ema-pullback,vcp,rs-resilience,mean-reversion,performance}/
+    stocks/swing/{breakout,ema-pullback,vcp,rs-resilience,mean-reversion,fib-pullback,performance}/
     stocks/{notifications,current-price,ohlcv,tickers,suggestions}/
 
 components/
   app-shell.tsx                           ← navigation (sidebar + mobile)
   stocks/swing/
-    signal-card.tsx                       ← reusable card (AccentColor: 6 options)
-    strategy-info-drawer.tsx              ← info drawer (strategy: 5 options)
+    signal-card.tsx                       ← reusable card (AccentColor: 7 options incl. cyan)
+    strategy-info-drawer.tsx              ← info drawer (strategy: 6 options)
 
 lib/
   auth.ts            ← betterAuth server (MongoDB, 1-year session)
@@ -61,8 +61,8 @@ lib/
 
 ## Mobile navigation (stocks)
 Bottom nav has 4 items: Manish Logic | Strategies (sheet) | Performance | Chart.  
-All 5 strategy pages are accessible via the "Strategies" bottom-sheet.  
-Desktop sidebar shows all 8 items flat.
+All 6 strategy pages are accessible via the "Strategies" bottom-sheet.  
+Desktop sidebar shows all 9 items flat.
 
 ## Critical files
 | Purpose | File |

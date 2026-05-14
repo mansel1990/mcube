@@ -3,7 +3,7 @@
 import { X } from "lucide-react";
 import { useEffect } from "react";
 
-export type StrategyKey = "breakout" | "ema" | "vcp" | "rs" | "mr";
+export type StrategyKey = "breakout" | "ema" | "vcp" | "rs" | "mr" | "fib";
 
 interface Filter {
   label: string;
@@ -118,6 +118,27 @@ const STRATEGY_INFO: Record<StrategyKey, StrategyInfo> = {
     ],
     exitLogic: "Enter at today's close. Tight stop at today's low × 0.98. Target = 20 EMA (the mean reversion magnet).",
     tip: "This is a short-duration trade. The 20 EMA acts as a magnet but also as resistance. Take profits near it, don't hold for more.",
+  },
+  fib: {
+    title: "Fib Pullback (Discount Zone)",
+    tagline: "Uptrends that retrace past the 50% Fib of the last swing leg — buy the discount.",
+    accentClass: "text-cyan-700",
+    bgClass: "bg-cyan-50",
+    market: "Trending / Bull",
+    riskProfile: "Medium",
+    holdDays: "3 – 10 days",
+    targetPct: "+6 – 9% (1:3 R:R)",
+    filters: [
+      { label: "Close > 50 EMA", desc: "The stock must be in an uptrend on the daily timeframe. Pullbacks against the prevailing trend get bought; pullbacks in downtrends keep falling." },
+      { label: "Valid swing leg detected", desc: "We look back ~30 bars for a clear swing low → swing high impulse (≥5 bars apart, leg ≥3%). The Fib is drawn on the most recent valid leg only." },
+      { label: "Today below 50% Fib (discount zone)", desc: "Price has retraced past the midpoint of the last swing leg. This is Pat's 'discount' — institutions defend this zone in real uptrends." },
+      { label: "≥3 red candles AND one big body", desc: "Of the last 5 bars (excluding today), at least 3 must be red AND at least one must have a body ≥1.5× the 20-bar average. Small-only red runs don't qualify — we want real sellers exhausting themselves." },
+      { label: "Today is green confirmation", desc: "Today's bar must close green AND above yesterday's close. We wait for demand to step back in — never catch the falling knife." },
+      { label: "RSI 30 – 60", desc: "Deep Fib retraces legitimately push RSI lower than a normal MA pullback. The 30–60 window catches the discount without being capitulation." },
+      { label: "Not overextended (close ≤ 50 EMA × 1.15)", desc: "Cap on distance from the trend line — same as EMA Pullback. If price ran far above the 50 EMA before this dip, we're still in extension territory." },
+    ],
+    exitLogic: "Enter at today's close (+0.5% gap buffer). Stop at the tighter of (1% below swing low) or (3% below entry). Target = entry + 3× risk (1:3 R:R per Pat).",
+    tip: "Strong signals are deep retraces (≥78% Fib — Pat's custom level) WITH today's volume ≥1.2× the 20-day average. Deep + volume = the highest-conviction discount entries.",
   },
 };
 

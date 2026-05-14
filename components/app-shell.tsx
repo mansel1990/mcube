@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Users, LogOut, Settings, TrendingUp,
   Zap, BarChart2, Bell, Home, Building2, ScrollText,
   TrendingUp as BreakoutIcon, Activity, BarChart3,
-  Layers, Shield, RotateCcw, LayoutGrid, X,
+  Layers, Shield, RotateCcw, LayoutGrid, X, TrendingDown,
 } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { useState, useEffect, useRef } from "react";
@@ -24,6 +24,7 @@ const NAV_CONFIG = {
     { label: "VCP",            href: "/stocks/vcp",               icon: Layers,       exact: false, color: "purple"  },
     { label: "RS Resilience",  href: "/stocks/rs-resilience",     icon: Shield,       exact: false, color: "rose"    },
     { label: "Mean Reversion", href: "/stocks/mean-reversion",    icon: RotateCcw,    exact: false, color: "teal"    },
+    { label: "Fib Pullback",   href: "/stocks/fib-pullback",      icon: TrendingDown, exact: false, color: "cyan"    },
     { label: "Performance",    href: "/stocks/performance",       icon: BarChart3,    exact: false, color: "amber"   },
     { label: "Chart",          href: "/stocks/chart",             icon: BarChart2,    exact: false, color: "slate"   },
   ],
@@ -54,6 +55,7 @@ const TAB_COLORS: Record<string, { active: string; dot: string }> = {
   purple:  { active: "bg-purple-50 text-purple-700 shadow-[inset_0_0_0_1px_rgba(147,51,234,0.2)]",  dot: "bg-purple-500"  },
   rose:    { active: "bg-rose-50 text-rose-700 shadow-[inset_0_0_0_1px_rgba(225,29,72,0.2)]",       dot: "bg-rose-500"    },
   teal:    { active: "bg-teal-50 text-teal-700 shadow-[inset_0_0_0_1px_rgba(13,148,136,0.2)]",      dot: "bg-teal-500"    },
+  cyan:    { active: "bg-cyan-50 text-cyan-700 shadow-[inset_0_0_0_1px_rgba(6,182,212,0.2)]",       dot: "bg-cyan-500"    },
   amber:   { active: "bg-amber-50 text-amber-700 shadow-[inset_0_0_0_1px_rgba(245,158,11,0.2)]",    dot: "bg-amber-500"   },
   slate:   { active: "bg-slate-100 text-slate-700 shadow-[inset_0_0_0_1px_rgba(100,116,139,0.2)]",  dot: "bg-slate-400"   },
 };
@@ -65,6 +67,7 @@ const STRATEGY_HREFS = new Set([
   "/stocks/vcp",
   "/stocks/rs-resilience",
   "/stocks/mean-reversion",
+  "/stocks/fib-pullback",
 ]);
 
 interface NotificationEntry {
