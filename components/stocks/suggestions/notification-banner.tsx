@@ -16,6 +16,7 @@ export function NotificationBanner() {
   const [permState, setPermState] = useState<PermState>("unsupported");
   const [dismissed, setDismissed] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [subscribeError, setSubscribeError] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("Notification" in window)) return;
@@ -49,7 +50,7 @@ export function NotificationBanner() {
         body: JSON.stringify(subscription.toJSON()),
       });
     } catch (err) {
-      console.error("Push subscription failed:", err);
+      setSubscribeError(err instanceof Error ? err.message : "Failed to enable notifications");
     } finally {
       setLoading(false);
     }
@@ -63,7 +64,7 @@ export function NotificationBanner() {
   // Already granted — show subtle indicator
   if (permState === "granted") {
     return (
-      <div className="flex items-center gap-1.5 px-4 pt-3 text-xs text-foreground/30">
+      <div className="flex items-center gap-1.5 px-4 pt-3 text-xs text-slate-400">
         <Bell size={12} />
         <span>Market notifications on</span>
       </div>
@@ -81,21 +82,26 @@ export function NotificationBanner() {
     <div className="mx-4 mt-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 flex items-center gap-3">
       <Bell size={16} className="text-primary shrink-0" />
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-foreground">Get market alerts</p>
-        <p className="text-xs text-foreground/40">
+        <p className="text-sm font-medium text-slate-900">Get market alerts</p>
+        <p className="text-xs text-slate-500">
           Notifications at NSE open (9:15 AM) and close (3:30 PM)
         </p>
       </div>
-      <button
-        onClick={handleEnable}
-        disabled={loading}
-        className="shrink-0 px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-60"
-      >
-        {loading ? "..." : "Enable"}
-      </button>
+      <div className="shrink-0 flex flex-col items-end gap-1">
+        <button
+          onClick={handleEnable}
+          disabled={loading}
+          className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-60"
+        >
+          {loading ? "..." : "Enable"}
+        </button>
+        {subscribeError && (
+          <p className="text-xs text-red-500 max-w-[140px] text-right leading-tight">{subscribeError}</p>
+        )}
+      </div>
       <button
         onClick={handleDismiss}
-        className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-foreground/30 hover:text-foreground hover:bg-white/5 transition-colors"
+        className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
         aria-label="Dismiss"
       >
         <X size={14} />

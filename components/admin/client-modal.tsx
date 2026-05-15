@@ -122,12 +122,12 @@ export function ClientModal({ initial, onClose, onSaved }: ClientModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative glass-panel rounded-2xl border border-white/10 w-full max-w-lg p-6 flex flex-col gap-5 shadow-[0_0_40px_rgba(0,0,0,0.6)] max-h-[90vh] overflow-y-auto">
+      <div className="relative bg-white shadow-sm rounded-2xl border border-slate-200 w-full max-w-lg p-6 flex flex-col gap-5 shadow-[0_0_40px_rgba(0,0,0,0.6)] max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-foreground">
+          <h2 className="text-lg font-semibold text-slate-900">
             {initial ? "Edit Client" : "Add Client"}
           </h2>
-          <button onClick={onClose} className="text-foreground/40 hover:text-foreground transition-colors">
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-900 transition-colors">
             <X size={20} />
           </button>
         </div>
@@ -135,34 +135,34 @@ export function ClientModal({ initial, onClose, onSaved }: ClientModalProps) {
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           {/* Name */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-foreground/50">Client Name *</label>
+            <label className="text-xs font-medium text-slate-500">Client Name *</label>
             <input
               value={form.name}
               onChange={(e) => set("name", e.target.value)}
               placeholder="e.g. Acme Ltd"
-              className="px-4 py-2.5 rounded-lg bg-surface border border-primary/20 text-foreground text-sm focus:outline-none focus:border-primary/60 placeholder:text-foreground/20"
+              className="px-4 py-2.5 rounded-lg bg-white border border-primary/20 text-slate-900 text-sm focus:outline-none focus:border-primary/60 placeholder:text-slate-300"
             />
           </div>
 
           {/* Email + Phone */}
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-foreground/50">Email</label>
+              <label className="text-xs font-medium text-slate-500">Email</label>
               <input
                 type="email"
                 value={form.email}
                 onChange={(e) => set("email", e.target.value)}
                 placeholder="client@example.com"
-                className="px-4 py-2.5 rounded-lg bg-surface border border-primary/20 text-foreground text-sm focus:outline-none focus:border-primary/60 placeholder:text-foreground/20"
+                className="px-4 py-2.5 rounded-lg bg-white border border-primary/20 text-slate-900 text-sm focus:outline-none focus:border-primary/60 placeholder:text-slate-300"
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-foreground/50">Phone</label>
+              <label className="text-xs font-medium text-slate-500">Phone</label>
               <input
                 value={form.phone}
                 onChange={(e) => set("phone", e.target.value)}
                 placeholder="+44 7700 000000"
-                className="px-4 py-2.5 rounded-lg bg-surface border border-primary/20 text-foreground text-sm focus:outline-none focus:border-primary/60 placeholder:text-foreground/20"
+                className="px-4 py-2.5 rounded-lg bg-white border border-primary/20 text-slate-900 text-sm focus:outline-none focus:border-primary/60 placeholder:text-slate-300"
               />
             </div>
           </div>
@@ -170,11 +170,11 @@ export function ClientModal({ initial, onClose, onSaved }: ClientModalProps) {
           {/* Billing */}
           <div className="grid grid-cols-3 gap-3">
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-foreground/50">Billing Cycle *</label>
+              <label className="text-xs font-medium text-slate-500">Billing Cycle *</label>
               <select
                 value={form.billingCycle}
                 onChange={(e) => set("billingCycle", e.target.value as ClientForm["billingCycle"])}
-                className="px-4 py-2.5 rounded-lg bg-surface border border-primary/20 text-foreground text-sm focus:outline-none focus:border-primary/60"
+                className="px-4 py-2.5 rounded-lg bg-white border border-primary/20 text-slate-900 text-sm focus:outline-none focus:border-primary/60"
               >
                 <option value="monthly">Monthly</option>
                 <option value="yearly">Yearly</option>
@@ -182,7 +182,7 @@ export function ClientModal({ initial, onClose, onSaved }: ClientModalProps) {
               </select>
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-foreground/50">Cycle Amount (₹) *</label>
+              <label className="text-xs font-medium text-slate-500">Cycle Amount (₹) *</label>
               <input
                 type="number"
                 min="0"
@@ -190,11 +190,11 @@ export function ClientModal({ initial, onClose, onSaved }: ClientModalProps) {
                 value={form.cycleAmount}
                 onChange={(e) => set("cycleAmount", e.target.value)}
                 placeholder="0.00"
-                className="px-4 py-2.5 rounded-lg bg-surface border border-primary/20 text-foreground text-sm focus:outline-none focus:border-primary/60 placeholder:text-foreground/20"
+                className="px-4 py-2.5 rounded-lg bg-white border border-primary/20 text-slate-900 text-sm focus:outline-none focus:border-primary/60 placeholder:text-slate-300"
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-foreground/50">Contract Value (₹)</label>
+              <label className="text-xs font-medium text-slate-500">Contract Value (₹)</label>
               <input
                 type="number"
                 min="0"
@@ -202,7 +202,7 @@ export function ClientModal({ initial, onClose, onSaved }: ClientModalProps) {
                 value={form.contractValue}
                 onChange={(e) => set("contractValue", e.target.value)}
                 placeholder="optional"
-                className="px-4 py-2.5 rounded-lg bg-surface border border-primary/20 text-foreground text-sm focus:outline-none focus:border-primary/60 placeholder:text-foreground/20"
+                className="px-4 py-2.5 rounded-lg bg-white border border-primary/20 text-slate-900 text-sm focus:outline-none focus:border-primary/60 placeholder:text-slate-300"
               />
             </div>
           </div>
@@ -210,20 +210,20 @@ export function ClientModal({ initial, onClose, onSaved }: ClientModalProps) {
           {/* Start date + Status */}
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-foreground/50">Start Date</label>
+              <label className="text-xs font-medium text-slate-500">Start Date</label>
               <input
                 type="date"
                 value={form.startDate}
                 onChange={(e) => set("startDate", e.target.value)}
-                className="px-4 py-2.5 rounded-lg bg-surface border border-primary/20 text-foreground text-sm focus:outline-none focus:border-primary/60"
+                className="px-4 py-2.5 rounded-lg bg-white border border-primary/20 text-slate-900 text-sm focus:outline-none focus:border-primary/60"
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-foreground/50">Status</label>
+              <label className="text-xs font-medium text-slate-500">Status</label>
               <select
                 value={form.status}
                 onChange={(e) => set("status", e.target.value as "active" | "inactive")}
-                className="px-4 py-2.5 rounded-lg bg-surface border border-primary/20 text-foreground text-sm focus:outline-none focus:border-primary/60"
+                className="px-4 py-2.5 rounded-lg bg-white border border-primary/20 text-slate-900 text-sm focus:outline-none focus:border-primary/60"
               >
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
@@ -233,11 +233,11 @@ export function ClientModal({ initial, onClose, onSaved }: ClientModalProps) {
 
           {/* Project Phase */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-foreground/50">Project Phase</label>
+            <label className="text-xs font-medium text-slate-500">Project Phase</label>
             <select
               value={form.projectPhase}
               onChange={(e) => set("projectPhase", e.target.value as ClientForm["projectPhase"])}
-              className="px-4 py-2.5 rounded-lg bg-surface border border-primary/20 text-foreground text-sm focus:outline-none focus:border-primary/60"
+              className="px-4 py-2.5 rounded-lg bg-white border border-primary/20 text-slate-900 text-sm focus:outline-none focus:border-primary/60"
             >
               {PHASES.map((p) => (
                 <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
@@ -247,46 +247,46 @@ export function ClientModal({ initial, onClose, onSaved }: ClientModalProps) {
 
           {/* Next Action */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-foreground/50">Next Action</label>
+            <label className="text-xs font-medium text-slate-500">Next Action</label>
             <input
               value={form.nextAction}
               onChange={(e) => set("nextAction", e.target.value)}
               placeholder="e.g. Send invoice end of month"
-              className="px-4 py-2.5 rounded-lg bg-surface border border-primary/20 text-foreground text-sm focus:outline-none focus:border-primary/60 placeholder:text-foreground/20"
+              className="px-4 py-2.5 rounded-lg bg-white border border-primary/20 text-slate-900 text-sm focus:outline-none focus:border-primary/60 placeholder:text-slate-300"
             />
           </div>
 
           {/* Links */}
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-foreground/50">GitHub URL</label>
+              <label className="text-xs font-medium text-slate-500">GitHub URL</label>
               <input
                 value={form.githubUrl}
                 onChange={(e) => set("githubUrl", e.target.value)}
                 placeholder="https://github.com/..."
-                className="px-4 py-2.5 rounded-lg bg-surface border border-primary/20 text-foreground text-sm focus:outline-none focus:border-primary/60 placeholder:text-foreground/20"
+                className="px-4 py-2.5 rounded-lg bg-white border border-primary/20 text-slate-900 text-sm focus:outline-none focus:border-primary/60 placeholder:text-slate-300"
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-foreground/50">Website URL</label>
+              <label className="text-xs font-medium text-slate-500">Website URL</label>
               <input
                 value={form.websiteUrl}
                 onChange={(e) => set("websiteUrl", e.target.value)}
                 placeholder="https://..."
-                className="px-4 py-2.5 rounded-lg bg-surface border border-primary/20 text-foreground text-sm focus:outline-none focus:border-primary/60 placeholder:text-foreground/20"
+                className="px-4 py-2.5 rounded-lg bg-white border border-primary/20 text-slate-900 text-sm focus:outline-none focus:border-primary/60 placeholder:text-slate-300"
               />
             </div>
           </div>
 
           {/* Notes */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-foreground/50">Notes</label>
+            <label className="text-xs font-medium text-slate-500">Notes</label>
             <textarea
               value={form.notes}
               onChange={(e) => set("notes", e.target.value)}
               rows={2}
               placeholder="General notes about this client..."
-              className="px-4 py-2.5 rounded-lg bg-surface border border-primary/20 text-foreground text-sm focus:outline-none focus:border-primary/60 placeholder:text-foreground/20 resize-none"
+              className="px-4 py-2.5 rounded-lg bg-white border border-primary/20 text-slate-900 text-sm focus:outline-none focus:border-primary/60 placeholder:text-slate-300 resize-none"
             />
           </div>
 
@@ -296,7 +296,7 @@ export function ClientModal({ initial, onClose, onSaved }: ClientModalProps) {
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-foreground/50 hover:text-foreground bg-white/5 hover:bg-white/10 transition-colors"
+              className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-slate-500 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 transition-colors"
             >
               Cancel
             </button>

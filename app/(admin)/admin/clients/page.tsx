@@ -45,11 +45,11 @@ const CYCLE_BADGE: Record<Client["billingCycle"], string> = {
 };
 
 const PHASE_BADGE: Record<Client["projectPhase"], string> = {
-  discovery: "bg-indigo-500/10 text-indigo-400",
-  design: "bg-violet-500/10 text-violet-400",
-  development: "bg-blue-500/10 text-blue-400",
-  maintenance: "bg-cyan-500/10 text-cyan-400",
-  complete: "bg-green-500/10 text-green-400",
+  discovery: "bg-indigo-500/10 text-indigo-700",
+  design: "bg-violet-500/10 text-violet-700",
+  development: "bg-blue-500/10 text-blue-700",
+  maintenance: "bg-cyan-500/10 text-cyan-700",
+  complete: "bg-green-500/10 text-green-700",
 };
 
 function getPaymentHealth(
@@ -109,7 +109,7 @@ export default function ClientsPage() {
   return (
     <div className="p-4 md:p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-foreground">Clients</h1>
+        <h1 className="text-xl font-semibold text-slate-900">Clients</h1>
         <button
           onClick={() => setShowModal(true)}
           className="flex items-center gap-1.5 text-sm font-medium bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/80 transition-colors"
@@ -119,9 +119,9 @@ export default function ClientsPage() {
       </div>
 
       {loading ? (
-        <div className="text-foreground/30 text-sm py-16 text-center">Loading…</div>
+        <div className="text-slate-400 text-sm py-16 text-center">Loading…</div>
       ) : clients.length === 0 ? (
-        <div className="text-foreground/30 text-sm py-16 text-center">No clients yet. Add one to get started.</div>
+        <div className="text-slate-400 text-sm py-16 text-center">No clients yet. Add one to get started.</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {clients.map((client) => {
@@ -131,12 +131,12 @@ export default function ClientsPage() {
             return (
               <div
                 key={client._id}
-                className="glass-panel rounded-xl border border-white/5 p-5 flex flex-col gap-3 hover:border-white/10 transition-colors"
+                className="bg-white shadow-sm rounded-xl border border-slate-100 p-5 flex flex-col gap-3 hover:border-slate-200 transition-colors"
               >
                 {/* Top row */}
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
-                    <h2 className="text-base font-semibold text-foreground truncate">{client.name}</h2>
+                    <h2 className="text-base font-semibold text-slate-900 truncate">{client.name}</h2>
                     <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                       <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide ${CYCLE_BADGE[client.billingCycle]}`}>
                         {client.billingCycle}
@@ -152,26 +152,26 @@ export default function ClientsPage() {
                     </div>
                   </div>
                   <span
-                    className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${client.status === "active" ? "bg-accent" : "bg-foreground/20"}`}
+                    className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${client.status === "active" ? "bg-accent" : "bg-slate-200"}`}
                     title={client.status}
                   />
                 </div>
 
                 {/* Amount */}
-                <div className="text-sm text-foreground/60">
-                  <span className="text-foreground font-medium">{fmt(client.cycleAmount)}</span>
+                <div className="text-sm text-slate-600">
+                  <span className="text-slate-900 font-medium">{fmt(client.cycleAmount)}</span>
                   {client.billingCycle !== "one-time" && (
-                    <span className="text-foreground/40">
+                    <span className="text-slate-400">
                       /{client.billingCycle === "monthly" ? "mo" : "yr"}
                     </span>
                   )}
                   {client.contractValue && (
-                    <span className="text-foreground/30 text-xs ml-2">· {fmt(client.contractValue)} total</span>
+                    <span className="text-slate-400 text-xs ml-2">· {fmt(client.contractValue)} total</span>
                   )}
                 </div>
 
                 {/* Last payment */}
-                <div className="text-xs text-foreground/40">
+                <div className="text-xs text-slate-400">
                   {last
                     ? `Last payment: ${fmt(last.amount)} on ${fmtDate(last.date)}`
                     : "No payments recorded"}
@@ -179,7 +179,7 @@ export default function ClientsPage() {
 
                 {/* Next action */}
                 {client.nextAction && (
-                  <div className="text-xs text-foreground/50 bg-white/3 rounded-lg px-3 py-2 border border-white/5 italic">
+                  <div className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100 italic">
                     {client.nextAction}
                   </div>
                 )}
@@ -192,7 +192,7 @@ export default function ClientsPage() {
                         href={client.githubUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-foreground/30 hover:text-foreground transition-colors"
+                        className="text-slate-400 hover:text-slate-900 transition-colors"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <Github size={15} />
@@ -203,7 +203,7 @@ export default function ClientsPage() {
                         href={client.websiteUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-foreground/30 hover:text-foreground transition-colors"
+                        className="text-slate-400 hover:text-slate-900 transition-colors"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <Globe size={15} />

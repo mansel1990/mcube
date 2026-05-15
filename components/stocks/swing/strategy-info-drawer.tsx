@@ -207,7 +207,7 @@ export function StrategyInfoDrawer({ strategy, open, onClose }: Props) {
                     {i + 1}
                   </div>
                   <div>
-                    <p className="text-xs font-semibold text-foreground">{f.label}</p>
+                    <p className="text-xs font-semibold text-slate-900">{f.label}</p>
                     <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">{f.desc}</p>
                   </div>
                 </div>

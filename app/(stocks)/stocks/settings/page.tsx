@@ -42,10 +42,10 @@ export default function StocksSettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex items-center justify-center px-4">
-      <div className="glass-panel p-8 rounded-2xl w-full max-w-sm border border-primary/20">
-        <h1 className="text-2xl font-bold mb-1 text-foreground">Change Password</h1>
-        <p className="text-foreground/50 text-sm mb-8">Update your password</p>
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex items-center justify-center px-4">
+      <div className="bg-white shadow-sm p-8 rounded-2xl w-full max-w-sm border border-slate-200">
+        <h1 className="text-2xl font-bold mb-1 text-slate-900">Change Password</h1>
+        <p className="text-slate-500 text-sm mb-8">Update your password</p>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <input
@@ -54,7 +54,7 @@ export default function StocksSettingsPage() {
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
             required
-            className="px-4 py-3 rounded-lg bg-surface border border-primary/20 text-foreground placeholder:text-foreground/40 focus:outline-none focus:border-primary transition-colors"
+            className="px-4 py-3 rounded-lg bg-white border border-slate-200 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-primary transition-colors"
           />
           <input
             type="password"
@@ -62,7 +62,7 @@ export default function StocksSettingsPage() {
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             required
-            className="px-4 py-3 rounded-lg bg-surface border border-primary/20 text-foreground placeholder:text-foreground/40 focus:outline-none focus:border-primary transition-colors"
+            className="px-4 py-3 rounded-lg bg-white border border-slate-200 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-primary transition-colors"
           />
           <input
             type="password"
@@ -70,11 +70,11 @@ export default function StocksSettingsPage() {
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
             required
-            className="px-4 py-3 rounded-lg bg-surface border border-primary/20 text-foreground placeholder:text-foreground/40 focus:outline-none focus:border-primary transition-colors"
+            className="px-4 py-3 rounded-lg bg-white border border-slate-200 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-primary transition-colors"
           />
 
-          {error && <p className="text-red-400 text-sm">{error}</p>}
-          {success && <p className="text-green-400 text-sm">Password changed successfully.</p>}
+          {error && <p className="text-red-600 text-sm">{error}</p>}
+          {success && <p className="text-green-600 text-sm">Password changed successfully.</p>}
 
           <button
             type="submit"

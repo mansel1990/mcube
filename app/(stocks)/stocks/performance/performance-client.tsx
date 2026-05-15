@@ -131,7 +131,7 @@ export function PerformanceClient() {
     : 0;
 
   return (
-    <div className="min-h-full bg-background">
+    <div className="min-h-full bg-[#F8FAFC]">
       {/* Header */}
       <div className="bg-white border-b border-border px-4 md:px-6 py-4">
         <div className="flex items-center justify-between gap-4">
@@ -140,7 +140,7 @@ export function PerformanceClient() {
               <BarChart3 size={20} className="text-amber-600" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-foreground">Strategy Performance</h1>
+              <h1 className="text-lg font-bold text-slate-900">Strategy Performance</h1>
               <p className="text-xs text-muted">₹10,000 per trade · Simulated exit at next scanner run</p>
             </div>
           </div>
@@ -245,7 +245,7 @@ export function PerformanceClient() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Cumulative P&L */}
               <div className="bg-white rounded-2xl shadow-card p-4">
-                <h3 className="text-sm font-semibold text-foreground mb-4">Cumulative P&L</h3>
+                <h3 className="text-sm font-semibold text-slate-900 mb-4">Cumulative P&L</h3>
                 <ResponsiveContainer width="100%" height={200}>
                   <LineChart data={pnlChartData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
@@ -265,7 +265,7 @@ export function PerformanceClient() {
 
               {/* Per-trade P&L bars */}
               <div className="bg-white rounded-2xl shadow-card p-4">
-                <h3 className="text-sm font-semibold text-foreground mb-4">Per-Trade P&L</h3>
+                <h3 className="text-sm font-semibold text-slate-900 mb-4">Per-Trade P&L</h3>
                 <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={pnlChartData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
@@ -287,7 +287,7 @@ export function PerformanceClient() {
               {/* Win/Loss by strategy */}
               {tab === "all" && winLossData.length > 0 && (
                 <div className="bg-white rounded-2xl shadow-card p-4 lg:col-span-2">
-                  <h3 className="text-sm font-semibold text-foreground mb-4">Outcomes by Strategy</h3>
+                  <h3 className="text-sm font-semibold text-slate-900 mb-4">Outcomes by Strategy</h3>
                   <ResponsiveContainer width="100%" height={160}>
                     <BarChart data={winLossData} layout="vertical">
                       <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
@@ -308,7 +308,7 @@ export function PerformanceClient() {
           {/* ── Trade history table ───────────────────────────── */}
           <div className="bg-white rounded-2xl shadow-card overflow-hidden">
             <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-foreground">Trade History</h3>
+              <h3 className="text-sm font-semibold text-slate-900">Trade History</h3>
               <span className="text-xs text-muted">{filteredTrades.length} trades</span>
             </div>
             <div className="overflow-x-auto">
@@ -335,7 +335,7 @@ export function PerformanceClient() {
                         <td className="px-4 py-3 text-xs text-muted whitespace-nowrap">
                           {new Date(t.signal_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
                         </td>
-                        <td className="px-4 py-3 font-semibold text-foreground">{t.symbol}</td>
+                        <td className="px-4 py-3 font-semibold text-slate-900">{t.symbol}</td>
                         <td className="px-4 py-3 hidden sm:table-cell">
                           <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${meta?.bg ?? "bg-slate-100"} ${meta?.color ?? "text-slate-600"}`}>
                             {meta?.label ?? t.strategy}
@@ -371,21 +371,21 @@ export function PerformanceClient() {
 
           {/* Exit logic explanation */}
           <div className="bg-slate-50 rounded-xl p-4 border border-border">
-            <h4 className="text-xs font-semibold text-foreground mb-2 flex items-center gap-1.5">
+            <h4 className="text-xs font-semibold text-slate-900 mb-2 flex items-center gap-1.5">
               <ShieldAlert size={13} className="text-amber-500" /> How exits are simulated
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-muted">
               <div className="flex items-start gap-2">
                 <Target size={12} className="text-emerald-500 mt-0.5 shrink-0" />
-                <span><strong className="text-foreground">Target Hit</strong> — next day high &ge; target price → exit at target</span>
+                <span><strong className="text-slate-900">Target Hit</strong> — next day high &ge; target price → exit at target</span>
               </div>
               <div className="flex items-start gap-2">
                 <ShieldAlert size={12} className="text-red-500 mt-0.5 shrink-0" />
-                <span><strong className="text-foreground">Stop Loss</strong> — next day low &le; stop loss price → exit at stop loss</span>
+                <span><strong className="text-slate-900">Stop Loss</strong> — next day low &le; stop loss price → exit at stop loss</span>
               </div>
               <div className="flex items-start gap-2">
                 <Clock size={12} className="text-amber-500 mt-0.5 shrink-0" />
-                <span><strong className="text-foreground">Timeout</strong> — 7 days elapsed without target/SL hit → exit at close</span>
+                <span><strong className="text-slate-900">Timeout</strong> — 7 days elapsed without target/SL hit → exit at close</span>
               </div>
             </div>
           </div>
@@ -410,7 +410,7 @@ function KpiCard({
         <span className="text-xs font-medium text-muted">{label}</span>
         <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center ${ic}`}>{icon}</div>
       </div>
-      <p className={`text-xl font-bold ${positive ? "text-foreground" : "text-red-500"}`}>{value}</p>
+      <p className={`text-xl font-bold ${positive ? "text-slate-900" : "text-red-500"}`}>{value}</p>
       <p className="text-[11px] text-muted mt-0.5">{sub}</p>
     </div>
   );
@@ -422,7 +422,7 @@ function EmptyState() {
       <div className="w-16 h-16 rounded-2xl bg-amber-50 flex items-center justify-center mb-4">
         <BarChart3 size={28} className="text-amber-300" />
       </div>
-      <h3 className="text-base font-semibold text-foreground mb-1">No performance data yet</h3>
+      <h3 className="text-base font-semibold text-slate-900 mb-1">No performance data yet</h3>
       <p className="text-sm text-muted max-w-sm">
         Performance tracking starts automatically once the scanner runs and signals are saved. Check back after the first evening scan.
       </p>

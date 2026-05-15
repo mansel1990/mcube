@@ -54,7 +54,7 @@ export function SuggestionsPage() {
             className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer ${
               tab === t.key
                 ? "bg-primary text-white"
-                : "text-foreground/50 hover:text-foreground bg-white/5"
+                : "text-slate-500 hover:text-slate-900 bg-slate-100"
             }`}
           >
             {t.label}
@@ -77,7 +77,7 @@ export function SuggestionsPage() {
         {!loading && !error && tab === "active" && (
           <>
             {open.length === 0 ? (
-              <div className="mt-8 text-center text-sm text-foreground/30">
+              <div className="mt-8 text-center text-sm text-slate-400">
                 No active signals.
               </div>
             ) : (

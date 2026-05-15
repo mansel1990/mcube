@@ -46,18 +46,18 @@ function ChartTooltip({ active, payload, label }: any) {
   const expenses = payload.find((p: { dataKey: string }) => p.dataKey === "expenses")?.value ?? 0;
   const net = income - expenses;
   return (
-    <div className="glass-panel border border-white/10 rounded-xl px-4 py-3 text-xs space-y-1.5 shadow-xl">
-      <div className="font-semibold text-foreground/60 mb-2">{label}</div>
+    <div className="bg-white shadow-sm border border-slate-200 rounded-xl px-4 py-3 text-xs space-y-1.5 shadow-xl">
+      <div className="font-semibold text-slate-600 mb-2">{label}</div>
       <div className="flex items-center justify-between gap-6">
-        <span className="text-foreground/50">Income</span>
+        <span className="text-slate-500">Income</span>
         <span className="text-accent font-semibold">{fmt(income)}</span>
       </div>
       <div className="flex items-center justify-between gap-6">
-        <span className="text-foreground/50">Expenses</span>
+        <span className="text-slate-500">Expenses</span>
         <span className="text-rose-400 font-semibold">{fmt(expenses)}</span>
       </div>
-      <div className="border-t border-white/10 pt-1.5 flex items-center justify-between gap-6">
-        <span className="text-foreground/50">Net</span>
+      <div className="border-t border-slate-200 pt-1.5 flex items-center justify-between gap-6">
+        <span className="text-slate-500">Net</span>
         <span className={`font-bold ${net >= 0 ? "text-accent" : "text-rose-400"}`}>
           {net < 0 ? "−" : "+"}{fmt(net)}
         </span>
@@ -124,8 +124,8 @@ export default function AdminDashboard() {
     <div className="p-4 md:p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-foreground">Dashboard</h1>
-          <p className="text-sm text-foreground/40 mt-0.5">
+          <h1 className="text-xl font-semibold text-slate-900">Dashboard</h1>
+          <p className="text-sm text-slate-400 mt-0.5">
             {overallTrend >= 0
               ? "Trending profitable — keep it up"
               : "Currently running at a loss — building towards profit"}
@@ -165,13 +165,13 @@ export default function AdminDashboard() {
       </div>
 
       {/* ── Chart ───────────────────────────────────────────────────────────── */}
-      <div className="glass-panel rounded-xl border border-white/5 p-5">
+      <div className="bg-white shadow-sm rounded-xl border border-slate-100 p-5">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-sm font-semibold text-foreground">Income vs Expenses</h2>
-            <p className="text-xs text-foreground/40 mt-0.5">Last 6 months · current month partial</p>
+            <h2 className="text-sm font-semibold text-slate-900">Income vs Expenses</h2>
+            <p className="text-xs text-slate-400 mt-0.5">Last 6 months · current month partial</p>
           </div>
-          <div className="flex items-center gap-4 text-xs text-foreground/40">
+          <div className="flex items-center gap-4 text-xs text-slate-400">
             <span className="flex items-center gap-1.5">
               <span className="w-3 h-3 rounded-sm bg-accent/70 inline-block" /> Income
             </span>
@@ -185,7 +185,7 @@ export default function AdminDashboard() {
         </div>
 
         {loading ? (
-          <div className="h-64 flex items-center justify-center text-foreground/20 text-sm">
+          <div className="h-64 flex items-center justify-center text-slate-300 text-sm">
             Loading chart…
           </div>
         ) : (
@@ -193,24 +193,24 @@ export default function AdminDashboard() {
             <ComposedChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
               <CartesianGrid
                 strokeDasharray="3 3"
-                stroke="rgba(255,255,255,0.05)"
+                stroke="rgba(0,0,0,0.06)"
                 vertical={false}
               />
               <XAxis
                 dataKey="month"
-                tick={{ fill: "rgba(248,250,252,0.35)", fontSize: 11 }}
+                tick={{ fill: "#94a3b8", fontSize: 11 }}
                 axisLine={false}
                 tickLine={false}
               />
               <YAxis
-                tick={{ fill: "rgba(248,250,252,0.35)", fontSize: 11 }}
+                tick={{ fill: "#94a3b8", fontSize: 11 }}
                 axisLine={false}
                 tickLine={false}
                 tickFormatter={(v) => `₹${v}`}
                 width={60}
               />
-              <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
-              <ReferenceLine y={0} stroke="rgba(255,255,255,0.1)" strokeDasharray="4 4" />
+              <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(0,0,0,0.04)" }} />
+              <ReferenceLine y={0} stroke="rgba(0,0,0,0.1)" strokeDasharray="4 4" />
               <Bar dataKey="income" maxBarSize={40}
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 shape={(props: any) => {
@@ -247,23 +247,23 @@ export default function AdminDashboard() {
         {/* Finances card */}
         <Link
           href="/admin/finances"
-          className="glass-panel rounded-xl border border-white/5 hover:border-champagne/20 p-5 group transition-colors"
+          className="bg-white shadow-sm rounded-xl border border-slate-100 hover:border-champagne/20 p-5 group transition-colors"
         >
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-foreground">Finances</h3>
-            <ArrowRight size={15} className="text-foreground/30 group-hover:text-champagne transition-colors" />
+            <h3 className="text-sm font-semibold text-slate-900">Finances</h3>
+            <ArrowRight size={15} className="text-slate-400 group-hover:text-champagne transition-colors" />
           </div>
           <div className="flex items-end gap-4">
             <div>
               <div className="text-2xl font-bold text-champagne">{activeSubs}</div>
-              <div className="text-xs text-foreground/40">active subscriptions</div>
+              <div className="text-xs text-slate-400">active subscriptions</div>
             </div>
             <div className="pb-0.5">
               <div className="text-lg font-semibold text-rose-400">₹{subCost.toFixed(2)}</div>
-              <div className="text-xs text-foreground/40">per month</div>
+              <div className="text-xs text-slate-400">per month</div>
             </div>
           </div>
-          <p className="text-xs text-foreground/30 mt-3">
+          <p className="text-xs text-slate-400 mt-3">
             Manage subscriptions and one-time expenses →
           </p>
         </Link>
@@ -271,31 +271,31 @@ export default function AdminDashboard() {
         {/* Clients card */}
         <Link
           href="/admin/clients"
-          className="glass-panel rounded-xl border border-white/5 hover:border-accent/20 p-5 group transition-colors"
+          className="bg-white shadow-sm rounded-xl border border-slate-100 hover:border-accent/20 p-5 group transition-colors"
         >
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-foreground">Clients</h3>
-            <ArrowRight size={15} className="text-foreground/30 group-hover:text-accent transition-colors" />
+            <h3 className="text-sm font-semibold text-slate-900">Clients</h3>
+            <ArrowRight size={15} className="text-slate-400 group-hover:text-accent transition-colors" />
           </div>
           <div className="flex items-end gap-4">
             <div>
               <div className="text-2xl font-bold text-accent">{clients.active}</div>
-              <div className="text-xs text-foreground/40">active clients</div>
+              <div className="text-xs text-slate-400">active clients</div>
             </div>
             {clients.total > clients.active && (
               <div className="pb-0.5">
-                <div className="text-lg font-semibold text-foreground/40">{clients.total}</div>
-                <div className="text-xs text-foreground/40">total</div>
+                <div className="text-lg font-semibold text-slate-400">{clients.total}</div>
+                <div className="text-xs text-slate-400">total</div>
               </div>
             )}
             {mrr > 0 && (
               <div className="pb-0.5">
                 <div className="text-lg font-semibold text-accent/70">{fmt(mrr)}</div>
-                <div className="text-xs text-foreground/40">MRR</div>
+                <div className="text-xs text-slate-400">MRR</div>
               </div>
             )}
           </div>
-          <p className="text-xs text-foreground/30 mt-3">
+          <p className="text-xs text-slate-400 mt-3">
             View client profiles and record payments →
           </p>
         </Link>

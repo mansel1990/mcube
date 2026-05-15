@@ -81,11 +81,11 @@ function buildPeriodLabel(fromMonth: number, fromYear: number, months: number): 
 
 
 const PHASE_BADGE: Record<Client["projectPhase"], string> = {
-  discovery: "bg-indigo-500/10 text-indigo-400",
-  design: "bg-violet-500/10 text-violet-400",
-  development: "bg-blue-500/10 text-blue-400",
-  maintenance: "bg-cyan-500/10 text-cyan-400",
-  complete: "bg-green-500/10 text-green-400",
+  discovery: "bg-indigo-500/10 text-indigo-700",
+  design: "bg-violet-500/10 text-violet-700",
+  development: "bg-blue-500/10 text-blue-700",
+  maintenance: "bg-cyan-500/10 text-cyan-700",
+  complete: "bg-green-500/10 text-green-700",
 };
 
 const CYCLE_BADGE: Record<Client["billingCycle"], string> = {
@@ -223,13 +223,13 @@ export default function ClientDetailPage({
 
   if (loading) {
     return (
-      <div className="p-6 text-foreground/30 text-sm">Loading…</div>
+      <div className="p-6 text-slate-400 text-sm">Loading…</div>
     );
   }
 
   if (!client || (client as unknown as Record<string, unknown>).error) {
     return (
-      <div className="p-6 text-foreground/50 text-sm">Client not found.</div>
+      <div className="p-6 text-slate-500 text-sm">Client not found.</div>
     );
   }
 
@@ -238,19 +238,19 @@ export default function ClientDetailPage({
       {/* Back */}
       <Link
         href="/admin/clients"
-        className="inline-flex items-center gap-1.5 text-sm text-foreground/40 hover:text-foreground transition-colors"
+        className="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-slate-900 transition-colors"
       >
         <ArrowLeft size={14} /> All Clients
       </Link>
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="glass-panel rounded-xl border border-white/5 p-5 space-y-4">
+      <div className="bg-white shadow-sm rounded-xl border border-slate-100 p-5 space-y-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-2xl font-bold text-foreground">{client.name}</h1>
+              <h1 className="text-2xl font-bold text-slate-900">{client.name}</h1>
               <span
-                className={`w-2 h-2 rounded-full ${client.status === "active" ? "bg-accent" : "bg-foreground/20"}`}
+                className={`w-2 h-2 rounded-full ${client.status === "active" ? "bg-accent" : "bg-slate-200"}`}
                 title={client.status}
               />
             </div>
@@ -266,13 +266,13 @@ export default function ClientDetailPage({
           <div className="flex items-center gap-1 shrink-0">
             <button
               onClick={() => setShowEditModal(true)}
-              className="w-9 h-9 flex items-center justify-center rounded-lg text-foreground/40 hover:text-foreground hover:bg-white/5 transition-colors"
+              className="w-9 h-9 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-colors"
             >
               <Pencil size={15} />
             </button>
             <button
               onClick={deleteClient}
-              className="w-9 h-9 flex items-center justify-center rounded-lg text-foreground/40 hover:text-rose-400 hover:bg-rose-400/10 transition-colors"
+              className="w-9 h-9 flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-400/10 transition-colors"
             >
               <Trash2 size={15} />
             </button>
@@ -280,9 +280,9 @@ export default function ClientDetailPage({
         </div>
 
         {/* Contact row */}
-        <div className="flex items-center gap-4 flex-wrap text-sm text-foreground/50">
+        <div className="flex items-center gap-4 flex-wrap text-sm text-slate-500">
           {client.email && (
-            <a href={`mailto:${client.email}`} className="flex items-center gap-1.5 hover:text-foreground transition-colors">
+            <a href={`mailto:${client.email}`} className="flex items-center gap-1.5 hover:text-slate-900 transition-colors">
               <Mail size={13} /> {client.email}
             </a>
           )}
@@ -292,12 +292,12 @@ export default function ClientDetailPage({
             </span>
           )}
           {client.githubUrl && (
-            <a href={client.githubUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 hover:text-foreground transition-colors">
+            <a href={client.githubUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 hover:text-slate-900 transition-colors">
               <Github size={13} /> GitHub
             </a>
           )}
           {client.websiteUrl && (
-            <a href={client.websiteUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 hover:text-foreground transition-colors">
+            <a href={client.websiteUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 hover:text-slate-900 transition-colors">
               <Globe size={13} /> Website
             </a>
           )}
@@ -306,28 +306,28 @@ export default function ClientDetailPage({
         {/* Financials row */}
         <div className="flex items-center gap-6 flex-wrap text-sm">
           <div>
-            <span className="text-foreground/40 text-xs">Cycle Amount</span>
-            <div className="font-semibold text-foreground">
+            <span className="text-slate-400 text-xs">Cycle Amount</span>
+            <div className="font-semibold text-slate-900">
               {fmt(client.cycleAmount)}
               {client.billingCycle !== "one-time" && (
-                <span className="text-foreground/40 font-normal text-xs">/{client.billingCycle === "monthly" ? "mo" : "yr"}</span>
+                <span className="text-slate-400 font-normal text-xs">/{client.billingCycle === "monthly" ? "mo" : "yr"}</span>
               )}
             </div>
           </div>
           {client.contractValue && (
             <div>
-              <span className="text-foreground/40 text-xs">Contract Value</span>
-              <div className="font-semibold text-foreground">{fmt(client.contractValue)}</div>
+              <span className="text-slate-400 text-xs">Contract Value</span>
+              <div className="font-semibold text-slate-900">{fmt(client.contractValue)}</div>
             </div>
           )}
           <div>
-            <span className="text-foreground/40 text-xs">Total Received</span>
+            <span className="text-slate-400 text-xs">Total Received</span>
             <div className="font-semibold text-accent">{fmt(totalReceived)}</div>
           </div>
           {client.contractValue && (
             <div>
-              <span className="text-foreground/40 text-xs">Remaining</span>
-              <div className={`font-semibold ${client.contractValue - totalReceived > 0 ? "text-champagne" : "text-green-400"}`}>
+              <span className="text-slate-400 text-xs">Remaining</span>
+              <div className={`font-semibold ${client.contractValue - totalReceived > 0 ? "text-champagne" : "text-green-700"}`}>
                 {fmt(Math.max(0, client.contractValue - totalReceived))}
               </div>
             </div>
@@ -336,15 +336,15 @@ export default function ClientDetailPage({
       </div>
 
       {/* ── Next Action ─────────────────────────────────────────────────────── */}
-      <div className="glass-panel rounded-xl border border-white/5 p-5">
-        <h2 className="text-sm font-semibold text-foreground mb-3">Next Action</h2>
+      <div className="bg-white shadow-sm rounded-xl border border-slate-100 p-5">
+        <h2 className="text-sm font-semibold text-slate-900 mb-3">Next Action</h2>
         <div className="flex gap-2">
           <input
             value={nextAction}
             onChange={(e) => setNextAction(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && saveNextAction()}
             placeholder="e.g. Send invoice end of month"
-            className="flex-1 px-4 py-2.5 rounded-lg bg-surface border border-primary/20 text-foreground text-sm focus:outline-none focus:border-primary/60 placeholder:text-foreground/20"
+            className="flex-1 px-4 py-2.5 rounded-lg bg-white border border-primary/20 text-slate-900 text-sm focus:outline-none focus:border-primary/60 placeholder:text-slate-300"
           />
           <button
             onClick={saveNextAction}
@@ -357,17 +357,17 @@ export default function ClientDetailPage({
       </div>
 
       {/* ── Record Payment ──────────────────────────────────────────────────── */}
-      <div className="glass-panel rounded-xl border border-accent/20 p-5 shadow-[0_0_24px_rgba(6,182,212,0.06)]">
-        <h2 className="text-sm font-semibold text-foreground mb-4">Record Payment</h2>
+      <div className="bg-white shadow-sm rounded-xl border border-accent/20 p-5 shadow-[0_0_24px_rgba(6,182,212,0.06)]">
+        <h2 className="text-sm font-semibold text-slate-900 mb-4">Record Payment</h2>
         <form onSubmit={submitPayment} className="space-y-4">
           {/* Payment For */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-foreground/50">Payment For</label>
+            <label className="text-xs font-medium text-slate-500">Payment For</label>
             <div className="grid grid-cols-3 gap-2">
               <select
                 value={payFromMonth}
                 onChange={(e) => setPayFromMonth(Number(e.target.value))}
-                className="px-3 py-2.5 rounded-lg bg-surface border border-accent/20 text-foreground text-sm focus:outline-none focus:border-accent/60"
+                className="px-3 py-2.5 rounded-lg bg-white border border-accent/20 text-slate-900 text-sm focus:outline-none focus:border-accent/60"
               >
                 {MONTHS.map((m, i) => (
                   <option key={m} value={i + 1}>{m}</option>
@@ -376,7 +376,7 @@ export default function ClientDetailPage({
               <select
                 value={payFromYear}
                 onChange={(e) => setPayFromYear(Number(e.target.value))}
-                className="px-3 py-2.5 rounded-lg bg-surface border border-accent/20 text-foreground text-sm focus:outline-none focus:border-accent/60"
+                className="px-3 py-2.5 rounded-lg bg-white border border-accent/20 text-slate-900 text-sm focus:outline-none focus:border-accent/60"
               >
                 {Array.from({ length: 4 }, (_, i) => new Date().getFullYear() - 1 + i).map((y) => (
                   <option key={y} value={y}>{y}</option>
@@ -389,14 +389,14 @@ export default function ClientDetailPage({
                   max="12"
                   value={payMonths}
                   onChange={(e) => setPayMonths(Math.max(1, Number(e.target.value)))}
-                  className="w-full px-3 py-2.5 rounded-lg bg-surface border border-accent/20 text-foreground text-sm focus:outline-none focus:border-accent/60 text-center"
+                  className="w-full px-3 py-2.5 rounded-lg bg-white border border-accent/20 text-slate-900 text-sm focus:outline-none focus:border-accent/60 text-center"
                   title="Number of months"
                 />
-                <span className="text-xs text-foreground/40 shrink-0">mo</span>
+                <span className="text-xs text-slate-400 shrink-0">mo</span>
               </div>
             </div>
             <div className="flex items-center gap-1.5 mt-0.5">
-              <span className="text-xs text-foreground/30">Period:</span>
+              <span className="text-xs text-slate-400">Period:</span>
               <span className="text-xs font-semibold text-accent bg-accent/10 px-2 py-0.5 rounded-full">
                 {buildPeriodLabel(payFromMonth, payFromYear, payMonths)}
               </span>
@@ -405,34 +405,34 @@ export default function ClientDetailPage({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-foreground/50">Amount (₹)</label>
+              <label className="text-xs font-medium text-slate-500">Amount (₹)</label>
               <input
                 type="number"
                 min="0"
                 step="0.01"
                 value={payAmount}
                 onChange={(e) => setPayAmount(e.target.value)}
-                className="px-4 py-2.5 rounded-lg bg-surface border border-accent/20 text-foreground text-sm focus:outline-none focus:border-accent/60 placeholder:text-foreground/20"
+                className="px-4 py-2.5 rounded-lg bg-white border border-accent/20 text-slate-900 text-sm focus:outline-none focus:border-accent/60 placeholder:text-slate-300"
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-foreground/50">Date Received</label>
+              <label className="text-xs font-medium text-slate-500">Date Received</label>
               <input
                 type="date"
                 value={payDate}
                 onChange={(e) => setPayDate(e.target.value)}
-                className="px-4 py-2.5 rounded-lg bg-surface border border-accent/20 text-foreground text-sm focus:outline-none focus:border-accent/60"
+                className="px-4 py-2.5 rounded-lg bg-white border border-accent/20 text-slate-900 text-sm focus:outline-none focus:border-accent/60"
               />
             </div>
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-foreground/50">Notes (optional)</label>
+            <label className="text-xs font-medium text-slate-500">Notes (optional)</label>
             <input
               value={payNotes}
               onChange={(e) => setPayNotes(e.target.value)}
               placeholder="Any notes about this payment..."
-              className="px-4 py-2.5 rounded-lg bg-surface border border-accent/20 text-foreground text-sm focus:outline-none focus:border-accent/60 placeholder:text-foreground/20"
+              className="px-4 py-2.5 rounded-lg bg-white border border-accent/20 text-slate-900 text-sm focus:outline-none focus:border-accent/60 placeholder:text-slate-300"
             />
           </div>
 
@@ -447,24 +447,24 @@ export default function ClientDetailPage({
       </div>
 
       {/* ── Payment History ─────────────────────────────────────────────────── */}
-      <div className="glass-panel rounded-xl border border-white/5 overflow-hidden">
-        <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">Payment History</h2>
-          <span className="text-xs text-foreground/40">{payments.length} payment{payments.length !== 1 ? "s" : ""}</span>
+      <div className="bg-white shadow-sm rounded-xl border border-slate-100 overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-900">Payment History</h2>
+          <span className="text-xs text-slate-400">{payments.length} payment{payments.length !== 1 ? "s" : ""}</span>
         </div>
 
         {payments.length === 0 ? (
-          <div className="px-5 py-8 text-foreground/30 text-sm">No payments recorded yet.</div>
+          <div className="px-5 py-8 text-slate-400 text-sm">No payments recorded yet.</div>
         ) : (
           <>
-            <div className="divide-y divide-white/5">
+            <div className="divide-y divide-slate-100">
               {payments.map((p) => (
                 <div key={p._id} className="flex items-center gap-4 px-5 py-3.5">
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-foreground">
+                    <div className="text-sm font-medium text-slate-900">
                       {p.periodLabel ?? fmtDate(p.date)}
                     </div>
-                    <div className="text-xs text-foreground/40">
+                    <div className="text-xs text-slate-400">
                       {fmtDate(p.date)}
                       {p.monthsCovered > 1 ? ` · ${p.monthsCovered} months` : ""}
                       {p.notes ? ` · ${p.notes}` : ""}
@@ -473,14 +473,14 @@ export default function ClientDetailPage({
                   <span className="text-sm font-semibold text-accent shrink-0">{fmt(p.amount)}</span>
                   <button
                     onClick={() => deletePayment(p._id)}
-                    className="w-8 h-8 flex items-center justify-center rounded-lg text-foreground/30 hover:text-rose-400 hover:bg-rose-400/10 transition-colors shrink-0"
+                    className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-400/10 transition-colors shrink-0"
                   >
                     <Trash2 size={13} />
                   </button>
                 </div>
               ))}
             </div>
-            <div className="px-5 py-3 border-t border-white/5 flex items-center justify-between text-xs text-foreground/40">
+            <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
               <span>Total received</span>
               <span className="font-semibold text-accent">{fmt(totalReceived)}</span>
             </div>
@@ -489,24 +489,24 @@ export default function ClientDetailPage({
       </div>
 
       {/* ── Notes Log ───────────────────────────────────────────────────────── */}
-      <div className="glass-panel rounded-xl border border-white/5 overflow-hidden">
-        <div className="px-5 py-4 border-b border-white/5">
-          <h2 className="text-sm font-semibold text-foreground">Notes</h2>
+      <div className="bg-white shadow-sm rounded-xl border border-slate-100 overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-100">
+          <h2 className="text-sm font-semibold text-slate-900">Notes</h2>
         </div>
 
-        <div className="divide-y divide-white/5">
+        <div className="divide-y divide-slate-100">
           {notes.length === 0 ? (
-            <div className="px-5 py-6 text-foreground/30 text-sm">No notes yet.</div>
+            <div className="px-5 py-6 text-slate-400 text-sm">No notes yet.</div>
           ) : (
             notes.map((n) => (
               <div key={n._id} className="flex items-start gap-3 px-5 py-3.5">
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-foreground/80">{n.text}</p>
-                  <span className="text-xs text-foreground/30">{relativeTime(n.createdAt)}</span>
+                  <p className="text-sm text-slate-700">{n.text}</p>
+                  <span className="text-xs text-slate-400">{relativeTime(n.createdAt)}</span>
                 </div>
                 <button
                   onClick={() => deleteNote(n._id)}
-                  className="w-7 h-7 flex items-center justify-center rounded-lg text-foreground/20 hover:text-rose-400 hover:bg-rose-400/10 transition-colors shrink-0 mt-0.5"
+                  className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-300 hover:text-rose-400 hover:bg-rose-400/10 transition-colors shrink-0 mt-0.5"
                 >
                   <Trash2 size={12} />
                 </button>
@@ -515,12 +515,12 @@ export default function ClientDetailPage({
           )}
         </div>
 
-        <form onSubmit={submitNote} className="px-5 py-4 border-t border-white/5 flex gap-2">
+        <form onSubmit={submitNote} className="px-5 py-4 border-t border-slate-100 flex gap-2">
           <input
             value={noteText}
             onChange={(e) => setNoteText(e.target.value)}
             placeholder="Add a note…"
-            className="flex-1 px-4 py-2.5 rounded-lg bg-surface border border-primary/20 text-foreground text-sm focus:outline-none focus:border-primary/60 placeholder:text-foreground/20"
+            className="flex-1 px-4 py-2.5 rounded-lg bg-white border border-primary/20 text-slate-900 text-sm focus:outline-none focus:border-primary/60 placeholder:text-slate-300"
           />
           <button
             type="submit"

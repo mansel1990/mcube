@@ -27,7 +27,7 @@ export function MeanReversionClient() {
   useEffect(() => { fetchSignals(); }, []);
 
   return (
-    <div className="min-h-full bg-background">
+    <div className="min-h-full bg-[#F8FAFC]">
       <div className="bg-white border-b border-border px-4 md:px-6 py-4">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -35,7 +35,7 @@ export function MeanReversionClient() {
               <RotateCcw size={20} className="text-teal-600" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-foreground">Mean Reversion Scanner</h1>
+              <h1 className="text-lg font-bold text-slate-900">Mean Reversion Scanner</h1>
               <p className="text-xs text-muted">
                 Oversold extremes bouncing off major support — snap back to the 20 EMA
               </p>
@@ -84,7 +84,7 @@ export function MeanReversionClient() {
         ) : (
           <>
             <p className="text-sm text-muted mb-4">
-              <span className="font-semibold text-foreground">{signals.length}</span> oversold bounce{signals.length !== 1 ? "s" : ""} today
+              <span className="font-semibold text-slate-900">{signals.length}</span> oversold bounce{signals.length !== 1 ? "s" : ""} today
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
               {signals.map((s) => (
@@ -106,7 +106,7 @@ function EmptyState() {
       <div className="w-16 h-16 rounded-2xl bg-teal-50 flex items-center justify-center mb-4">
         <Zap size={28} className="text-teal-300" />
       </div>
-      <h3 className="text-base font-semibold text-foreground mb-1">No mean-reversion bounces today</h3>
+      <h3 className="text-base font-semibold text-slate-900 mb-1">No mean-reversion bounces today</h3>
       <p className="text-sm text-muted max-w-xs">
         This scan needs RSI&lt;30 + a clean reversal candle at support. Some days there are zero — that's normal.
       </p>

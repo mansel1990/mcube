@@ -3,6 +3,7 @@ import { Footer } from "./components/layout/Footer";
 import { Hero } from "./components/ui/Hero";
 import { BentoGrid } from "./components/ui/BentoGrid";
 import { Services } from "./components/ui/Services";
+import { Customers } from "./components/ui/Customers";
 
 export default function Home() {
   return (
@@ -21,6 +22,14 @@ export default function Home() {
         <div className="w-full h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent my-12" />
 
         <Services />
+
+        {/* Visual Separator */}
+        <div className="w-full h-px bg-gradient-to-r from-transparent via-accent/20 to-transparent my-12" />
+
+        <Customers />
+
+        {/* Visual Separator */}
+        <div className="w-full h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent my-12" />
 
         {/* Contact Sprint CTA Section */}
         <section id="contact" className="py-24 relative overflow-hidden">

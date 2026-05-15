@@ -27,7 +27,7 @@ export function FibPullbackClient() {
   useEffect(() => { fetchSignals(); }, []);
 
   return (
-    <div className="min-h-full bg-background">
+    <div className="min-h-full bg-[#F8FAFC]">
       {/* Page header */}
       <div className="bg-white border-b border-border px-4 md:px-6 py-4">
         <div className="flex items-center justify-between gap-4">
@@ -36,7 +36,7 @@ export function FibPullbackClient() {
               <TrendingDown size={20} className="text-cyan-600" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-foreground">Fib Pullback Scanner</h1>
+              <h1 className="text-lg font-bold text-slate-900">Fib Pullback Scanner</h1>
               <p className="text-xs text-muted">
                 Uptrends with a deep Fib retrace + green confirmation — buy the discount
               </p>
@@ -86,7 +86,7 @@ export function FibPullbackClient() {
         ) : (
           <>
             <p className="text-sm text-muted mb-4">
-              <span className="font-semibold text-foreground">{signals.length}</span> setup{signals.length !== 1 ? "s" : ""} found today
+              <span className="font-semibold text-slate-900">{signals.length}</span> setup{signals.length !== 1 ? "s" : ""} found today
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
               {signals.map((s) => (
@@ -108,7 +108,7 @@ function EmptyState() {
       <div className="w-16 h-16 rounded-2xl bg-cyan-50 flex items-center justify-center mb-4">
         <TrendingDown size={28} className="text-cyan-300" />
       </div>
-      <h3 className="text-base font-semibold text-foreground mb-1">No Fib pullback setups today</h3>
+      <h3 className="text-base font-semibold text-slate-900 mb-1">No Fib pullback setups today</h3>
       <p className="text-sm text-muted max-w-xs">
         The scanner runs every evening at 6 PM IST. Check back after market hours.
       </p>

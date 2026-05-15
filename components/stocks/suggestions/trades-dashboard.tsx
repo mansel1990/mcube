@@ -78,7 +78,7 @@ export function TradesDashboard({ all }: Props) {
 
   if (events.length === 0) {
     return (
-      <div className="mt-8 text-center text-sm text-foreground/30">
+      <div className="mt-8 text-center text-sm text-slate-400">
         No buys or sells in the last 2 days.
       </div>
     );
@@ -96,20 +96,20 @@ export function TradesDashboard({ all }: Props) {
             key={e.id}
             className={`rounded-xl border flex items-center gap-4 px-4 py-3 ${
               isBuy
-                ? "border-blue-500/20 bg-blue-950/20"
+                ? "border-blue-200 bg-blue-50"
                 : isProfit
-                ? "border-emerald-500/20 bg-emerald-950/20"
-                : "border-red-500/20 bg-red-950/20"
+                ? "border-emerald-200 bg-emerald-50"
+                : "border-red-200 bg-red-50"
             }`}
           >
             {/* Action badge */}
             <span
               className={`text-[11px] font-bold px-2.5 py-1 rounded-full shrink-0 ${
                 isBuy
-                  ? "bg-blue-500/15 text-blue-300 border border-blue-500/25"
+                  ? "bg-blue-100 text-blue-700 border border-blue-200"
                   : isProfit
-                  ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/25"
-                  : "bg-red-500/15 text-red-400 border border-red-500/25"
+                  ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                  : "bg-red-100 text-red-700 border border-red-200"
               }`}
             >
               {isBuy ? "BUY" : "SELL"}
@@ -117,20 +117,20 @@ export function TradesDashboard({ all }: Props) {
 
             {/* Ticker + date */}
             <div className="flex-1 min-w-0">
-              <p className="text-base font-bold text-foreground leading-tight">{e.ticker}</p>
-              <p className="text-[11px] text-foreground/40">{fmtDate(e.date)}</p>
+              <p className="text-base font-bold text-slate-900 leading-tight">{e.ticker}</p>
+              <p className="text-[11px] text-slate-400">{fmtDate(e.date)}</p>
             </div>
 
             {/* Price */}
             <div className="text-right shrink-0">
-              <p className="text-sm font-semibold text-foreground">{fmtPrice(e.price)}</p>
+              <p className="text-sm font-semibold text-slate-900">{fmtPrice(e.price)}</p>
               {!isBuy && e.pnl_pct && (
-                <p className={`text-[11px] font-medium ${isProfit ? "text-emerald-400" : "text-red-400"}`}>
+                <p className={`text-[11px] font-medium ${isProfit ? "text-emerald-700" : "text-red-600"}`}>
                   {isProfit ? "▲" : "▼"} {fmtPct(e.pnl_pct)}
                 </p>
               )}
               {!isBuy && e.exit_reason && (
-                <p className="text-[10px] text-foreground/30 truncate max-w-[100px]">{e.exit_reason}</p>
+                <p className="text-[10px] text-slate-400 truncate max-w-[100px]">{e.exit_reason}</p>
               )}
             </div>
           </div>

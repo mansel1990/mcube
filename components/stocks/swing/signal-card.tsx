@@ -45,12 +45,12 @@ export function SignalCard({ signal, accentColor, levelLabel }: SignalCardProps)
       <div className="px-4 pt-4 pb-3 flex items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-lg font-bold text-foreground tracking-tight">{signal.symbol}</span>
+            <span className="text-lg font-bold text-slate-900 tracking-tight">{signal.symbol}</span>
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isStrong ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
               {signal.signal_strength.toUpperCase()}
             </span>
           </div>
-          <p className="text-xs text-muted mt-0.5">CMP: <span className="font-semibold text-foreground">₹{signal.cmp}</span></p>
+          <p className="text-xs text-muted mt-0.5">CMP: <span className="font-semibold text-slate-900">₹{signal.cmp}</span></p>
         </div>
         <div className="text-right">
           <p className="text-xs text-muted">{levelLabel}</p>
@@ -60,7 +60,7 @@ export function SignalCard({ signal, accentColor, levelLabel }: SignalCardProps)
 
       {/* Stats grid */}
       <div className="grid grid-cols-3 gap-px bg-slate-100 border-y border-slate-100">
-        <Stat label="Entry" value={`₹${signal.entry_min}`} sub={`–${signal.entry_max}`} color="text-foreground" />
+        <Stat label="Entry" value={`₹${signal.entry_min}`} sub={`–${signal.entry_max}`} color="text-slate-900" />
         <Stat label="Target" value={`₹${signal.target}`} sub={`+${(((signal.target - signal.entry_min) / signal.entry_min) * 100).toFixed(1)}%`} color="text-emerald-600" />
         <Stat label="Stop Loss" value={`₹${signal.stop_loss}`} sub={`-${(((signal.entry_min - signal.stop_loss) / signal.entry_min) * 100).toFixed(1)}%`} color="text-red-500" />
       </div>
@@ -73,7 +73,7 @@ export function SignalCard({ signal, accentColor, levelLabel }: SignalCardProps)
         </div>
         <div className="text-right">
           <p className="text-[10px] text-muted">R:R</p>
-          <p className="text-sm font-bold text-foreground">1:{riskReward}</p>
+          <p className="text-sm font-bold text-slate-900">1:{riskReward}</p>
         </div>
       </div>
 

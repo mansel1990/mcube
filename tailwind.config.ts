@@ -11,21 +11,21 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: "#F8FAFC",   // Clean off-white
-        foreground: "#0F172A",   // Deep slate (readable on light)
+        background: "#050505",   // Deep Charcoal / Void Black
+        foreground: "#f8fafc",   // Off-white for readability
         primary:    "#2563EB",   // Electric Blue
-        accent:     "#7C3AED",   // Vibrant Purple
-        surface:    "#FFFFFF",   // Pure white cards/panels
+        accent:     "#06B6D4",   // Cyber Cyan
+        surface:    "#0F172A",   // Deep Slate for bento boxes
         muted:      "#64748B",   // Muted slate for secondary text
-        border:     "#E2E8F0",   // Soft border
+        border:     "#E2E8F0",   // Soft border (used in stocks section)
         success:    "#10B981",   // Emerald green
         danger:     "#EF4444",   // Red
         warning:    "#F59E0B",   // Amber
-        champagne:  "#F2E3C6",   // Champagne Gold (kept for loans section)
+        champagne:  "#F2E3C6",   // Champagne Gold
       },
       backgroundImage: {
         'gradient-radial':  'radial-gradient(var(--tw-gradient-stops))',
-        'glass-gradient':   'linear-gradient(108.8deg, rgba(255,255,255,0.8) 0.6%, rgba(255,255,255,0.4) 85.3%)',
+        'glass-gradient':   'linear-gradient(108.8deg, rgba(255, 255, 255, 0.05) 0.6%, rgba(255, 255, 255, 0.01) 85.3%)',
         'hero-gradient':    'linear-gradient(135deg, #2563EB 0%, #7C3AED 100%)',
         'green-gradient':   'linear-gradient(135deg, #10B981 0%, #059669 100%)',
         'red-gradient':     'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)',

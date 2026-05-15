@@ -39,13 +39,13 @@ export function SummaryCard({ label, value, sub, color, positive }: SummaryCardP
 
   return (
     <div
-      className={`glass-panel rounded-xl p-5 border-l-4 ${resolved.border} ${resolved.glow} flex flex-col gap-1`}
+      className={`bg-white shadow-sm rounded-xl p-5 border-l-4 ${resolved.border} ${resolved.glow} flex flex-col gap-1`}
     >
-      <span className="text-xs font-medium text-foreground/40 uppercase tracking-wider">
+      <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
         {label}
       </span>
       <span className={`text-2xl font-bold ${resolved.text}`}>{value}</span>
-      {sub && <span className="text-xs text-foreground/30">{sub}</span>}
+      {sub && <span className="text-xs text-slate-400">{sub}</span>}
     </div>
   );
 }

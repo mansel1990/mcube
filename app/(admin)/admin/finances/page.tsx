@@ -105,8 +105,8 @@ export default function FinancesPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-foreground">Finances</h1>
-          <p className="text-sm text-foreground/40 mt-0.5">
+          <h1 className="text-xl font-semibold text-slate-900">Finances</h1>
+          <p className="text-sm text-slate-400 mt-0.5">
             Track recurring subscriptions and one-time expenses
           </p>
         </div>
@@ -128,30 +128,30 @@ export default function FinancesPage() {
 
       {/* Totals row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="glass-panel rounded-xl p-4 border-l-4 border-l-champagne shadow-[0_0_20px_rgba(242,227,198,0.08)]">
-          <div className="text-xs font-medium text-foreground/40 uppercase tracking-wider">Active Subs</div>
+        <div className="bg-white shadow-sm rounded-xl p-4 border-l-4 border-l-champagne shadow-[0_0_20px_rgba(242,227,198,0.08)]">
+          <div className="text-xs font-medium text-slate-400 uppercase tracking-wider">Active Subs</div>
           <div className="text-2xl font-bold text-champagne mt-1">{activeSubs.length}</div>
-          <div className="text-xs text-foreground/30">{fmt(subsMonthlyTotal)}/mo</div>
+          <div className="text-xs text-slate-400">{fmt(subsMonthlyTotal)}/mo</div>
         </div>
-        <div className="glass-panel rounded-xl p-4 border-l-4 border-l-rose-400 shadow-[0_0_20px_rgba(251,113,133,0.08)]">
-          <div className="text-xs font-medium text-foreground/40 uppercase tracking-wider">Subs Cost</div>
+        <div className="bg-white shadow-sm rounded-xl p-4 border-l-4 border-l-rose-400 shadow-[0_0_20px_rgba(251,113,133,0.08)]">
+          <div className="text-xs font-medium text-slate-400 uppercase tracking-wider">Subs Cost</div>
           <div className="text-2xl font-bold text-rose-400 mt-1">{fmt(subsMonthlyTotal)}</div>
-          <div className="text-xs text-foreground/30">per month</div>
+          <div className="text-xs text-slate-400">per month</div>
         </div>
-        <div className="glass-panel rounded-xl p-4 border-l-4 border-l-rose-400/50 col-span-2">
-          <div className="text-xs font-medium text-foreground/40 uppercase tracking-wider">
+        <div className="bg-white shadow-sm rounded-xl p-4 border-l-4 border-l-rose-400/50 col-span-2">
+          <div className="text-xs font-medium text-slate-400 uppercase tracking-wider">
             One-time Expenses · {MONTHS[expMonth - 1]} {expYear}
           </div>
-          <div className="text-2xl font-bold text-rose-300 mt-1">{fmt(expensesTotal)}</div>
-          <div className="text-xs text-foreground/30">{expenses.length} item{expenses.length !== 1 ? "s" : ""}</div>
+          <div className="text-2xl font-bold text-rose-600 mt-1">{fmt(expensesTotal)}</div>
+          <div className="text-xs text-slate-400">{expenses.length} item{expenses.length !== 1 ? "s" : ""}</div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {/* Subscriptions */}
-        <div className="glass-panel rounded-xl border border-white/5 overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
-            <h2 className="text-sm font-semibold text-foreground">Subscriptions</h2>
+        <div className="bg-white shadow-sm rounded-xl border border-slate-100 overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+            <h2 className="text-sm font-semibold text-slate-900">Subscriptions</h2>
             <button
               onClick={() => { setEditSub(null); setShowSubModal(true); }}
               className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/70 transition-colors"
@@ -161,11 +161,11 @@ export default function FinancesPage() {
           </div>
 
           {loading ? (
-            <div className="px-5 py-8 text-foreground/30 text-sm">Loading…</div>
+            <div className="px-5 py-8 text-slate-400 text-sm">Loading…</div>
           ) : subscriptions.length === 0 ? (
-            <div className="px-5 py-8 text-foreground/30 text-sm">No subscriptions yet.</div>
+            <div className="px-5 py-8 text-slate-400 text-sm">No subscriptions yet.</div>
           ) : (
-            <div className="divide-y divide-white/5">
+            <div className="divide-y divide-slate-100">
               {subscriptions.map((sub) => (
                 <div
                   key={sub._id}
@@ -173,12 +173,12 @@ export default function FinancesPage() {
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium text-foreground">{sub.name}</span>
+                      <span className="text-sm font-medium text-slate-900">{sub.name}</span>
                       <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide ${STATUS_BADGE[sub.status]}`}>
                         {sub.status}
                       </span>
                     </div>
-                    <span className="text-xs text-foreground/40">
+                    <span className="text-xs text-slate-400">
                       {sub.billingCycle === "monthly"
                         ? `${fmt(sub.amount)}/mo`
                         : `${fmt(sub.amount)}/yr · ${fmt(sub.amount / 12)}/mo`}
@@ -187,13 +187,13 @@ export default function FinancesPage() {
                   <div className="flex items-center gap-1 shrink-0">
                     <button
                       onClick={() => { setEditSub(sub); setShowSubModal(true); }}
-                      className="w-8 h-8 flex items-center justify-center rounded-lg text-foreground/30 hover:text-foreground hover:bg-white/5 transition-colors"
+                      className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-colors"
                     >
                       <Pencil size={13} />
                     </button>
                     <button
                       onClick={() => deleteSub(sub._id)}
-                      className="w-8 h-8 flex items-center justify-center rounded-lg text-foreground/30 hover:text-rose-400 hover:bg-rose-400/10 transition-colors"
+                      className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-400/10 transition-colors"
                     >
                       <Trash2 size={13} />
                     </button>
@@ -205,14 +205,14 @@ export default function FinancesPage() {
         </div>
 
         {/* One-time Expenses */}
-        <div className="glass-panel rounded-xl border border-white/5 overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
-            <h2 className="text-sm font-semibold text-foreground">One-time Expenses</h2>
+        <div className="bg-white shadow-sm rounded-xl border border-slate-100 overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+            <h2 className="text-sm font-semibold text-slate-900">One-time Expenses</h2>
             <div className="flex items-center gap-2">
               <select
                 value={expMonth}
                 onChange={(e) => setExpMonth(Number(e.target.value))}
-                className="text-xs bg-surface border border-white/10 rounded-md px-2 py-1 text-foreground/60 focus:outline-none"
+                className="text-xs bg-white border border-slate-200 rounded-md px-2 py-1 text-slate-600 focus:outline-none"
               >
                 {MONTHS.map((m, i) => (
                   <option key={m} value={i + 1}>{m}</option>
@@ -221,7 +221,7 @@ export default function FinancesPage() {
               <select
                 value={expYear}
                 onChange={(e) => setExpYear(Number(e.target.value))}
-                className="text-xs bg-surface border border-white/10 rounded-md px-2 py-1 text-foreground/60 focus:outline-none"
+                className="text-xs bg-white border border-slate-200 rounded-md px-2 py-1 text-slate-600 focus:outline-none"
               >
                 {yearOptions.map((y) => (
                   <option key={y} value={y}>{y}</option>
@@ -229,7 +229,7 @@ export default function FinancesPage() {
               </select>
               <button
                 onClick={() => setShowExpModal(true)}
-                className="flex items-center gap-1.5 text-xs font-medium text-rose-400 hover:text-rose-300 transition-colors"
+                className="flex items-center gap-1.5 text-xs font-medium text-rose-400 hover:text-rose-600 transition-colors"
               >
                 <Plus size={14} /> Add
               </button>
@@ -237,28 +237,28 @@ export default function FinancesPage() {
           </div>
 
           {loading ? (
-            <div className="px-5 py-8 text-foreground/30 text-sm">Loading…</div>
+            <div className="px-5 py-8 text-slate-400 text-sm">Loading…</div>
           ) : expenses.length === 0 ? (
-            <div className="px-5 py-8 text-foreground/30 text-sm">
+            <div className="px-5 py-8 text-slate-400 text-sm">
               No expenses for {MONTHS[expMonth - 1]} {expYear}.
             </div>
           ) : (
-            <div className="divide-y divide-white/5">
+            <div className="divide-y divide-slate-100">
               {expenses.map((exp) => (
                 <div key={exp._id} className="flex items-center gap-4 px-5 py-3.5">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium text-foreground truncate">{exp.title}</span>
+                      <span className="text-sm font-medium text-slate-900 truncate">{exp.title}</span>
                       <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-rose-400/10 text-rose-400 uppercase tracking-wide">
                         {exp.category}
                       </span>
                     </div>
-                    <span className="text-xs text-foreground/40">{fmtDate(exp.date)}</span>
+                    <span className="text-xs text-slate-400">{fmtDate(exp.date)}</span>
                   </div>
                   <span className="text-sm font-semibold text-rose-400 shrink-0">{fmt(exp.amount)}</span>
                   <button
                     onClick={() => deleteExpense(exp._id)}
-                    className="w-8 h-8 flex items-center justify-center rounded-lg text-foreground/30 hover:text-rose-400 hover:bg-rose-400/10 transition-colors shrink-0"
+                    className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-400/10 transition-colors shrink-0"
                   >
                     <Trash2 size={13} />
                   </button>
@@ -270,21 +270,21 @@ export default function FinancesPage() {
       </div>
 
       {/* Recent Payments */}
-      <div className="glass-panel rounded-xl border border-white/5 overflow-hidden">
-        <div className="px-5 py-4 border-b border-white/5">
-          <h2 className="text-sm font-semibold text-foreground">Recent Payments</h2>
+      <div className="bg-white shadow-sm rounded-xl border border-slate-100 overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-100">
+          <h2 className="text-sm font-semibold text-slate-900">Recent Payments</h2>
         </div>
         {loading ? (
-          <div className="px-5 py-8 text-foreground/30 text-sm">Loading…</div>
+          <div className="px-5 py-8 text-slate-400 text-sm">Loading…</div>
         ) : payments.length === 0 ? (
-          <div className="px-5 py-8 text-foreground/30 text-sm">No payments recorded yet.</div>
+          <div className="px-5 py-8 text-slate-400 text-sm">No payments recorded yet.</div>
         ) : (
-          <div className="divide-y divide-white/5">
+          <div className="divide-y divide-slate-100">
             {payments.slice(0, 8).map((p) => (
               <div key={p._id} className="flex items-center gap-4 px-5 py-3.5">
                 <div className="flex-1 min-w-0">
-                  <span className="text-sm font-medium text-foreground block">{p.clientName}</span>
-                  <span className="text-xs text-foreground/40">
+                  <span className="text-sm font-medium text-slate-900 block">{p.clientName}</span>
+                  <span className="text-xs text-slate-400">
                     {p.periodLabel ?? fmtDate(p.date)}
                     {p.monthsCovered > 1 ? ` · ${p.monthsCovered} months` : ""}
                     {" · "}received {fmtDate(p.date)}

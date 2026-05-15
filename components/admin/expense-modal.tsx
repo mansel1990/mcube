@@ -49,32 +49,32 @@ export function ExpenseModal({ onClose, onSaved }: ExpenseModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative glass-panel rounded-2xl border border-white/10 w-full max-w-md p-6 flex flex-col gap-5 shadow-[0_0_40px_rgba(0,0,0,0.6)]">
+      <div className="relative bg-white shadow-sm rounded-2xl border border-slate-200 w-full max-w-md p-6 flex flex-col gap-5 shadow-[0_0_40px_rgba(0,0,0,0.6)]">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-foreground">Add One-time Expense</h2>
-          <button onClick={onClose} className="text-foreground/40 hover:text-foreground transition-colors">
+          <h2 className="text-lg font-semibold text-slate-900">Add One-time Expense</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-900 transition-colors">
             <X size={20} />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-foreground/50">Title</label>
+            <label className="text-xs font-medium text-slate-500">Title</label>
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. Domain for mcube.studio"
-              className="px-4 py-2.5 rounded-lg bg-surface border border-rose-400/20 text-foreground text-sm focus:outline-none focus:border-rose-400/60 placeholder:text-foreground/20"
+              className="px-4 py-2.5 rounded-lg bg-white border border-rose-400/20 text-slate-900 text-sm focus:outline-none focus:border-rose-400/60 placeholder:text-slate-300"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-foreground/50">Category</label>
+              <label className="text-xs font-medium text-slate-500">Category</label>
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                className="px-4 py-2.5 rounded-lg bg-surface border border-rose-400/20 text-foreground text-sm focus:outline-none focus:border-rose-400/60"
+                className="px-4 py-2.5 rounded-lg bg-white border border-rose-400/20 text-slate-900 text-sm focus:outline-none focus:border-rose-400/60"
               >
                 {CATEGORIES.map((c) => (
                   <option key={c} value={c}>{c}</option>
@@ -82,7 +82,7 @@ export function ExpenseModal({ onClose, onSaved }: ExpenseModalProps) {
               </select>
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-foreground/50">Amount (₹)</label>
+              <label className="text-xs font-medium text-slate-500">Amount (₹)</label>
               <input
                 type="number"
                 min="0"
@@ -90,29 +90,29 @@ export function ExpenseModal({ onClose, onSaved }: ExpenseModalProps) {
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="0.00"
-                className="px-4 py-2.5 rounded-lg bg-surface border border-rose-400/20 text-foreground text-sm focus:outline-none focus:border-rose-400/60 placeholder:text-foreground/20"
+                className="px-4 py-2.5 rounded-lg bg-white border border-rose-400/20 text-slate-900 text-sm focus:outline-none focus:border-rose-400/60 placeholder:text-slate-300"
               />
             </div>
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-foreground/50">Date</label>
+            <label className="text-xs font-medium text-slate-500">Date</label>
             <input
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="px-4 py-2.5 rounded-lg bg-surface border border-rose-400/20 text-foreground text-sm focus:outline-none focus:border-rose-400/60"
+              className="px-4 py-2.5 rounded-lg bg-white border border-rose-400/20 text-slate-900 text-sm focus:outline-none focus:border-rose-400/60"
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-foreground/50">Notes (optional)</label>
+            <label className="text-xs font-medium text-slate-500">Notes (optional)</label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
               placeholder="Any notes..."
-              className="px-4 py-2.5 rounded-lg bg-surface border border-rose-400/20 text-foreground text-sm focus:outline-none focus:border-rose-400/60 placeholder:text-foreground/20 resize-none"
+              className="px-4 py-2.5 rounded-lg bg-white border border-rose-400/20 text-slate-900 text-sm focus:outline-none focus:border-rose-400/60 placeholder:text-slate-300 resize-none"
             />
           </div>
 
@@ -122,7 +122,7 @@ export function ExpenseModal({ onClose, onSaved }: ExpenseModalProps) {
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-foreground/50 hover:text-foreground bg-white/5 hover:bg-white/10 transition-colors"
+              className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-slate-500 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 transition-colors"
             >
               Cancel
             </button>

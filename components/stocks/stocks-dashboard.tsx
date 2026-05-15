@@ -67,16 +67,16 @@ function TickerSearch({
         }}
         onFocus={() => setOpen(true)}
         placeholder="Search ticker…"
-        className="bg-surface border border-white/10 text-foreground text-sm font-semibold rounded-lg px-3 py-2 w-44 focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-foreground/30"
+        className="bg-white border border-slate-200 text-slate-900 text-sm font-semibold rounded-lg px-3 py-2 w-44 focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-slate-400"
       />
       {open && filtered.length > 0 && (
-        <ul className="absolute z-50 top-full mt-1 left-0 w-full max-h-56 overflow-y-auto bg-surface border border-white/10 rounded-lg shadow-xl divide-y divide-white/5">
+        <ul className="absolute z-50 top-full mt-1 left-0 w-full max-h-56 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-xl divide-y divide-slate-100">
           {filtered.map((t) => (
             <li key={t}>
               <button
                 onMouseDown={() => select(t)}
-                className={`w-full text-left px-3 py-2 text-sm transition-colors hover:bg-white/5 ${
-                  t === value ? "text-primary font-semibold" : "text-foreground/80"
+                className={`w-full text-left px-3 py-2 text-sm transition-colors hover:bg-slate-100 ${
+                  t === value ? "text-primary font-semibold" : "text-slate-700"
                 }`}
               >
                 {t}
@@ -145,11 +145,11 @@ export function StocksDashboard({ tickers }: StocksDashboardProps) {
         {/* Price info */}
         {latest && (
           <div className="flex items-baseline gap-2">
-            <span className="text-xl font-bold text-foreground">
+            <span className="text-xl font-bold text-slate-900">
               ₹{Number(latest.close).toFixed(2)}
             </span>
             {changePct != null && (
-              <span className={`text-sm font-medium ${isUp ? "text-emerald-400" : "text-red-400"}`}>
+              <span className={`text-sm font-medium ${isUp ? "text-emerald-600" : "text-red-600"}`}>
                 {isUp ? "+" : ""}{change?.toFixed(2)} ({isUp ? "+" : ""}{changePct.toFixed(2)}%)
               </span>
             )}
@@ -167,8 +167,8 @@ export function StocksDashboard({ tickers }: StocksDashboardProps) {
               style={maConfig[key] ? { borderColor: color, color } : undefined}
               className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
                 maConfig[key]
-                  ? "bg-white/5"
-                  : "border-white/10 text-foreground/40 hover:text-foreground/60"
+                  ? "bg-slate-100"
+                  : "border-slate-200 text-slate-400 hover:text-slate-600"
               }`}
             >
               {label}
@@ -177,7 +177,7 @@ export function StocksDashboard({ tickers }: StocksDashboardProps) {
         </div>
 
         {/* Range tabs */}
-        <div className="flex items-center gap-1 bg-surface border border-white/10 rounded-lg p-1">
+        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-1">
           {RANGES.map((r) => (
             <button
               key={r.label}
@@ -185,7 +185,7 @@ export function StocksDashboard({ tickers }: StocksDashboardProps) {
               className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
                 range === r.days
                   ? "bg-primary text-white"
-                  : "text-foreground/50 hover:text-foreground"
+                  : "text-slate-500 hover:text-slate-900"
               }`}
             >
               {r.label}
@@ -204,27 +204,27 @@ export function StocksDashboard({ tickers }: StocksDashboardProps) {
             { label: "Volume", value: Number(latest.volume).toLocaleString("en-IN") },
             ...(latest.rsi != null ? [{ label: "RSI", value: Number(latest.rsi).toFixed(1) }] : []),
           ].map((stat) => (
-            <div key={stat.label} className="bg-surface border border-white/8 rounded-lg px-2 py-2">
-              <p className="text-[10px] text-foreground/40 uppercase tracking-wider mb-0.5">{stat.label}</p>
-              <p className="text-sm font-semibold text-foreground">{stat.value}</p>
+            <div key={stat.label} className="bg-white border border-slate-200 rounded-lg px-2 py-2">
+              <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-0.5">{stat.label}</p>
+              <p className="text-sm font-semibold text-slate-900">{stat.value}</p>
             </div>
           ))}
         </div>
       )}
 
       {/* ── Chart ─────────────────────────────────────────────── */}
-      <div className="flex-1 min-h-0 relative rounded-xl overflow-hidden border border-white/8 bg-[#0f1117]">
+      <div className="flex-1 min-h-0 relative rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
         {isPending && (
-          <div className="absolute inset-0 flex items-center justify-center z-10 bg-[#0f1117]/60 backdrop-blur-sm">
+          <div className="absolute inset-0 flex items-center justify-center z-10 bg-slate-50/60 backdrop-blur-sm">
             <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
           </div>
         )}
         {error && (
-          <div className="absolute inset-0 flex items-center justify-center text-red-400 text-sm">{error}</div>
+          <div className="absolute inset-0 flex items-center justify-center text-red-600 text-sm">{error}</div>
         )}
         {!error && data.length > 0 && <OhlcvChart data={data} maConfig={maConfig} visibleDays={range} />}
         {!isPending && !error && data.length === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center text-foreground/30 text-sm">
+          <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm">
             No data for this range
           </div>
         )}

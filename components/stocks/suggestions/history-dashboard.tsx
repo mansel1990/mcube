@@ -45,12 +45,12 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
   const d = payload[0].payload;
   const isPositive = d.value >= 0;
   return (
-    <div className="bg-surface border border-white/10 rounded-lg px-3 py-2 text-xs shadow-lg">
-      <p className="font-semibold text-foreground mb-1">{d.name}</p>
-      <p className={isPositive ? "text-emerald-400" : "text-red-400"}>
+    <div className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs shadow-lg">
+      <p className="font-semibold text-slate-900 mb-1">{d.name}</p>
+      <p className={isPositive ? "text-emerald-600" : "text-red-600"}>
         {fmtRupee(d.value)}
       </p>
-      <p className="text-foreground/40">
+      <p className="text-slate-400">
         {d.pct >= 0 ? "+" : ""}
         {d.pct.toFixed(2)}%
       </p>
@@ -95,7 +95,7 @@ export function HistoryDashboard({ closed }: Props) {
 
   if (!stats) {
     return (
-      <div className="mt-8 text-center text-sm text-foreground/30">
+      <div className="mt-8 text-center text-sm text-slate-400">
         No closed trades yet.
       </div>
     );
@@ -108,70 +108,70 @@ export function HistoryDashboard({ closed }: Props) {
       {/* Summary strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {/* Total Invested */}
-        <div className="bg-surface/40 border border-white/8 rounded-xl p-4">
-          <p className="text-[10px] text-foreground/40 uppercase tracking-wide mb-1">
+        <div className="bg-white border border-slate-200 rounded-xl p-4">
+          <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">
             Total Invested
           </p>
-          <p className="text-lg font-bold text-foreground">
+          <p className="text-lg font-bold text-slate-900">
             ₹{stats.totalInvested.toLocaleString("en-IN")}
           </p>
-          <p className="text-[10px] text-foreground/30 mt-1">
+          <p className="text-[10px] text-slate-400 mt-1">
             {stats.trades.length} trade{stats.trades.length !== 1 ? "s" : ""} × ₹10k
           </p>
         </div>
 
         {/* Net Return */}
-        <div className="bg-surface/40 border border-white/8 rounded-xl p-4">
-          <p className="text-[10px] text-foreground/40 uppercase tracking-wide mb-1">
+        <div className="bg-white border border-slate-200 rounded-xl p-4">
+          <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">
             Net Return
           </p>
           <p
             className={`text-lg font-bold ${
-              returnPositive ? "text-emerald-400" : "text-red-400"
+              returnPositive ? "text-emerald-600" : "text-red-600"
             }`}
           >
             {fmtRupee(stats.totalReturn)}
           </p>
-          <p className="text-[10px] text-foreground/30 mt-1">
+          <p className="text-[10px] text-slate-400 mt-1">
             Best: {stats.best.ticker} · Worst: {stats.worst.ticker}
           </p>
         </div>
 
         {/* Win Rate */}
-        <div className="bg-surface/40 border border-white/8 rounded-xl p-4">
-          <p className="text-[10px] text-foreground/40 uppercase tracking-wide mb-1">
+        <div className="bg-white border border-slate-200 rounded-xl p-4">
+          <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">
             Win Rate
           </p>
           <p
             className={`text-lg font-bold ${
-              stats.winRate >= 50 ? "text-emerald-400" : "text-red-400"
+              stats.winRate >= 50 ? "text-emerald-600" : "text-red-600"
             }`}
           >
             {stats.winRate.toFixed(1)}%
           </p>
-          <p className="text-[10px] text-foreground/30 mt-1">
+          <p className="text-[10px] text-slate-400 mt-1">
             {stats.trades.filter((t) => t.pct >= 0).length}W /{" "}
             {stats.trades.filter((t) => t.pct < 0).length}L
           </p>
         </div>
 
         {/* Avg Hold */}
-        <div className="bg-surface/40 border border-white/8 rounded-xl p-4">
-          <p className="text-[10px] text-foreground/40 uppercase tracking-wide mb-1">
+        <div className="bg-white border border-slate-200 rounded-xl p-4">
+          <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">
             Avg Hold
           </p>
-          <p className="text-lg font-bold text-foreground">
+          <p className="text-lg font-bold text-slate-900">
             {stats.avgHoldDays.toFixed(1)}d
           </p>
-          <p className="text-[10px] text-foreground/30 mt-1">
+          <p className="text-[10px] text-slate-400 mt-1">
             Max: {stats.maxHoldDays}d
           </p>
         </div>
       </div>
 
       {/* Bar chart */}
-      <div className="bg-surface/40 border border-white/8 rounded-xl p-4">
-        <p className="text-[10px] text-foreground/40 uppercase tracking-wide mb-3">
+      <div className="bg-white border border-slate-200 rounded-xl p-4">
+        <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-3">
           P&amp;L per Trade (₹10k simulated)
         </p>
         <ResponsiveContainer width="100%" height={200}>
@@ -181,7 +181,7 @@ export function HistoryDashboard({ closed }: Props) {
           >
             <XAxis
               dataKey="name"
-              tick={{ fill: "rgba(248,250,252,0.35)", fontSize: 10 }}
+              tick={{ fill: "#94a3b8", fontSize: 10 }}
               axisLine={false}
               tickLine={false}
             />
@@ -190,11 +190,11 @@ export function HistoryDashboard({ closed }: Props) {
               tickFormatter={(v) =>
                 v === 0 ? "₹0" : `₹${(v / 1000).toFixed(0)}k`
               }
-              tick={{ fill: "rgba(248,250,252,0.35)", fontSize: 10 }}
+              tick={{ fill: "#94a3b8", fontSize: 10 }}
               axisLine={false}
               tickLine={false}
             />
-            <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+            <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(0,0,0,0.04)" }} />
             <Bar dataKey="value" radius={[3, 3, 0, 0]}>
               {stats.chartData.map((entry, i) => (
                 <Cell
@@ -208,14 +208,14 @@ export function HistoryDashboard({ closed }: Props) {
       </div>
 
       {/* Trade table */}
-      <div className="bg-surface/40 border border-white/8 rounded-xl overflow-hidden">
-        <p className="text-[10px] text-foreground/40 uppercase tracking-wide px-4 pt-4 pb-2">
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <p className="text-[10px] text-slate-400 uppercase tracking-wide px-4 pt-4 pb-2">
           Trade History
         </p>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-white/5 text-foreground/30">
+              <tr className="border-b border-slate-100 text-slate-400">
                 <th className="text-left px-4 py-2 font-medium">Ticker</th>
                 <th className="text-left px-4 py-2 font-medium">Signal Date</th>
                 <th className="text-left px-4 py-2 font-medium">Hold</th>
@@ -229,18 +229,18 @@ export function HistoryDashboard({ closed }: Props) {
                 return (
                   <tr
                     key={t.id}
-                    className="border-b border-white/5 last:border-0 hover:bg-white/2 transition-colors"
+                    className="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors"
                   >
-                    <td className="px-4 py-2.5 font-semibold text-foreground">
+                    <td className="px-4 py-2.5 font-semibold text-slate-900">
                       {t.ticker}
                     </td>
-                    <td className="px-4 py-2.5 text-foreground/40">
+                    <td className="px-4 py-2.5 text-slate-400">
                       {fmtDate(t.signal_date)}
                     </td>
-                    <td className="px-4 py-2.5 text-foreground/60">
+                    <td className="px-4 py-2.5 text-slate-500">
                       <div className="flex items-center gap-1.5">
                         <span>{t.hold_days ?? 0}d</span>
-                        <div className="h-1 rounded-full bg-white/5 w-10 overflow-hidden">
+                        <div className="h-1 rounded-full bg-slate-100 w-10 overflow-hidden">
                           <div
                             className="h-full rounded-full bg-primary/40"
                             style={{
@@ -259,7 +259,7 @@ export function HistoryDashboard({ closed }: Props) {
                     </td>
                     <td
                       className={`px-4 py-2.5 text-right font-medium ${
-                        isPos ? "text-emerald-400" : "text-red-400"
+                        isPos ? "text-emerald-600" : "text-red-600"
                       }`}
                     >
                       {isPos ? "+" : ""}
@@ -267,7 +267,7 @@ export function HistoryDashboard({ closed }: Props) {
                     </td>
                     <td
                       className={`px-4 py-2.5 text-right font-medium ${
-                        isPos ? "text-emerald-400" : "text-red-400"
+                        isPos ? "text-emerald-600" : "text-red-600"
                       }`}
                     >
                       {fmtRupee(t.pnlRupees)}

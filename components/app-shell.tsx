@@ -162,7 +162,7 @@ export function AppShell({ section, username, children }: AppShellProps) {
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="min-h-screen flex flex-col bg-[#F8FAFC]">
 
       {/* ── Top header ─────────────────────────────────────────── */}
       <header className="fixed top-0 left-0 right-0 h-14 z-50 flex items-center px-4 gap-3 border-b border-border bg-white/80 backdrop-blur-xl shadow-sm">

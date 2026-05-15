@@ -27,7 +27,7 @@ export function BreakoutClient() {
   useEffect(() => { fetchSignals(); }, []);
 
   return (
-    <div className="min-h-full bg-background">
+    <div className="min-h-full bg-[#F8FAFC]">
       {/* Page header */}
       <div className="bg-white border-b border-border px-4 md:px-6 py-4">
         <div className="flex items-center justify-between gap-4">
@@ -36,7 +36,7 @@ export function BreakoutClient() {
               <TrendingUp size={20} className="text-violet-600" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-foreground">Breakout Scanner</h1>
+              <h1 className="text-lg font-bold text-slate-900">Breakout Scanner</h1>
               <p className="text-xs text-muted">
                 Stocks coiling just below resistance — ready to break
               </p>
@@ -86,7 +86,7 @@ export function BreakoutClient() {
         ) : (
           <>
             <p className="text-sm text-muted mb-4">
-              <span className="font-semibold text-foreground">{signals.length}</span> setup{signals.length !== 1 ? "s" : ""} found today
+              <span className="font-semibold text-slate-900">{signals.length}</span> setup{signals.length !== 1 ? "s" : ""} found today
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
               {signals.map((s) => (
@@ -107,7 +107,7 @@ function EmptyState() {
       <div className="w-16 h-16 rounded-2xl bg-violet-50 flex items-center justify-center mb-4">
         <Zap size={28} className="text-violet-300" />
       </div>
-      <h3 className="text-base font-semibold text-foreground mb-1">No breakout setups today</h3>
+      <h3 className="text-base font-semibold text-slate-900 mb-1">No breakout setups today</h3>
       <p className="text-sm text-muted max-w-xs">
         The scanner runs every evening at 6 PM IST. Check back after market hours.
       </p>

@@ -97,30 +97,30 @@ export function SubscriptionModal({ initial, onClose, onSaved }: SubscriptionMod
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative glass-panel rounded-2xl border border-white/10 w-full max-w-md p-6 flex flex-col gap-5 shadow-[0_0_40px_rgba(0,0,0,0.6)]">
+      <div className="relative bg-white shadow-sm rounded-2xl border border-slate-200 w-full max-w-md p-6 flex flex-col gap-5 shadow-[0_0_40px_rgba(0,0,0,0.6)]">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-foreground">
+          <h2 className="text-lg font-semibold text-slate-900">
             {initial ? "Edit Subscription" : "Add Subscription"}
           </h2>
-          <button onClick={onClose} className="text-foreground/40 hover:text-foreground transition-colors">
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-900 transition-colors">
             <X size={20} />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-foreground/50">Name</label>
+            <label className="text-xs font-medium text-slate-500">Name</label>
             <input
               value={form.name}
               onChange={(e) => set("name", e.target.value)}
               placeholder="e.g. Vercel Pro"
-              className="px-4 py-2.5 rounded-lg bg-surface border border-primary/20 text-foreground text-sm focus:outline-none focus:border-primary/60 placeholder:text-foreground/20"
+              className="px-4 py-2.5 rounded-lg bg-white border border-primary/20 text-slate-900 text-sm focus:outline-none focus:border-primary/60 placeholder:text-slate-300"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-foreground/50">Amount (₹)</label>
+              <label className="text-xs font-medium text-slate-500">Amount (₹)</label>
               <input
                 type="number"
                 min="0"
@@ -128,15 +128,15 @@ export function SubscriptionModal({ initial, onClose, onSaved }: SubscriptionMod
                 value={form.amount}
                 onChange={(e) => set("amount", e.target.value)}
                 placeholder="0.00"
-                className="px-4 py-2.5 rounded-lg bg-surface border border-primary/20 text-foreground text-sm focus:outline-none focus:border-primary/60 placeholder:text-foreground/20"
+                className="px-4 py-2.5 rounded-lg bg-white border border-primary/20 text-slate-900 text-sm focus:outline-none focus:border-primary/60 placeholder:text-slate-300"
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-foreground/50">Billing Cycle</label>
+              <label className="text-xs font-medium text-slate-500">Billing Cycle</label>
               <select
                 value={form.billingCycle}
                 onChange={(e) => set("billingCycle", e.target.value as "monthly" | "yearly")}
-                className="px-4 py-2.5 rounded-lg bg-surface border border-primary/20 text-foreground text-sm focus:outline-none focus:border-primary/60"
+                className="px-4 py-2.5 rounded-lg bg-white border border-primary/20 text-slate-900 text-sm focus:outline-none focus:border-primary/60"
               >
                 <option value="monthly">Monthly</option>
                 <option value="yearly">Yearly</option>
@@ -146,20 +146,20 @@ export function SubscriptionModal({ initial, onClose, onSaved }: SubscriptionMod
 
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-foreground/50">Start Date</label>
+              <label className="text-xs font-medium text-slate-500">Start Date</label>
               <input
                 type="date"
                 value={form.startDate}
                 onChange={(e) => set("startDate", e.target.value)}
-                className="px-4 py-2.5 rounded-lg bg-surface border border-primary/20 text-foreground text-sm focus:outline-none focus:border-primary/60"
+                className="px-4 py-2.5 rounded-lg bg-white border border-primary/20 text-slate-900 text-sm focus:outline-none focus:border-primary/60"
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-foreground/50">Status</label>
+              <label className="text-xs font-medium text-slate-500">Status</label>
               <select
                 value={form.status}
                 onChange={(e) => set("status", e.target.value as SubscriptionForm["status"])}
-                className="px-4 py-2.5 rounded-lg bg-surface border border-primary/20 text-foreground text-sm focus:outline-none focus:border-primary/60"
+                className="px-4 py-2.5 rounded-lg bg-white border border-primary/20 text-slate-900 text-sm focus:outline-none focus:border-primary/60"
               >
                 <option value="active">Active</option>
                 <option value="paused">Paused</option>
@@ -169,13 +169,13 @@ export function SubscriptionModal({ initial, onClose, onSaved }: SubscriptionMod
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-foreground/50">Notes (optional)</label>
+            <label className="text-xs font-medium text-slate-500">Notes (optional)</label>
             <textarea
               value={form.notes}
               onChange={(e) => set("notes", e.target.value)}
               rows={2}
               placeholder="Any notes..."
-              className="px-4 py-2.5 rounded-lg bg-surface border border-primary/20 text-foreground text-sm focus:outline-none focus:border-primary/60 placeholder:text-foreground/20 resize-none"
+              className="px-4 py-2.5 rounded-lg bg-white border border-primary/20 text-slate-900 text-sm focus:outline-none focus:border-primary/60 placeholder:text-slate-300 resize-none"
             />
           </div>
 
@@ -185,7 +185,7 @@ export function SubscriptionModal({ initial, onClose, onSaved }: SubscriptionMod
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-foreground/50 hover:text-foreground bg-white/5 hover:bg-white/10 transition-colors"
+              className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-slate-500 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 transition-colors"
             >
               Cancel
             </button>

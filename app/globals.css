@@ -3,15 +3,15 @@
 @config "../tailwind.config.ts";
 
 @theme {
-  --color-background: #F8FAFC;
-  --color-foreground: #0F172A;
+  --color-background: #050505;
+  --color-foreground: #f8fafc;
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 :root {
-  --background: #F8FAFC;
-  --foreground: #0F172A;
+  --background: #050505;
+  --foreground: #f8fafc;
 }
 
 body {
@@ -25,37 +25,37 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Glass effect utilities — light version */
+/* Glass effect utilities */
 .glass-panel {
-  background: rgba(255, 255, 255, 0.7);
+  background: rgba(15, 23, 42, 0.4);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 /* Glow effects */
 .glow-text {
-  text-shadow: 0 0 20px rgba(37, 99, 235, 0.4);
+  text-shadow: 0 0 20px rgba(37, 99, 235, 0.6);
 }
 
 .glow-box {
-  box-shadow: 0 0 30px rgba(37, 99, 235, 0.15);
+  box-shadow: 0 0 30px rgba(37, 99, 235, 0.2);
 }
 
-/* Scrollbar */
+/* Hide scrollbar for clean aesthetics */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #F1F5F9;
+  background: #050505;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
+  background: #1e293b;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94A3B8;
+  background: #334155;
 }
