@@ -62,16 +62,27 @@ const EXIT_META: Record<string, { label: string; color: string; bg: string }> = 
   timeout:    { label: "Timeout",     color: "text-amber-700",   bg: "bg-amber-100"   },
 };
 
+type CurrentPrices = Record<string, { price: number; change: number; changePct: number } | null>;
+
 export function PerformanceClient() {
-  const [data, setData]       = useState<PerformanceData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [tab, setTab]         = useState<"all" | "breakout" | "ema_pullback" | "vcp" | "rs_resilience" | "mean_reversion" | "fib_pullback">("all");
+  const [data, setData]               = useState<PerformanceData | null>(null);
+  const [loading, setLoading]         = useState(true);
+  const [currentPrices, setCurrentPrices] = useState<CurrentPrices>({});
+  const [tab, setTab]                 = useState<"all" | "breakout" | "ema_pullback" | "vcp" | "rs_resilience" | "mean_reversion" | "fib_pullback" | "fear_reversion">("all");
 
   async function fetchData() {
     setLoading(true);
     try {
       const res = await fetch("/api/stocks/swing/performance");
-      if (res.ok) setData(await res.json());
+      if (res.ok) {
+        const perf: PerformanceData = await res.json();
+        setData(perf);
+        const openSymbols = [...new Set(perf.trades.filter(t => t.status === "open").map(t => t.symbol))];
+        if (openSymbols.length > 0) {
+          const priceRes = await fetch(`/api/stocks/current-price?tickers=${openSymbols.join(",")}`);
+          if (priceRes.ok) setCurrentPrices(await priceRes.json());
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -322,6 +333,7 @@ export function PerformanceClient() {
                     <th className="text-right px-4 py-2.5">Entry</th>
                     <th className="text-right px-4 py-2.5 hidden md:table-cell">Target</th>
                     <th className="text-right px-4 py-2.5 hidden md:table-cell">SL</th>
+                    <th className="text-right px-4 py-2.5 hidden lg:table-cell">Current</th>
                     <th className="text-left px-4 py-2.5">Exit</th>
                     <th className="text-right px-4 py-2.5">P&L</th>
                   </tr>
@@ -330,7 +342,12 @@ export function PerformanceClient() {
                   {filteredTrades.map(t => {
                     const meta = STRATEGY_META[t.strategy];
                     const exit = t.exit_reason ? EXIT_META[t.exit_reason] : null;
-                    const pnlPos = (t.pnl ?? 0) >= 0;
+                    const liveData = t.status === "open" ? (currentPrices[t.symbol] ?? null) : null;
+                    const unrealizedPnl = liveData
+                      ? (liveData.price - t.entry_price) * (t.investment / t.entry_price)
+                      : null;
+                    const displayPnl   = t.status === "open" ? unrealizedPnl : (t.pnl ?? null);
+                    const pnlPos = (displayPnl ?? 0) >= 0;
                     return (
                       <tr key={t.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-4 py-3 text-xs text-muted whitespace-nowrap">
@@ -342,9 +359,23 @@ export function PerformanceClient() {
                             {meta?.label ?? t.strategy}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-right text-xs">₹{t.entry_price}</td>
+                        <td className="px-4 py-3 text-right text-xs text-slate-700">₹{t.entry_price}</td>
                         <td className="px-4 py-3 text-right text-xs text-emerald-600 hidden md:table-cell">₹{t.target_price}</td>
                         <td className="px-4 py-3 text-right text-xs text-red-500 hidden md:table-cell">₹{t.stop_loss_price}</td>
+                        <td className="px-4 py-3 text-right hidden lg:table-cell">
+                          {liveData ? (
+                            <div className="flex flex-col items-end gap-0.5">
+                              <span className="text-xs font-medium text-slate-700">₹{liveData.price.toFixed(2)}</span>
+                              <span className={`text-[10px] font-semibold ${liveData.changePct >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                                {liveData.changePct >= 0 ? "+" : ""}{liveData.changePct.toFixed(2)}%
+                              </span>
+                            </div>
+                          ) : t.status === "open" ? (
+                            <span className="text-xs text-muted">—</span>
+                          ) : (
+                            <span className="text-xs text-muted">{t.exit_price ? `₹${t.exit_price}` : "—"}</span>
+                          )}
+                        </td>
                         <td className="px-4 py-3">
                           {t.status === "open" ? (
                             <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">Open</span>
@@ -353,10 +384,15 @@ export function PerformanceClient() {
                           ) : null}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          {t.pnl != null ? (
-                            <div className={`flex items-center justify-end gap-1 font-semibold text-xs ${pnlPos ? "text-emerald-600" : "text-red-500"}`}>
-                              {pnlPos ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-                              ₹{Math.abs(Number(t.pnl)).toFixed(0)}
+                          {displayPnl != null ? (
+                            <div className={`flex flex-col items-end gap-0.5`}>
+                              <div className={`flex items-center gap-1 font-semibold text-xs ${pnlPos ? "text-emerald-600" : "text-red-500"}`}>
+                                {pnlPos ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                                ₹{Math.abs(displayPnl).toFixed(0)}
+                              </div>
+                              {t.status === "open" && (
+                                <span className="text-[10px] text-muted">Unrealized</span>
+                              )}
                             </div>
                           ) : (
                             <span className="text-xs text-muted">—</span>
