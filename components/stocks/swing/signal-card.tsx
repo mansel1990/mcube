@@ -16,7 +16,7 @@ export interface SwingSignal {
   signal_strength: string;
 }
 
-type AccentColor = "blue" | "violet" | "emerald" | "purple" | "rose" | "teal" | "cyan";
+type AccentColor = "blue" | "violet" | "emerald" | "purple" | "rose" | "teal" | "cyan" | "orange";
 
 interface SignalCardProps {
   signal: SwingSignal;
@@ -36,6 +36,7 @@ export function SignalCard({ signal, accentColor, levelLabel }: SignalCardProps)
     rose:    { badge: "bg-rose-100 text-rose-700",       bar: "bg-rose-500",    ring: "ring-rose-200"    },
     teal:    { badge: "bg-teal-100 text-teal-700",       bar: "bg-teal-500",    ring: "ring-teal-200"    },
     cyan:    { badge: "bg-cyan-100 text-cyan-700",       bar: "bg-cyan-500",    ring: "ring-cyan-200"    },
+    orange:  { badge: "bg-orange-100 text-orange-700",   bar: "bg-orange-500",  ring: "ring-orange-200"  },
   };
   const accentClasses = accent[accentColor];
 

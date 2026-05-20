@@ -51,8 +51,9 @@ const STRATEGY_META: Record<string, { label: string; color: string; bg: string; 
   ema_pullback:  { label: "EMA Pullback",   color: "text-emerald-700", bg: "bg-emerald-50", border: "border-emerald-200", activeBtn: "bg-emerald-600 text-white" },
   vcp:           { label: "VCP",            color: "text-purple-700",  bg: "bg-purple-50",  border: "border-purple-200",  activeBtn: "bg-purple-600 text-white"  },
   rs_resilience: { label: "RS Resilience",  color: "text-rose-700",    bg: "bg-rose-50",    border: "border-rose-200",    activeBtn: "bg-rose-600 text-white"    },
-  mean_reversion:{ label: "Mean Reversion", color: "text-teal-700",    bg: "bg-teal-50",    border: "border-teal-200",    activeBtn: "bg-teal-600 text-white"    },
-  fib_pullback:  { label: "Fib Pullback",   color: "text-cyan-700",    bg: "bg-cyan-50",    border: "border-cyan-200",    activeBtn: "bg-cyan-600 text-white"    },
+  mean_reversion:  { label: "Mean Reversion",  color: "text-teal-700",   bg: "bg-teal-50",   border: "border-teal-200",   activeBtn: "bg-teal-600 text-white"   },
+  fib_pullback:    { label: "Fib Pullback",    color: "text-cyan-700",   bg: "bg-cyan-50",   border: "border-cyan-200",   activeBtn: "bg-cyan-600 text-white"   },
+  fear_reversion:  { label: "Fear Reversion",  color: "text-orange-700", bg: "bg-orange-50", border: "border-orange-200", activeBtn: "bg-orange-600 text-white" },
 };
 
 const EXIT_META: Record<string, { label: string; color: string; bg: string }> = {

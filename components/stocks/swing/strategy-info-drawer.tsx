@@ -3,7 +3,7 @@
 import { X } from "lucide-react";
 import { useEffect } from "react";
 
-export type StrategyKey = "breakout" | "ema" | "vcp" | "rs" | "mr" | "fib";
+export type StrategyKey = "breakout" | "ema" | "vcp" | "rs" | "mr" | "fr" | "fib";
 
 interface Filter {
   label: string;
@@ -86,12 +86,12 @@ const STRATEGY_INFO: Record<StrategyKey, StrategyInfo> = {
     tagline: "Stocks that refuse to fall when the market is weak — tomorrow's leaders.",
     accentClass: "text-rose-700",
     bgClass: "bg-rose-50",
-    market: "Weak / Correcting market (Nifty below 20 EMA)",
+    market: "Flat / Correcting (Nifty not up >1% over 10 days)",
     riskProfile: "Medium",
     holdDays: "5 – 15 days",
     targetPct: "+6%",
     filters: [
-      { label: "Nifty is weak", desc: "This scan only runs when Nifty 50 is below its 20 EMA AND has fallen >2% over 10 days. If the market is strong, this scanner produces zero signals — intentionally." },
+      { label: "Nifty is flat or weak", desc: "This scan runs when Nifty's 10-day return is below +1% — sideways or declining. Previously required a >2% drop (too strict for choppy markets). If the market is genuinely strong, this scanner produces zero signals — intentionally." },
       { label: "Stock outperforms Nifty by ≥5pp", desc: "Over the last 10 days, the stock's return must beat Nifty by at least 5 percentage points. This identifies true relative strength." },
       { label: "Mansfield RS rising", desc: "The stock/Nifty ratio's 20-day EMA is rising — the outperformance is accelerating, not fading." },
       { label: "Stock above own 50 EMA", desc: "Even while the market corrects, the stock's own trend must be intact." },
@@ -118,6 +118,26 @@ const STRATEGY_INFO: Record<StrategyKey, StrategyInfo> = {
     ],
     exitLogic: "Enter at today's close. Tight stop at today's low × 0.98. Target = 20 EMA (the mean reversion magnet).",
     tip: "This is a short-duration trade. The 20 EMA acts as a magnet but also as resistance. Take profits near it, don't hold for more.",
+  },
+  fr: {
+    title: "Fear Reversion",
+    tagline: "VIX spikes, blue chips panic-sell to support — buy the institutional absorption candle.",
+    accentClass: "text-orange-700",
+    bgClass: "bg-orange-50",
+    market: "Sideways / Correcting (VIX > 15)",
+    riskProfile: "Medium (tight stop)",
+    holdDays: "2 – 5 days",
+    targetPct: "+3 – 5% (to 20 EMA)",
+    filters: [
+      { label: "India VIX > 15 (elevated fear)", desc: "This scan only activates when the fear gauge is elevated. High VIX means retail is panic-selling. Professionals buy that panic in liquid stocks." },
+      { label: "Nifty 50 / Next 50 large-cap only", desc: "Only 80 of the most liquid blue chips qualify. Oversold large caps recover predictably — illiquid mid-caps can stay oversold for weeks." },
+      { label: "RSI < 35 (oversold)", desc: "The stock is genuinely oversold. Blue chips rarely touch RSI 30 — the threshold is relaxed to 35 to catch the real setups without being too strict." },
+      { label: "At major support (200 EMA or 52-week low)", desc: "The panic selling brought the stock to a meaningful floor. The 200 EMA and 52-week low are where institutional buyers have standing orders." },
+      { label: "Bullish reversal candle (piercing/engulfing)", desc: "Today must close green above yesterday's red close, with the body covering at least 50% of yesterday's candle. This is absorption — big money stepping in." },
+      { label: "Volume on reversal day", desc: "Volume must be at least average. Institutional absorption shows up in volume. A reversal on light volume is retail — not reliable." },
+    ],
+    exitLogic: "Enter at today's close. Stop 3% below today's low. Target = 20 EMA (NOT a new high — in a sideways market the 20 EMA is the ceiling). Exit fully when price touches the 20 EMA.",
+    tip: "This is a bounce trade, not a trend trade. The 20 EMA is both the target AND the resistance. Do not hold past it hoping for more — in sideways markets, that's how you give profits back.",
   },
   fib: {
     title: "Fib Pullback (Discount Zone)",
