@@ -7,6 +7,7 @@ import { StrategyInfoDrawer } from "@/components/stocks/swing/strategy-info-draw
 
 export function EmaPullbackClient() {
   const [signals, setSignals]         = useState<SwingSignal[]>([]);
+  const [signalDate, setSignalDate]   = useState<string | null>(null);
   const [loading, setLoading]         = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [infoOpen, setInfoOpen]       = useState(false);
@@ -16,7 +17,9 @@ export function EmaPullbackClient() {
     try {
       const res = await fetch("/api/stocks/swing/ema-pullback");
       if (res.ok) {
-        setSignals(await res.json());
+        const data = await res.json();
+        setSignals(data.signals ?? []);
+        setSignalDate(data.signal_date ?? null);
         setLastUpdated(new Date());
       }
     } finally {
@@ -86,7 +89,8 @@ export function EmaPullbackClient() {
         ) : (
           <>
             <p className="text-sm text-muted mb-4">
-              <span className="font-semibold text-slate-900">{signals.length}</span> setup{signals.length !== 1 ? "s" : ""} found today
+              <span className="font-semibold text-slate-900">{signals.length}</span> setup{signals.length !== 1 ? "s" : ""} found
+              {signalDate && <SignalDateBadge date={signalDate} />}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
               {signals.map((s) => (
@@ -99,6 +103,19 @@ export function EmaPullbackClient() {
 
       <StrategyInfoDrawer strategy="ema" open={infoOpen} onClose={() => setInfoOpen(false)} />
     </div>
+  );
+}
+
+function SignalDateBadge({ date }: { date: string }) {
+  const d = new Date(date);
+  const today = new Date();
+  const isToday = d.toDateString() === today.toDateString();
+  if (isToday) return <span className="ml-1 text-muted">· today</span>;
+  const label = d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
+  return (
+    <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+      from {label}
+    </span>
   );
 }
 
