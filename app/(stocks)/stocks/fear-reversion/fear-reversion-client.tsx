@@ -5,6 +5,19 @@ import { Flame, Info } from "lucide-react";
 import { SignalCard, SwingSignal } from "@/components/stocks/swing/signal-card";
 import { StrategyInfoDrawer } from "@/components/stocks/swing/strategy-info-drawer";
 
+function SignalDateBadge({ date }: { date: string }) {
+  const d = new Date(date);
+  const today = new Date();
+  const isToday = d.toDateString() === today.toDateString();
+  if (isToday) return <span className="ml-1 text-muted">· today</span>;
+  const label = d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
+  return (
+    <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+      from {label}
+    </span>
+  );
+}
+
 export default function FearReversionClient() {
   const [signals, setSignals]       = useState<SwingSignal[]>([]);
   const [signalDate, setSignalDate] = useState<string | null>(null);
@@ -63,31 +76,18 @@ export default function FearReversionClient() {
             <span className="font-semibold text-slate-900">{signals.length}</span> setup{signals.length !== 1 ? "s" : ""} found
             {signalDate && <SignalDateBadge date={signalDate} />}
           </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-          {signals.map((s) => (
-            <SignalCard
-              key={s.id}
-              signal={s}
-              accentColor="orange"
-              levelLabel="Support"
-            />
-          ))}
-        </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            {signals.map((s) => (
+              <SignalCard
+                key={s.id}
+                signal={s}
+                accentColor="orange"
+                levelLabel="Support"
+              />
+            ))}
+          </div>
         </>
       )}
-
-function SignalDateBadge({ date }: { date: string }) {
-  const d = new Date(date);
-  const today = new Date();
-  const isToday = d.toDateString() === today.toDateString();
-  if (isToday) return <span className="ml-1 text-muted">· today</span>;
-  const label = d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
-  return (
-    <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
-      from {label}
-    </span>
-  );
-}
 
       <StrategyInfoDrawer
         strategy="fr"
