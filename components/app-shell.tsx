@@ -106,16 +106,23 @@ export function AppShell({ section, username, children }: AppShellProps) {
   const navItems  = NAV_CONFIG[section];
   const settingsHref = SETTINGS_HREF[section];
 
-  const [notifGranted, setNotifGranted] = useState(false);
+  const [notifPermission, setNotifPermission] = useState<"granted" | "denied" | "default" | "unsupported">("default");
   const [bellOpen,     setBellOpen]     = useState(false);
   const [notifs,       setNotifs]       = useState<NotificationEntry[]>([]);
   const [notifsLoading, setNotifsLoading] = useState(false);
   const bellRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (typeof window !== "undefined" && "Notification" in window) {
-      setNotifGranted(Notification.permission === "granted");
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      setNotifPermission("unsupported");
+      return;
     }
+    function syncPermission() {
+      setNotifPermission(Notification.permission as "granted" | "denied" | "default");
+    }
+    syncPermission();
+    window.addEventListener("focus", syncPermission);
+    return () => window.removeEventListener("focus", syncPermission);
   }, []);
 
   useEffect(() => {
@@ -130,6 +137,10 @@ export function AppShell({ section, username, children }: AppShellProps) {
   }, [bellOpen]);
 
   async function handleBellOpen() {
+    if (notifPermission !== "granted") {
+      router.push("/stocks/settings");
+      return;
+    }
     if (bellOpen) { setBellOpen(false); return; }
     setBellOpen(true);
     if (notifs.length > 0) return;
@@ -201,17 +212,32 @@ export function AppShell({ section, username, children }: AppShellProps) {
             </span>
           </div>
 
-          {section === "stocks" && notifGranted && (
+          {section === "stocks" && notifPermission !== "unsupported" && (
             <div ref={bellRef} className="relative">
               <button
                 onClick={handleBellOpen}
-                title="Notification history"
-                className="w-9 h-9 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                title={
+                  notifPermission === "granted"
+                    ? "Notification history"
+                    : notifPermission === "denied"
+                      ? "Notifications blocked — open Settings"
+                      : "Enable notifications in Settings"
+                }
+                className={`relative w-9 h-9 flex items-center justify-center rounded-lg transition-colors cursor-pointer ${
+                  notifPermission === "granted"
+                    ? "text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                    : notifPermission === "denied"
+                      ? "text-amber-400 hover:text-amber-600 hover:bg-amber-50"
+                      : "text-blue-400 hover:text-blue-600 hover:bg-blue-50"
+                }`}
               >
                 <Bell size={15} />
+                {notifPermission === "granted" && (
+                  <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-emerald-500 ring-1 ring-white" />
+                )}
               </button>
 
-              {bellOpen && (
+              {bellOpen && notifPermission === "granted" && (
                 <div className="fixed inset-x-3 top-[3.75rem] sm:absolute sm:inset-x-auto sm:left-auto sm:right-0 sm:top-11 sm:w-80 rounded-xl border border-slate-200 bg-white shadow-card-hover overflow-hidden z-[60]">
                   <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between bg-slate-50">
                     <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
