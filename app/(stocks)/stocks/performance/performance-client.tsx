@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   BarChart3, TrendingUp, TrendingDown, Target, ShieldAlert,
-  Clock, RefreshCw, IndianRupee, Percent, Trophy, Flame,
+  Clock, RefreshCw, IndianRupee, Percent, Trophy, Flame, Info,
+  ChevronLeft, ChevronRight,
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -11,7 +14,7 @@ import {
 } from "recharts";
 
 interface Trade {
-  id: number;
+  id: number | string;
   signal_date: string;
   strategy: string;
   symbol: string;
@@ -47,10 +50,11 @@ interface PerformanceData {
 }
 
 const STRATEGY_META: Record<string, { label: string; color: string; bg: string; border: string; activeBtn: string }> = {
+  manish:        { label: "Manish Logic",   color: "text-blue-700",    bg: "bg-blue-50",    border: "border-blue-200",    activeBtn: "bg-blue-600 text-white"    },
   breakout:      { label: "Breakout",       color: "text-violet-700",  bg: "bg-violet-50",  border: "border-violet-200",  activeBtn: "bg-violet-600 text-white"  },
-  ema_pullback:  { label: "EMA Pullback",   color: "text-emerald-700", bg: "bg-emerald-50", border: "border-emerald-200", activeBtn: "bg-emerald-600 text-white" },
+  ema_pullback:  { label: "EMA Pullback",   color: "text-indigo-700", bg: "bg-indigo-50", border: "border-indigo-200", activeBtn: "bg-indigo-600 text-white" },
   vcp:           { label: "VCP",            color: "text-purple-700",  bg: "bg-purple-50",  border: "border-purple-200",  activeBtn: "bg-purple-600 text-white"  },
-  rs_resilience: { label: "RS Resilience",  color: "text-rose-700",    bg: "bg-rose-50",    border: "border-rose-200",    activeBtn: "bg-rose-600 text-white"    },
+  rs_resilience: { label: "RS Resilience",  color: "text-fuchsia-700",    bg: "bg-fuchsia-50",    border: "border-fuchsia-200",    activeBtn: "bg-fuchsia-600 text-white"    },
   mean_reversion:  { label: "Mean Reversion",  color: "text-teal-700",   bg: "bg-teal-50",   border: "border-teal-200",   activeBtn: "bg-teal-600 text-white"   },
   fib_pullback:    { label: "Fib Pullback",    color: "text-cyan-700",   bg: "bg-cyan-50",   border: "border-cyan-200",   activeBtn: "bg-cyan-600 text-white"   },
   fear_reversion:  { label: "Fear Reversion",  color: "text-orange-700", bg: "bg-orange-50", border: "border-orange-200", activeBtn: "bg-orange-600 text-white" },
@@ -64,11 +68,32 @@ const EXIT_META: Record<string, { label: string; color: string; bg: string }> = 
 
 type CurrentPrices = Record<string, { price: number; change: number; changePct: number } | null>;
 
+type TabKey = "all" | "manish" | "breakout" | "ema_pullback" | "vcp" | "rs_resilience" | "mean_reversion" | "fib_pullback" | "fear_reversion";
+
+const VALID_TABS = new Set<string>([
+  "all", "manish", "breakout", "ema_pullback", "vcp", "rs_resilience", "mean_reversion", "fib_pullback", "fear_reversion",
+]);
+
+const TRADES_PAGE_SIZE = 20;
+
 export function PerformanceClient() {
+  const searchParams = useSearchParams();
   const [data, setData]               = useState<PerformanceData | null>(null);
   const [loading, setLoading]         = useState(true);
   const [currentPrices, setCurrentPrices] = useState<CurrentPrices>({});
-  const [tab, setTab]                 = useState<"all" | "breakout" | "ema_pullback" | "vcp" | "rs_resilience" | "mean_reversion" | "fib_pullback" | "fear_reversion">("all");
+  const [tab, setTab] = useState<TabKey>("all");
+  const [tradePage, setTradePage] = useState(1);
+
+  useEffect(() => {
+    const s = searchParams.get("strategy");
+    if (s && VALID_TABS.has(s) && s !== "all") {
+      setTab(s as TabKey);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    setTradePage(1);
+  }, [tab]);
 
   async function fetchData() {
     setLoading(true);
@@ -114,6 +139,16 @@ export function PerformanceClient() {
     t => tab === "all" || t.strategy === tab
   );
 
+  const sortedTrades = [...filteredTrades].sort((a, b) =>
+    String(b.signal_date).localeCompare(String(a.signal_date))
+  );
+  const tradeTotalPages = Math.max(1, Math.ceil(sortedTrades.length / TRADES_PAGE_SIZE));
+  const safeTradePage = Math.min(tradePage, tradeTotalPages);
+  const paginatedTrades = sortedTrades.slice(
+    (safeTradePage - 1) * TRADES_PAGE_SIZE,
+    safeTradePage * TRADES_PAGE_SIZE
+  );
+
   // Build cumulative P&L chart data
   const pnlChartData = (() => {
     const closed = [...filteredTrades]
@@ -152,8 +187,8 @@ export function PerformanceClient() {
               <BarChart3 size={20} className="text-amber-600" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-slate-900">Strategy Performance</h1>
-              <p className="text-xs text-muted">₹10,000 per trade · Simulated exit at next scanner run</p>
+              <h1 className="text-lg font-bold text-slate-900">Simulated Performance</h1>
+              <p className="text-xs text-muted">₹10,000 auto-buy per signal · Hypothetical outcomes · Not your real trades</p>
             </div>
           </div>
           <button
@@ -167,7 +202,7 @@ export function PerformanceClient() {
         </div>
 
         {/* Strategy filter tabs */}
-        <div className="flex flex-wrap gap-2 mt-3">
+        <div className="md:sticky md:top-14 md:z-10 md:bg-white md:border-b md:border-slate-100 md:pb-2 flex flex-wrap gap-2 mt-3">
           <button
             onClick={() => setTab("all")}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
@@ -193,6 +228,11 @@ export function PerformanceClient() {
         </div>
       </div>
 
+      <div className="mx-4 md:mx-6 mt-3 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 flex items-center gap-2 text-xs text-amber-800">
+        <Info size={14} className="shrink-0" />
+        <span>These are system-wide simulated results. For your actual trades, go to <Link href="/stocks/portfolio" className="font-semibold underline">Portfolio</Link>.</span>
+      </div>
+
       {loading ? (
         <div className="flex flex-col items-center justify-center py-20 gap-3">
           <div className="w-8 h-8 border-2 border-amber-200 border-t-amber-600 rounded-full animate-spin" />
@@ -202,6 +242,29 @@ export function PerformanceClient() {
         <EmptyState />
       ) : (
         <div className="px-4 md:px-6 py-5 space-y-6">
+
+          {/* Per-strategy summary row */}
+          {tab === "all" && data.stats.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {data.stats.map((s) => {
+                const meta = STRATEGY_META[s.strategy];
+                const pnl = Number(s.total_pnl);
+                return (
+                  <button
+                    key={s.strategy}
+                    onClick={() => setTab(s.strategy as typeof tab)}
+                    className={`shrink-0 px-3 py-2 rounded-xl border text-left ${meta?.bg ?? "bg-slate-50"} ${meta?.border ?? "border-slate-200"}`}
+                  >
+                    <p className={`text-[10px] font-semibold ${meta?.color ?? "text-slate-600"}`}>{meta?.label ?? s.strategy}</p>
+                    <p className="text-xs font-bold text-slate-900">{Number(s.wins)}W/{Number(s.losses)}L</p>
+                    <p className={`text-xs font-semibold ${pnl >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                      {pnl >= 0 ? "+" : ""}₹{Math.abs(pnl).toFixed(0)}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {/* ── KPI cards ─────────────────────────────────────── */}
           {activeStats && (
@@ -321,7 +384,11 @@ export function PerformanceClient() {
           <div className="bg-white rounded-2xl shadow-card overflow-hidden">
             <div className="px-4 py-3 border-b border-border flex items-center justify-between">
               <h3 className="text-sm font-semibold text-slate-900">Trade History</h3>
-              <span className="text-xs text-muted">{filteredTrades.length} trades</span>
+              <span className="text-xs text-slate-500">
+                {sortedTrades.length === 0
+                  ? "0 trades"
+                  : `Showing ${(safeTradePage - 1) * TRADES_PAGE_SIZE + 1}–${Math.min(safeTradePage * TRADES_PAGE_SIZE, sortedTrades.length)} of ${sortedTrades.length}`}
+              </span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -339,7 +406,7 @@ export function PerformanceClient() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {filteredTrades.map(t => {
+                  {paginatedTrades.map(t => {
                     const meta = STRATEGY_META[t.strategy];
                     const exit = t.exit_reason ? EXIT_META[t.exit_reason] : null;
                     const liveData = t.status === "open" ? (currentPrices[t.symbol] ?? null) : null;
@@ -404,6 +471,31 @@ export function PerformanceClient() {
                 </tbody>
               </table>
             </div>
+            {tradeTotalPages > 1 && (
+              <div className="px-4 py-3 border-t border-border flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => setTradePage((p) => Math.max(1, p - 1))}
+                  disabled={safeTradePage === 1}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronLeft size={14} />
+                  Prev
+                </button>
+                <span className="text-xs font-medium text-slate-500">
+                  Page <span className="font-bold text-amber-700">{safeTradePage}</span> of {tradeTotalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setTradePage((p) => Math.min(tradeTotalPages, p + 1))}
+                  disabled={safeTradePage === tradeTotalPages}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Next
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Exit logic explanation */}

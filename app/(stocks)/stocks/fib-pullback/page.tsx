@@ -1,5 +1,4 @@
-import { FibPullbackClient } from "./fib-pullback-client";
-
-export default function FibPullbackPage() {
-  return <FibPullbackClient />;
+import { redirect } from "next/navigation";
+export default function Page() {
+  redirect("/stocks?strategy=fib_pullback&status=open");
 }

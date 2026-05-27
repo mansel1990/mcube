@@ -1,5 +1,4 @@
-import { RsResilienceClient } from "./rs-resilience-client";
-
-export default function RsResiliencePage() {
-  return <RsResilienceClient />;
+import { redirect } from "next/navigation";
+export default function Page() {
+  redirect("/stocks?strategy=rs_resilience&status=open");
 }

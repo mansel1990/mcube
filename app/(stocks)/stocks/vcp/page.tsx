@@ -1,5 +1,4 @@
-import { VcpClient } from "./vcp-client";
-
-export default function VcpPage() {
-  return <VcpClient />;
+import { redirect } from "next/navigation";
+export default function Page() {
+  redirect("/stocks?strategy=vcp&status=open");
 }

@@ -1,5 +1,4 @@
-import { EmaPullbackClient } from "./ema-pullback-client";
-
-export default function EmaPullbackPage() {
-  return <EmaPullbackClient />;
+import { redirect } from "next/navigation";
+export default function Page() {
+  redirect("/stocks?strategy=ema_pullback&status=open");
 }

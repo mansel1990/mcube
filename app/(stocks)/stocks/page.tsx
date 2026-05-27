@@ -1,9 +1,10 @@
-import { SuggestionsPage } from "@/components/stocks/suggestions/suggestions-page";
+import { Suspense } from "react";
+import { UnifiedSignalsPage } from "@/components/stocks/unified-signals-page";
 
-export default function StocksPage() {
+export default function StocksHomePage() {
   return (
-    <div className="h-[calc(100vh-3.5rem-4rem)] md:h-[calc(100vh-3.5rem)] overflow-hidden flex flex-col">
-      <SuggestionsPage />
-    </div>
+    <Suspense fallback={<div className="p-8 text-center text-sm text-slate-400">Loading signals…</div>}>
+      <UnifiedSignalsPage />
+    </Suspense>
   );
 }

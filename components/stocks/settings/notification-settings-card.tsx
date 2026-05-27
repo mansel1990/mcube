@@ -1,0 +1,120 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { Bell, Check } from "lucide-react";
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  return new Uint8Array([...rawData].map((c) => c.charCodeAt(0)));
+}
+
+type PermState = "granted" | "denied" | "default" | "unsupported";
+
+export function NotificationSettingsCard() {
+  const [permState, setPermState] = useState<PermState>("unsupported");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    setPermState(Notification.permission as PermState);
+  }, []);
+
+  async function handleEnable() {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const permission = await Notification.requestPermission();
+      setPermState(permission as PermState);
+      if (permission !== "granted") return;
+
+      await navigator.serviceWorker.register("/sw.js");
+      const registration = await navigator.serviceWorker.ready;
+      const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+      if (!vapidKey) throw new Error("VAPID key not configured");
+
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapidKey),
+      });
+
+      await fetch("/api/stocks/push/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(subscription.toJSON()),
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to enable notifications");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDisable() {
+    setLoading(true);
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const sub = await registration.pushManager.getSubscription();
+      if (sub) {
+        await fetch("/api/stocks/push/unsubscribe", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: sub.endpoint }),
+        });
+        await sub.unsubscribe();
+      }
+      setPermState(Notification.permission as PermState);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (permState === "unsupported") return null;
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="flex items-start gap-3">
+        <Bell size={18} className="text-primary shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-slate-900">Daily Buy Alerts</p>
+          <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+            Push at 9:00 AM with today&apos;s buy ideas, and at 6:30 PM when the scanner finishes.
+            On iOS, add to home screen first, then enable here.
+          </p>
+
+          {permState === "granted" ? (
+            <div className="mt-3 flex items-center gap-3">
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
+                <Check size={14} /> Notifications enabled
+              </span>
+              <button
+                onClick={handleDisable}
+                disabled={loading}
+                className="text-xs text-slate-500 hover:text-slate-800 underline disabled:opacity-50"
+              >
+                Disable
+              </button>
+            </div>
+          ) : permState === "denied" ? (
+            <p className="mt-3 text-xs text-amber-700">
+              Notifications are blocked in your browser. Enable them in browser settings.
+            </p>
+          ) : (
+            <button
+              onClick={handleEnable}
+              disabled={loading}
+              className="mt-3 px-4 py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 disabled:opacity-50"
+            >
+              {loading ? "Enabling…" : "Enable Notifications"}
+            </button>
+          )}
+
+          {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
