@@ -437,7 +437,7 @@ Both login pages use the MCube dark theme (`#050505` background, `#2563EB` prima
 ## Implementation Phases
 
 ### Phase 1 — Foundation (do this first)
-1. Create `docs/backoffice-plan.md` ✅ (this file)
+1. Create `docs/plans/admin/backoffice-plan.md` ✅ (this file)
 2. Install packages:
    ```bash
    npm install better-auth mongoose web-push

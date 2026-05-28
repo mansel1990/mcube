@@ -256,7 +256,7 @@ export function PerformanceClient() {
                     className={`shrink-0 px-3 py-2 rounded-xl border text-left ${meta?.bg ?? "bg-slate-50"} ${meta?.border ?? "border-slate-200"}`}
                   >
                     <p className={`text-[10px] font-semibold ${meta?.color ?? "text-slate-600"}`}>{meta?.label ?? s.strategy}</p>
-                    <p className="text-xs font-bold text-slate-900">{Number(s.wins)}W/{Number(s.losses)}L</p>
+                    <p className="text-xs font-bold text-slate-900">{Number(s.wins)}T/{Number(s.losses)}SL/{Number(s.closed_trades)-Number(s.wins)-Number(s.losses)}TO</p>
                     <p className={`text-xs font-semibold ${pnl >= 0 ? "text-emerald-600" : "text-red-600"}`}>
                       {pnl >= 0 ? "+" : ""}₹{Math.abs(pnl).toFixed(0)}
                     </p>
@@ -281,7 +281,7 @@ export function PerformanceClient() {
                 icon={<Percent size={18} />}
                 label="Win Rate"
                 value={`${winRate}%`}
-                sub={`${activeStats.wins}W / ${activeStats.losses}L`}
+                sub={`${activeStats.wins}T / ${activeStats.losses}SL / ${Number(activeStats.closed_trades) - Number(activeStats.wins) - Number(activeStats.losses)}TO`}
                 positive={winRate >= 50}
                 color="emerald"
               />
