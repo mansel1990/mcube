@@ -19,8 +19,18 @@ export function getTodayIST(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 }
 
-export function isKiteTokenValid(tokenDate: string): boolean {
-  return tokenDate >= getTodayIST();
+/** Normalize DB DATE / ISO / Date to YYYY-MM-DD (IST for Date objects). */
+export function normalizeTokenDate(value: string | Date | unknown): string {
+  if (value instanceof Date) {
+    return value.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  }
+  const s = String(value);
+  const match = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : s;
+}
+
+export function isKiteTokenValid(tokenDate: string | Date | unknown): boolean {
+  return normalizeTokenDate(tokenDate) >= getTodayIST();
 }
 
 export interface KiteSessionRow {
@@ -36,7 +46,9 @@ export async function getKiteSession(userId: string): Promise<KiteSessionRow | n
     SELECT user_id, access_token, token_date, connected_at
     FROM kite_sessions WHERE user_id = ${userId}
   `;
-  return (rows[0] as KiteSessionRow | undefined) ?? null;
+  const row = rows[0] as KiteSessionRow | undefined;
+  if (!row) return null;
+  return { ...row, token_date: normalizeTokenDate(row.token_date) };
 }
 
 export async function saveKiteSession(userId: string, accessToken: string, tokenDate: string) {

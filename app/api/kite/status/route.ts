@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireStocksSession } from "@/lib/stocks/require-stocks-session";
-import { getKiteSession, isKiteTokenValid } from "@/lib/kite/session";
+import { getKiteSession, isKiteTokenValid, normalizeTokenDate } from "@/lib/kite/session";
 
 export async function GET() {
   const session = await requireStocksSession();
@@ -16,7 +16,7 @@ export async function GET() {
   return NextResponse.json({
     connected: valid,
     expired: !valid,
-    tokenDate: row.token_date,
+    tokenDate: normalizeTokenDate(row.token_date),
     connectedAt: row.connected_at,
   });
 }
