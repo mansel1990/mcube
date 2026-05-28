@@ -1,0 +1,17 @@
+{
+  "name": "mcube-kite-relay",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Kite order relay — runs on DigitalOcean static IP",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^17.3.1"
+  }
+}

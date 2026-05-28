@@ -1,8 +1,12 @@
 "use client";
 
+import { Suspense } from "react";
 import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { NotificationSettingsCard } from "@/components/stocks/settings/notification-settings-card";
+import { KiteSettingsCard } from "@/components/stocks/settings/kite-settings-card";
+import { UsersSettingsCard } from "@/components/stocks/settings/users-settings-card";
+import { TradeSettingsCard } from "@/components/stocks/settings/trade-settings-card";
 
 export default function StocksSettingsPage() {
   const [currentPassword, setCurrentPassword] = useState("");
@@ -44,6 +48,18 @@ export default function StocksSettingsPage() {
         <h1 className="text-2xl font-bold text-slate-900">Settings</h1>
 
         <section>
+          <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Kite</h2>
+          <Suspense fallback={<div className="h-32 rounded-xl bg-white border border-slate-200 animate-pulse" />}>
+            <KiteSettingsCard />
+          </Suspense>
+        </section>
+
+        <section>
+          <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Trading</h2>
+          <TradeSettingsCard />
+        </section>
+
+        <section>
           <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Account</h2>
           <div className="rounded-xl border border-slate-200 bg-white p-6">
             <h3 className="text-sm font-semibold text-slate-900 mb-4">Change Password</h3>
@@ -83,6 +99,11 @@ export default function StocksSettingsPage() {
               </button>
             </form>
           </div>
+        </section>
+
+        <section>
+          <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Users</h2>
+          <UsersSettingsCard />
         </section>
 
         <section>

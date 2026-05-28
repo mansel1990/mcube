@@ -8,6 +8,8 @@ import { SOURCE_META, sourceToStrategyKey } from "@/lib/stocks/types";
 import { StrategyInfoDrawer, type StrategyKey } from "./strategy-info-drawer";
 import { LogBuySheet } from "../log-buy-sheet";
 import { StrategyBadge, PnlBadge } from "../strategy-badge";
+import { KiteTradeActions } from "./kite-trade-actions";
+import type { PlacedOrder } from "../kite-order-toast";
 
 type CurrentPrice = { price: number; change: number; changePct: number } | null;
 
@@ -26,9 +28,22 @@ interface Props {
   currentPrice?: CurrentPrice;
   logged?: boolean;
   onLogged?: () => void;
+  kiteConnected?: boolean;
+  holdingQty?: number;
+  defaultTradeAmount?: number;
+  onOrderPlaced?: (order: PlacedOrder) => void;
 }
 
-export function UnifiedSignalCard({ signal, currentPrice, logged, onLogged }: Props) {
+export function UnifiedSignalCard({
+  signal,
+  currentPrice,
+  logged,
+  onLogged,
+  kiteConnected,
+  holdingQty = 0,
+  defaultTradeAmount = 10000,
+  onOrderPlaced,
+}: Props) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
   const meta = SOURCE_META[signal.source];
@@ -156,12 +171,32 @@ export function UnifiedSignalCard({ signal, currentPrice, logged, onLogged }: Pr
             </div>
           )}
 
-          <div className="pt-2 border-t border-slate-100">
+          <div className="pt-2 border-t border-slate-100 space-y-2">
+            {kiteConnected && onOrderPlaced && (
+              <KiteTradeActions
+                ticker={signal.ticker}
+                ltp={live}
+                holdingQty={holdingQty}
+                defaultTradeAmount={defaultTradeAmount}
+                signalRef={signal.id}
+                strategy={signal.source}
+                targetPrice={signal.target}
+                stopLoss={signal.stopLoss}
+                onOrderPlaced={onOrderPlaced}
+              />
+            )}
             {logged ? (
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-emerald-700">✓ In portfolio</span>
                 <Link href="/stocks/portfolio" className="text-xs text-emerald-600 hover:underline">View →</Link>
               </div>
+            ) : kiteConnected ? (
+              <button
+                onClick={() => setLogOpen(true)}
+                className="w-full py-1.5 text-xs font-medium text-slate-500 hover:text-slate-700"
+              >
+                Log buy manually
+              </button>
             ) : (
               <button
                 onClick={() => setLogOpen(true)}

@@ -72,6 +72,8 @@ async function handler(request: NextRequest) {
         tickers: [],
         sent: 0,
         sentAt: new Date(),
+        url: "/stocks?status=open",
+        tag: "scan-brief",
         meta: { totalCount: 0, bySource: {}, lastScanDate },
       });
       return NextResponse.json({ sent: 0, skipped: "zero signals" });
@@ -80,22 +82,34 @@ async function handler(request: NextRequest) {
     return NextResponse.json({ error: "Invalid event" }, { status: 400 });
   }
 
-  const payload = JSON.stringify(pushMsg);
   const topTickers = fresh.slice(0, 5).map((s) => s.ticker);
+  const eventType = event === "morning" ? "morning" : "scan";
 
   await connectToDatabase();
+
+  const log = await NotificationLog.create({
+    title: pushMsg.title,
+    body: pushMsg.body,
+    event: eventType,
+    tickers: topTickers,
+    sent: 0,
+    sentAt: new Date(),
+    url: pushMsg.url,
+    tag: pushMsg.tag,
+    meta: { totalCount: pushMsg.totalCount, bySource: pushMsg.bySource, lastScanDate },
+  });
+
+  const payload = JSON.stringify({
+    title: pushMsg.title,
+    body: pushMsg.body,
+    url: pushMsg.url,
+    tag: pushMsg.tag,
+    notificationId: String(log._id),
+  });
+
   const subscriptions = await PushSubscription.find({});
 
   if (subscriptions.length === 0) {
-    await NotificationLog.create({
-      title: pushMsg.title,
-      body: pushMsg.body,
-      event: event === "morning" ? "morning" : "scan",
-      tickers: topTickers,
-      sent: 0,
-      sentAt: new Date(),
-      meta: { totalCount: pushMsg.totalCount, bySource: pushMsg.bySource, lastScanDate },
-    });
     return NextResponse.json({ sent: 0, failed: 0 });
   }
 
@@ -122,16 +136,7 @@ async function handler(request: NextRequest) {
   }
 
   const sent = results.filter((r) => r.status === "fulfilled").length;
-
-  await NotificationLog.create({
-    title: pushMsg.title,
-    body: pushMsg.body,
-    event: event === "morning" ? "morning" : "scan",
-    tickers: topTickers,
-    sent,
-    sentAt: new Date(),
-    meta: { totalCount: pushMsg.totalCount, bySource: pushMsg.bySource, lastScanDate },
-  });
+  await NotificationLog.updateOne({ _id: log._id }, { sent });
 
   return NextResponse.json({ sent, failed: results.length - sent, deleted: toDelete.length });
 }

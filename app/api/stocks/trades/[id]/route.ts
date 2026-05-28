@@ -36,6 +36,8 @@ export async function PATCH(
     if (body.quantity != null) trade.quantity = Number(body.quantity);
     if (body.entryPrice != null) trade.entryPrice = Number(body.entryPrice);
     if (body.notes !== undefined) trade.notes = body.notes;
+    if (body.target !== undefined) trade.target = body.target != null ? Number(body.target) : null;
+    if (body.stopLoss !== undefined) trade.stopLoss = body.stopLoss != null ? Number(body.stopLoss) : null;
   }
 
   await trade.save();

@@ -9,7 +9,7 @@ import {
   BarChart3, Briefcase,
 } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 const NAV_CONFIG = {
   admin: [
@@ -72,10 +72,12 @@ interface NotificationEntry {
   _id: string;
   title: string;
   body: string;
-  event: "open" | "close" | "morning" | "scan";
+  event: "open" | "close" | "morning" | "scan" | "kite";
   tickers: string[];
   sent: number;
   sentAt: string;
+  url: string;
+  read: boolean;
 }
 
 function userInitials(name: string) {
@@ -109,8 +111,30 @@ export function AppShell({ section, username, children }: AppShellProps) {
   const [notifPermission, setNotifPermission] = useState<"granted" | "denied" | "default" | "unsupported">("default");
   const [bellOpen,     setBellOpen]     = useState(false);
   const [notifs,       setNotifs]       = useState<NotificationEntry[]>([]);
+  const [unreadCount,  setUnreadCount]  = useState(0);
   const [notifsLoading, setNotifsLoading] = useState(false);
   const bellRef = useRef<HTMLDivElement>(null);
+
+  const fetchNotifications = useCallback(async () => {
+    if (notifPermission !== "granted") return;
+    try {
+      const res = await fetch("/api/stocks/notifications");
+      if (res.ok) {
+        const data = await res.json();
+        setNotifs(data.notifications ?? []);
+        setUnreadCount(data.unreadCount ?? 0);
+      }
+    } catch {
+      // ignore
+    }
+  }, [notifPermission]);
+
+  useEffect(() => {
+    if (section !== "stocks" || notifPermission !== "granted") return;
+    fetchNotifications();
+    const id = setInterval(fetchNotifications, 60_000);
+    return () => clearInterval(id);
+  }, [section, notifPermission, fetchNotifications]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("Notification" in window)) {
@@ -143,14 +167,28 @@ export function AppShell({ section, username, children }: AppShellProps) {
     }
     if (bellOpen) { setBellOpen(false); return; }
     setBellOpen(true);
-    if (notifs.length > 0) return;
     setNotifsLoading(true);
     try {
-      const res = await fetch("/api/stocks/notifications");
-      if (res.ok) setNotifs(await res.json());
+      await fetchNotifications();
     } finally {
       setNotifsLoading(false);
     }
+  }
+
+  async function handleNotifClick(n: NotificationEntry) {
+    if (!n.read) {
+      await fetch(`/api/stocks/notifications/${n._id}/read`, { method: "POST" });
+      setNotifs((prev) => prev.map((x) => (x._id === n._id ? { ...x, read: true } : x)));
+      setUnreadCount((c) => Math.max(0, c - 1));
+    }
+    setBellOpen(false);
+    router.push(n.url || "/stocks");
+  }
+
+  async function handleMarkAllRead() {
+    await fetch("/api/stocks/notifications/read-all", { method: "POST" });
+    setNotifs((prev) => prev.map((x) => ({ ...x, read: true })));
+    setUnreadCount(0);
   }
 
   async function handleLogout() {
@@ -232,8 +270,10 @@ export function AppShell({ section, username, children }: AppShellProps) {
                 }`}
               >
                 <Bell size={15} />
-                {notifPermission === "granted" && (
-                  <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-emerald-500 ring-1 ring-white" />
+                {notifPermission === "granted" && unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white ring-2 ring-white">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
                 )}
               </button>
 
@@ -241,9 +281,16 @@ export function AppShell({ section, username, children }: AppShellProps) {
                 <div className="fixed inset-x-3 top-[3.75rem] sm:absolute sm:inset-x-auto sm:left-auto sm:right-0 sm:top-11 sm:w-80 rounded-xl border border-slate-200 bg-white shadow-card-hover overflow-hidden z-[60]">
                   <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between bg-slate-50">
                     <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                      Notification History
+                      Notifications
                     </span>
-                    <Bell size={12} className="text-slate-400" />
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={handleMarkAllRead}
+                        className="text-[10px] font-semibold text-blue-600 hover:underline"
+                      >
+                        Mark all read
+                      </button>
+                    )}
                   </div>
 
                   <div className="max-h-[min(20rem,60vh)] sm:max-h-80 overflow-y-auto">
@@ -258,22 +305,31 @@ export function AppShell({ section, username, children }: AppShellProps) {
                       </div>
                     )}
                     {!notifsLoading && notifs.map((n) => (
-                      <div key={n._id} className="px-4 py-3 border-b border-slate-100 last:border-0">
+                      <button
+                        key={n._id}
+                        type="button"
+                        onClick={() => handleNotifClick(n)}
+                        className={`w-full text-left px-4 py-3 border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors ${
+                          !n.read ? "border-l-2 border-l-blue-500 bg-blue-50/30" : "opacity-75"
+                        }`}
+                      >
                         <div className="flex items-start justify-between gap-2 mb-1">
-                          <span className="text-xs font-semibold text-slate-900 leading-tight">{n.title}</span>
+                          <span className={`text-xs leading-tight ${n.read ? "font-medium text-slate-700" : "font-semibold text-slate-900"}`}>
+                            {n.title}
+                          </span>
                           <span className="text-[10px] text-slate-400 shrink-0">{timeAgo(n.sentAt)}</span>
                         </div>
                         <p className="text-[11px] text-slate-600 leading-relaxed">{n.body}</p>
                         {n.tickers.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-1.5">
-                            {n.tickers.map((t) => (
+                            {[...new Set(n.tickers)].map((t) => (
                               <span key={t} className="text-[9px] px-1.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600">
                                 {t}
                               </span>
                             ))}
                           </div>
                         )}
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </div>

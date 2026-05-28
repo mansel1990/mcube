@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { AppShell } from "@/components/app-shell";
+import { PushReadListener } from "@/components/stocks/push-read-listener";
+import { KiteStatusBanner } from "@/components/stocks/kite-status-banner";
 
 export default async function StocksLayout({
   children,
@@ -19,6 +21,8 @@ export default async function StocksLayout({
 
   return (
     <AppShell section="stocks" username={username}>
+      <PushReadListener />
+      <KiteStatusBanner />
       {children}
     </AppShell>
   );

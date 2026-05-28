@@ -9,8 +9,11 @@ import type { SignalSource, UnifiedSignal } from "@/lib/stocks/types";
 import { SOURCE_META, SOURCE_PRIORITY } from "@/lib/stocks/types";
 import { UnifiedSignalCard } from "./swing/unified-signal-card";
 import { StrategyBadge, PnlBadge } from "./strategy-badge";
+import { KiteOrderToast, type PlacedOrder } from "./kite-order-toast";
 
 type CurrentPrices = Record<string, { price: number; change: number; changePct: number } | null>;
+
+type KiteHolding = { tradingsymbol: string; quantity: number };
 
 type SimClosedTrade = {
   id: number | string;
@@ -47,6 +50,10 @@ export function UnifiedSignalsPage() {
   const [simClosed, setSimClosed] = useState<SimClosedTrade[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [kiteConnected, setKiteConnected] = useState(false);
+  const [kiteHoldings, setKiteHoldings] = useState<Record<string, number>>({});
+  const [defaultTradeAmount, setDefaultTradeAmount] = useState(10000);
+  const [placedOrder, setPlacedOrder] = useState<PlacedOrder | null>(null);
 
   const lastScanDate = useMemo(() => {
     const dates = signals.filter((s) => s.status === "open").map((s) => s.signalDate);
@@ -82,10 +89,12 @@ export function UnifiedSignalsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [sigRes, tradesRes, perfRes] = await Promise.all([
+      const [sigRes, tradesRes, perfRes, kiteStatusRes, settingsRes] = await Promise.all([
         fetch("/api/stocks/signals/all"),
         fetch("/api/stocks/trades?status=open"),
         fetch("/api/stocks/swing/performance"),
+        fetch("/api/kite/status"),
+        fetch("/api/stocks/settings"),
       ]);
       if (!sigRes.ok) throw new Error("Failed to load signals");
       const payload = await sigRes.json();
@@ -107,6 +116,34 @@ export function UnifiedSignalsPage() {
             isWithinDays(String(t.exit_date), 14)
         );
         setSimClosed(closed);
+      }
+
+      if (settingsRes.ok) {
+        const s = await settingsRes.json();
+        setDefaultTradeAmount(s.defaultTradeAmount ?? 10000);
+      }
+
+      let connected = false;
+      if (kiteStatusRes.ok) {
+        const ks = await kiteStatusRes.json();
+        connected = ks.connected === true;
+        setKiteConnected(connected);
+      } else {
+        setKiteConnected(false);
+      }
+
+      if (connected) {
+        const holdRes = await fetch("/api/kite/holdings");
+        if (holdRes.ok) {
+          const holdings = (await holdRes.json()) as KiteHolding[];
+          const map: Record<string, number> = {};
+          for (const h of holdings) {
+            map[h.tradingsymbol.toUpperCase()] = h.quantity;
+          }
+          setKiteHoldings(map);
+        }
+      } else {
+        setKiteHoldings({});
       }
 
       const openTickers = [...new Set(all.filter((s) => s.status === "open").map((s) => s.ticker))];
@@ -177,8 +214,24 @@ export function UnifiedSignalsPage() {
       ? filtered.length > 0
       : filtered.length > 0 || filteredSimClosed.length > 0;
 
+  const handleOrderPlaced = useCallback((order: PlacedOrder) => {
+    setPlacedOrder(order);
+    // Refresh holdings after a short delay
+    setTimeout(() => {
+      fetch("/api/kite/holdings")
+        .then((r) => (r.ok ? r.json() : []))
+        .then((holdings: KiteHolding[]) => {
+          const map: Record<string, number> = {};
+          for (const h of holdings) map[h.tradingsymbol.toUpperCase()] = h.quantity;
+          setKiteHoldings(map);
+        })
+        .catch(() => {});
+    }, 2000);
+  }, []);
+
   return (
     <div className="min-h-full bg-[#F8FAFC]">
+      <KiteOrderToast order={placedOrder} onDismiss={() => setPlacedOrder(null)} />
       <div className="md:sticky md:top-14 md:z-10 bg-white border-b border-slate-200">
         <div className="px-4 md:px-6 py-3 md:py-4">
           <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -323,6 +376,10 @@ export function UnifiedSignalsPage() {
                     currentPrice={prices[s.ticker] ?? undefined}
                     logged={loggedRefs.has(s.id)}
                     onLogged={fetchAll}
+                    kiteConnected={kiteConnected}
+                    holdingQty={kiteHoldings[s.ticker.toUpperCase()] ?? 0}
+                    defaultTradeAmount={defaultTradeAmount}
+                    onOrderPlaced={handleOrderPlaced}
                   />
                 ))}
               {statusFilter === "open" &&
@@ -333,6 +390,10 @@ export function UnifiedSignalsPage() {
                     currentPrice={prices[s.ticker] ?? undefined}
                     logged={loggedRefs.has(s.id)}
                     onLogged={fetchAll}
+                    kiteConnected={kiteConnected}
+                    holdingQty={kiteHoldings[s.ticker.toUpperCase()] ?? 0}
+                    defaultTradeAmount={defaultTradeAmount}
+                    onOrderPlaced={handleOrderPlaced}
                   />
                 ))}
               {statusFilter === "closed" && showSimClosed &&
