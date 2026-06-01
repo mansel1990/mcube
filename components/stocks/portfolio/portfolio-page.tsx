@@ -1,12 +1,28 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Briefcase, RefreshCw, AlertCircle } from "lucide-react";
+import {
+  Briefcase,
+  RefreshCw,
+  AlertCircle,
+  LayoutDashboard,
+  BookOpen,
+  Building2,
+  Zap,
+} from "lucide-react";
 import type { SignalSource } from "@/lib/stocks/types";
+import {
+  PORTFOLIO_TRACKING_START_LABEL,
+  computePortfolioSummary,
+  filterTradesForTracking,
+  fmtInr,
+  formatDisplayDate,
+} from "@/lib/stocks/portfolio-analytics";
 import { CloseTradeSheet } from "./close-trade-sheet";
-import { StrategyBadge } from "../strategy-badge";
+import { PortfolioOverview } from "./portfolio-overview";
+import { PnlBadge, StrategyBadge } from "../strategy-badge";
 
 interface KiteHolding {
   tradingsymbol: string;
@@ -50,13 +66,29 @@ interface UserTrade {
   unrealizedPnl?: number | null;
   unrealizedPnlPct?: number | null;
   realizedPnl?: number;
+  realizedPnlPct?: number;
   livePrice?: number;
 }
 
-type Tab = "holdings" | "positions" | "logged";
+type Tab = "overview" | "trades" | "holdings" | "positions";
+
+const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
+  { id: "overview", label: "Overview", icon: <LayoutDashboard size={14} /> },
+  { id: "trades", label: "Logged Trades", icon: <BookOpen size={14} /> },
+  { id: "holdings", label: "Holdings", icon: <Building2 size={14} /> },
+  { id: "positions", label: "Positions", icon: <Zap size={14} /> },
+];
+
+function normalizeTab(raw: string | null): Tab {
+  if (raw === "logged") return "trades";
+  if (raw === "trades" || raw === "holdings" || raw === "positions" || raw === "overview") {
+    return raw;
+  }
+  return "overview";
+}
 
 function fmt(n: number, decimals = 0) {
-  return n.toLocaleString("en-IN", { maximumFractionDigits: decimals, minimumFractionDigits: decimals });
+  return fmtInr(n, decimals);
 }
 
 function pnlClass(n: number) {
@@ -66,14 +98,13 @@ function pnlClass(n: number) {
 export function PortfolioPage() {
   const params = useSearchParams();
   const router = useRouter();
-  const tab = (["holdings", "positions", "logged"] as Tab[]).includes(params.get("tab") as Tab)
-    ? (params.get("tab") as Tab)
-    : "holdings";
+  const tab = normalizeTab(params.get("tab"));
 
   const [holdings, setHoldings] = useState<KiteHolding[]>([]);
   const [positions, setPositions] = useState<KitePosition[]>([]);
   const [trades, setTrades] = useState<UserTrade[]>([]);
   const [kiteError, setKiteError] = useState<string | null>(null);
+  const [kiteConnected, setKiteConnected] = useState(false);
   const [loading, setLoading] = useState(true);
   const [closeTarget, setCloseTarget] = useState<UserTrade | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -92,10 +123,12 @@ export function PortfolioPage() {
 
       if (holdRes.ok) {
         setHoldings(await holdRes.json());
+        setKiteConnected(true);
       } else if (holdRes.status === 401) {
         const d = await holdRes.json();
         setKiteError(d.error || "Connect Kite in Settings");
         setHoldings([]);
+        setKiteConnected(false);
       }
 
       if (posRes.ok) {
@@ -110,11 +143,13 @@ export function PortfolioPage() {
     }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
-  function setTab(t: Tab) {
+  function setTabAndUrl(t: Tab) {
     const next = new URLSearchParams(params.toString());
-    if (t === "holdings") next.delete("tab");
+    if (t === "overview") next.delete("tab");
     else next.set("tab", t);
     router.replace(`/stocks/portfolio?${next.toString()}`, { scroll: false });
   }
@@ -132,163 +167,286 @@ export function PortfolioPage() {
     fetchData();
   }
 
+  const trackedTrades = useMemo(() => filterTradesForTracking(trades), [trades]);
+  const summary = useMemo(() => computePortfolioSummary(trackedTrades), [trackedTrades]);
+
   const openTrades = trades.filter((t) => t.status === "open");
   const closedTrades = trades.filter((t) => t.status === "closed");
   const holdingsPnl = holdings.reduce((s, h) => s + (h.pnl ?? 0), 0);
   const positionsPnl = positions.reduce((s, p) => s + (p.pnl ?? 0), 0);
 
+  const tabCounts: Record<Tab, number | null> = {
+    overview: null,
+    trades: trades.length,
+    holdings: holdings.length,
+    positions: positions.length,
+  };
+
   return (
     <div className="min-h-full bg-[#F8FAFC]">
-      <div className="bg-white border-b border-slate-200 px-4 md:px-6 py-4">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
-              <Briefcase size={20} className="text-emerald-600" />
+      {/* Header */}
+      <div className="bg-white border-b border-slate-200">
+        <div className="px-4 md:px-6 py-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-sm">
+                <Briefcase size={22} className="text-white" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h1 className="text-xl font-bold text-slate-900">Portfolio</h1>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                    Since {PORTFOLIO_TRACKING_START_LABEL}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500">Buy via Kite · P&L from holdings + closed trades</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-lg font-bold text-slate-900">Portfolio</h1>
-              <p className="text-xs text-slate-500">Kite sync + signal trade log</p>
-            </div>
-          </div>
-          <button onClick={fetchData} disabled={loading} className="p-2 rounded-lg text-slate-500 hover:bg-slate-100">
-            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-          </button>
-        </div>
-
-        {kiteError && tab !== "logged" && (
-          <div className="mt-3 flex items-center gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            <AlertCircle size={14} />
-            <span>{kiteError} — </span>
-            <Link href="/stocks/settings" className="font-semibold underline">Settings</Link>
-          </div>
-        )}
-
-        <div className="flex gap-2 mt-4 overflow-x-auto">
-          {([
-            ["holdings", `Holdings (${holdings.length})`],
-            ["positions", `Positions (${positions.length})`],
-            ["logged", `Logged (${trades.length})`],
-          ] as const).map(([t, label]) => (
             <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap ${
-                tab === t ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-500"
-              }`}
+              type="button"
+              onClick={fetchData}
+              disabled={loading}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-semibold hover:bg-slate-200 transition-colors disabled:opacity-50"
             >
-              {label}
+              <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+              Refresh
             </button>
-          ))}
+          </div>
+
+          {!loading && tab === "overview" && (holdings.length > 0 || trackedTrades.length > 0) && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-[11px] font-medium text-slate-600">
+                Unrealized{" "}
+                <span className={`font-bold tabular-nums ${pnlClass(kiteConnected ? holdingsPnl : summary.unrealizedPnl)}`}>
+                  {(kiteConnected ? holdingsPnl : summary.unrealizedPnl) >= 0 ? "+" : "−"}₹
+                  {fmt(Math.abs(kiteConnected ? holdingsPnl : summary.unrealizedPnl))}
+                </span>
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-[11px] font-medium text-slate-600">
+                Realized{" "}
+                <span className={`font-bold tabular-nums ${pnlClass(summary.realizedPnl)}`}>
+                  {summary.realizedPnl >= 0 ? "+" : "−"}₹{fmt(Math.abs(summary.realizedPnl))}
+                </span>
+              </span>
+            </div>
+          )}
+
+          {kiteError && (tab === "holdings" || tab === "positions") && (
+            <div className="mt-3 flex items-center gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+              <AlertCircle size={14} className="shrink-0" />
+              <span>{kiteError} — </span>
+              <Link href="/stocks/settings" className="font-semibold underline">
+                Connect in Settings
+              </Link>
+            </div>
+          )}
         </div>
 
-        {tab === "holdings" && holdings.length > 0 && (
-          <p className={`text-xs font-semibold mt-3 ${pnlClass(holdingsPnl)}`}>
-            Total P&L: {holdingsPnl >= 0 ? "+" : ""}₹{fmt(Math.abs(holdingsPnl))}
-          </p>
-        )}
-        {tab === "positions" && positions.length > 0 && (
-          <p className={`text-xs font-semibold mt-3 ${pnlClass(positionsPnl)}`}>
-            Day P&L: {positionsPnl >= 0 ? "+" : ""}₹{fmt(Math.abs(positionsPnl))}
-          </p>
-        )}
+        {/* Tabs */}
+        <div className="px-4 md:px-6 flex gap-1 overflow-x-auto pb-0 border-t border-slate-100 pt-2">
+          {TABS.map(({ id, label, icon }) => {
+            const count = tabCounts[id];
+            const active = tab === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setTabAndUrl(id)}
+                className={`flex items-center gap-1.5 px-4 py-2.5 rounded-t-xl text-xs font-semibold whitespace-nowrap border-b-2 transition-colors ${
+                  active
+                    ? "border-emerald-600 text-emerald-700 bg-emerald-50/50"
+                    : "border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                {icon}
+                {label}
+                {count != null && count > 0 && (
+                  <span
+                    className={`ml-0.5 px-1.5 py-0.5 rounded-md text-[10px] ${
+                      active ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"
+                    }`}
+                  >
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div className="px-4 md:px-6 py-5">
-        {loading && (
-          <div className="flex justify-center py-16">
-            <div className="w-8 h-8 border-2 border-emerald-200 border-t-emerald-600 rounded-full animate-spin" />
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-3">
+            <div className="w-9 h-9 border-2 border-emerald-200 border-t-emerald-600 rounded-full animate-spin" />
+            <p className="text-sm text-slate-500">Loading portfolio…</p>
           </div>
-        )}
-
-        {!loading && tab === "holdings" && holdings.length === 0 && !kiteError && (
-          <EmptyState message="No holdings in your Kite account." />
-        )}
-
-        {!loading && tab === "holdings" && holdings.map((h) => {
-          const pnlPct = h.average_price ? ((h.last_price - h.average_price) / h.average_price) * 100 : 0;
-          return (
-            <div key={`${h.exchange}-${h.tradingsymbol}`} className="bg-white rounded-xl border border-slate-200 p-4 mb-3">
-              <div className="flex justify-between gap-2">
-                <div>
-                  <p className="font-bold text-slate-900">{h.tradingsymbol}</p>
-                  <p className="text-xs text-slate-500">{h.quantity} × avg ₹{fmt(h.average_price, 2)} · LTP ₹{fmt(h.last_price, 2)}</p>
-                </div>
-                <div className="text-right">
-                  <p className={`text-sm font-bold ${pnlClass(h.pnl)}`}>{h.pnl >= 0 ? "+" : ""}₹{fmt(Math.abs(h.pnl))}</p>
-                  <p className="text-[10px] text-slate-500">{pnlPct.toFixed(2)}%</p>
-                </div>
-              </div>
-              <p className="text-[10px] text-slate-400 mt-1">Day {h.day_change_percentage?.toFixed(2) ?? 0}%</p>
-            </div>
-          );
-        })}
-
-        {!loading && tab === "positions" && positions.length === 0 && !kiteError && (
-          <EmptyState message="No open intraday positions." />
-        )}
-
-        {!loading && tab === "positions" && positions.map((p) => (
-          <div key={`${p.exchange}-${p.tradingsymbol}-${p.product}`} className="bg-white rounded-xl border border-slate-200 p-4 mb-3">
-            <div className="flex justify-between gap-2">
-              <div>
-                <p className="font-bold text-slate-900">{p.tradingsymbol}</p>
-                <p className="text-xs text-slate-500">{p.product} · {p.quantity} qty · LTP ₹{fmt(p.last_price, 2)}</p>
-              </div>
-              <div className="text-right">
-                <p className={`text-sm font-bold ${pnlClass(p.pnl)}`}>{p.pnl >= 0 ? "+" : ""}₹{fmt(Math.abs(p.pnl))}</p>
-                <p className="text-[10px] text-slate-500">M2M ₹{fmt(p.m2m ?? 0)}</p>
-              </div>
-            </div>
-          </div>
-        ))}
-
-        {!loading && tab === "logged" && trades.length === 0 && (
-          <EmptyState message="No logged trades yet." href="/stocks" linkLabel="Browse signals" />
-        )}
-
-        {!loading && tab === "logged" && openTrades.length > 0 && (
+        ) : (
           <>
-            <p className="text-[10px] uppercase font-semibold text-slate-500 mb-2">Open</p>
-            {openTrades.map((t) => (
-              <LoggedTradeCard
-                key={t._id}
-                trade={t}
-                editing={editingId === t._id}
-                editTarget={editTarget}
-                editSl={editSl}
-                onEdit={() => {
-                  setEditingId(t._id);
-                  setEditTarget(t.target?.toString() ?? "");
-                  setEditSl(t.stopLoss?.toString() ?? "");
-                }}
-                onSave={() => saveTargetSl(t._id)}
-                onCancelEdit={() => setEditingId(null)}
-                setEditTarget={setEditTarget}
-                setEditSl={setEditSl}
-                onClose={() => setCloseTarget(t)}
+            {tab === "overview" && (
+              <PortfolioOverview
+                trades={trades}
+                holdings={holdings}
+                kiteConnected={kiteConnected}
               />
-            ))}
-          </>
-        )}
+            )}
 
-        {!loading && tab === "logged" && closedTrades.length > 0 && (
-          <>
-            <p className="text-[10px] uppercase font-semibold text-slate-500 mb-2 mt-4">Closed</p>
-            {closedTrades.map((t) => {
-              const pnl = t.realizedPnl ?? 0;
-              return (
-                <div key={t._id} className="bg-white rounded-xl border border-slate-200 p-4 mb-3 flex justify-between">
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-bold text-slate-900">{t.ticker}</span>
-                      <StrategyBadge source={t.source as SignalSource} />
-                    </div>
-                    <p className="text-xs text-slate-500 mt-1">₹{t.entryPrice} → ₹{t.exitPrice} · {t.exitDate}</p>
+            {tab === "holdings" && (
+              <>
+                {holdings.length > 0 && (
+                  <div className="mb-4 flex items-center justify-between px-4 py-3 rounded-xl bg-white border border-slate-200">
+                    <span className="text-xs font-medium text-slate-600">Total holdings P&L</span>
+                    <span className={`text-sm font-bold tabular-nums ${pnlClass(holdingsPnl)}`}>
+                      {holdingsPnl >= 0 ? "+" : "−"}₹{fmt(Math.abs(holdingsPnl))}
+                    </span>
                   </div>
-                  <p className={`text-sm font-bold ${pnlClass(pnl)}`}>{pnl >= 0 ? "+" : ""}₹{fmt(Math.abs(pnl))}</p>
+                )}
+                {holdings.length === 0 && !kiteError && (
+                  <EmptyState message="No holdings in your Kite account." />
+                )}
+                <div className="space-y-3">
+                  {holdings.map((h) => {
+                    const pnlPct = h.average_price
+                      ? ((h.last_price - h.average_price) / h.average_price) * 100
+                      : 0;
+                    const invested = h.quantity * h.average_price;
+                    return (
+                      <div
+                        key={`${h.exchange}-${h.tradingsymbol}`}
+                        className="bg-white rounded-2xl border border-slate-200 p-4 hover:border-slate-300 transition-colors"
+                      >
+                        <div className="flex justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-bold text-slate-900">{h.tradingsymbol}</p>
+                            <p className="text-xs text-slate-500 mt-0.5">
+                              {h.quantity} qty · avg ₹{fmt(h.average_price, 2)}
+                            </p>
+                            <p className="text-[10px] text-slate-400 mt-1">
+                              Invested ₹{fmt(invested)} · LTP ₹{fmt(h.last_price, 2)}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <PnlBadge value={h.pnl} unit="inr" />
+                            <p className={`text-[10px] font-semibold mt-1 ${pnlClass(pnlPct)}`}>
+                              {pnlPct >= 0 ? "+" : ""}
+                              {pnlPct.toFixed(2)}%
+                            </p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">
+                              Day {h.day_change_percentage?.toFixed(2) ?? 0}%
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </>
+            )}
+
+            {tab === "positions" && (
+              <>
+                {positions.length > 0 && (
+                  <div className="mb-4 flex items-center justify-between px-4 py-3 rounded-xl bg-white border border-slate-200">
+                    <span className="text-xs font-medium text-slate-600">Intraday P&L</span>
+                    <span className={`text-sm font-bold tabular-nums ${pnlClass(positionsPnl)}`}>
+                      {positionsPnl >= 0 ? "+" : "−"}₹{fmt(Math.abs(positionsPnl))}
+                    </span>
+                  </div>
+                )}
+                {positions.length === 0 && !kiteError && (
+                  <EmptyState message="No open intraday positions." />
+                )}
+                <div className="space-y-3">
+                  {positions.map((p) => (
+                    <div
+                      key={`${p.exchange}-${p.tradingsymbol}-${p.product}`}
+                      className="bg-white rounded-2xl border border-slate-200 p-4"
+                    >
+                      <div className="flex justify-between gap-3">
+                        <div>
+                          <p className="font-bold text-slate-900">{p.tradingsymbol}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            {p.product} · {p.quantity} qty · LTP ₹{fmt(p.last_price, 2)}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <PnlBadge value={p.pnl} unit="inr" />
+                          <p className="text-[10px] text-slate-500 mt-1">M2M ₹{fmt(p.m2m ?? 0)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {tab === "trades" && (
+              <>
+                {trades.length === 0 && (
+                  <EmptyState
+                    message="Optional manual log — most trades come from buying on signals via Kite. Use this only if you want a separate paper trail."
+                    href="/stocks"
+                    linkLabel="Go to signals"
+                  />
+                )}
+
+                {openTrades.length > 0 && (
+                  <section className="mb-6">
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                        Open · {openTrades.length}
+                      </h2>
+                      <p className={`text-xs font-semibold tabular-nums ${pnlClass(summary.unrealizedPnl)}`}>
+                        Unrealized {summary.unrealizedPnl >= 0 ? "+" : "−"}₹
+                        {fmt(Math.abs(summary.unrealizedPnl))}
+                      </p>
+                    </div>
+                    <div className="space-y-3">
+                      {openTrades.map((t) => (
+                        <LoggedTradeCard
+                          key={t._id}
+                          trade={t}
+                          editing={editingId === t._id}
+                          editTarget={editTarget}
+                          editSl={editSl}
+                          onEdit={() => {
+                            setEditingId(t._id);
+                            setEditTarget(t.target?.toString() ?? "");
+                            setEditSl(t.stopLoss?.toString() ?? "");
+                          }}
+                          onSave={() => saveTargetSl(t._id)}
+                          onCancelEdit={() => setEditingId(null)}
+                          setEditTarget={setEditTarget}
+                          setEditSl={setEditSl}
+                          onClose={() => setCloseTarget(t)}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {closedTrades.length > 0 && (
+                  <section>
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                        Closed · {closedTrades.length}
+                      </h2>
+                      <p className={`text-xs font-semibold tabular-nums ${pnlClass(summary.realizedPnl)}`}>
+                        Realized {summary.realizedPnl >= 0 ? "+" : "−"}₹
+                        {fmt(Math.abs(summary.realizedPnl))}
+                      </p>
+                    </div>
+                    <div className="space-y-3">
+                      {[...closedTrades]
+                        .sort((a, b) => (b.exitDate ?? "").localeCompare(a.exitDate ?? ""))
+                        .map((t) => (
+                          <ClosedTradeCard key={t._id} trade={t} />
+                        ))}
+                    </div>
+                  </section>
+                )}
+              </>
+            )}
           </>
         )}
       </div>
@@ -307,14 +465,65 @@ export function PortfolioPage() {
   );
 }
 
-function EmptyState({ message, href, linkLabel }: { message: string; href?: string; linkLabel?: string }) {
+function EmptyState({
+  message,
+  href,
+  linkLabel,
+}: {
+  message: string;
+  href?: string;
+  linkLabel?: string;
+}) {
   return (
-    <div className="text-center py-16">
+    <div className="text-center py-16 bg-white rounded-2xl border border-slate-200">
       <Briefcase size={40} className="mx-auto text-emerald-200 mb-4" />
-      <p className="text-sm text-slate-500 mb-4">{message}</p>
+      <p className="text-sm text-slate-600 mb-4 max-w-xs mx-auto">{message}</p>
       {href && linkLabel && (
-        <Link href={href} className="text-sm font-medium text-emerald-600 hover:underline">{linkLabel} →</Link>
+        <Link href={href} className="text-sm font-semibold text-emerald-700 hover:underline">
+          {linkLabel} →
+        </Link>
       )}
+    </div>
+  );
+}
+
+function ClosedTradeCard({ trade: t }: { trade: UserTrade }) {
+  const pnl = t.realizedPnl ?? 0;
+  const pnlPct = t.realizedPnlPct ?? 0;
+  const holdDays =
+    t.exitDate && t.entryDate
+      ? Math.max(
+          1,
+          Math.round(
+            (new Date(t.exitDate).getTime() - new Date(t.entryDate).getTime()) / 86_400_000
+          )
+        )
+      : null;
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-bold text-slate-900">{t.ticker}</span>
+            <StrategyBadge source={t.source as SignalSource} />
+          </div>
+          <p className="text-xs text-slate-500 mt-1">
+            {t.quantity} × ₹{fmt(t.entryPrice, 2)} → ₹{fmt(t.exitPrice ?? 0, 2)}
+          </p>
+          <p className="text-[10px] text-slate-400 mt-1">
+            {formatDisplayDate(t.entryDate)} → {t.exitDate ? formatDisplayDate(t.exitDate) : "—"}
+            {holdDays != null && ` · ${holdDays}d hold`}
+          </p>
+        </div>
+        <div className="text-right shrink-0">
+          <PnlBadge value={pnl} unit="inr" />
+          <p className={`text-[10px] font-semibold mt-1 ${pnlClass(pnlPct)}`}>
+            {pnlPct >= 0 ? "+" : ""}
+            {pnlPct.toFixed(2)}%
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -343,46 +552,88 @@ function LoggedTradeCard({
   onClose: () => void;
 }) {
   const pnl = t.unrealizedPnl ?? 0;
+  const pnlPct = t.unrealizedPnlPct ?? 0;
+  const invested = t.invested ?? t.quantity * t.entryPrice;
+
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4 mb-3">
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <div>
+    <div className="bg-white rounded-2xl border border-slate-200 p-4 border-l-4 border-l-emerald-500">
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-bold text-slate-900">{t.ticker}</span>
             <StrategyBadge source={t.source as SignalSource} />
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+              Open
+            </span>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">{t.quantity} × ₹{t.entryPrice} · {t.entryDate}</p>
+          <p className="text-xs text-slate-500 mt-1">
+            {t.quantity} × ₹{fmt(t.entryPrice, 2)} · {formatDisplayDate(t.entryDate)}
+          </p>
+          <p className="text-[10px] text-slate-400 mt-0.5">
+            Invested ₹{fmt(invested)}
+            {t.livePrice != null && ` · LTP ₹${fmt(t.livePrice, 2)}`}
+          </p>
           {(t.target != null || t.stopLoss != null) && !editing && (
             <p className="text-[10px] text-slate-400 mt-1">
               Target ₹{t.target ?? "—"} · SL ₹{t.stopLoss ?? "—"}
             </p>
           )}
         </div>
-        <div className="text-right">
-          <p className={`text-sm font-bold ${pnlClass(pnl)}`}>{pnl >= 0 ? "+" : ""}₹{Math.abs(pnl).toFixed(0)}</p>
+        <div className="text-right shrink-0">
+          {t.unrealizedPnl != null ? (
+            <>
+              <PnlBadge value={pnl} unit="inr" />
+              <p className={`text-[10px] font-semibold mt-1 ${pnlClass(pnlPct)}`}>
+                {pnlPct >= 0 ? "+" : ""}
+                {pnlPct.toFixed(2)}%
+              </p>
+            </>
+          ) : (
+            <span className="text-xs text-slate-400">Price unavailable</span>
+          )}
         </div>
       </div>
       {editing ? (
-        <div className="flex flex-wrap gap-2 items-end mt-2">
+        <div className="flex flex-wrap gap-2 items-end mt-3 pt-3 border-t border-slate-100">
           <input
             placeholder="Target ₹"
             value={editTarget}
             onChange={(e) => setEditTarget(e.target.value)}
-            className="w-24 px-2 py-1 text-xs border rounded-lg"
+            className="w-28 px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
           />
           <input
             placeholder="SL ₹"
             value={editSl}
             onChange={(e) => setEditSl(e.target.value)}
-            className="w-24 px-2 py-1 text-xs border rounded-lg"
+            className="w-28 px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
           />
-          <button onClick={onSave} className="text-xs font-medium text-emerald-600">Save</button>
-          <button onClick={onCancelEdit} className="text-xs text-slate-500">Cancel</button>
+          <button
+            type="button"
+            onClick={onSave}
+            className="px-3 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700"
+          >
+            Save
+          </button>
+          <button type="button" onClick={onCancelEdit} className="px-3 py-2 text-xs text-slate-500">
+            Cancel
+          </button>
         </div>
       ) : (
-        <div className="flex gap-3">
-          <button onClick={onEdit} className="text-xs font-medium text-slate-600 hover:underline">Set target / SL</button>
-          <button onClick={onClose} className="text-xs font-medium text-slate-600 hover:underline">Close trade</button>
+        <div className="flex gap-2 mt-3 pt-3 border-t border-slate-100">
+          <button
+            type="button"
+            onClick={onEdit}
+            className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200"
+          >
+            Target / SL
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 rounded-lg hover:bg-emerald-100"
+          >
+            Close trade
+          </button>
         </div>
       )}
     </div>
