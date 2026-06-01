@@ -4,6 +4,7 @@
  */
 import "dotenv/config";
 import { createServer } from "node:http";
+import { buildOcoSellGttFormFields } from "./gtt-payload.mjs";
 
 const PORT = Number(process.env.PORT ?? 3100);
 const RELAY_SECRET = process.env.KITE_RELAY_SECRET;
@@ -134,51 +135,23 @@ const server = createServer(async (req, res) => {
       }
 
       const tradingsymbol = String(symbol).toUpperCase();
-      const ltp = Number(lastPrice);
-      const sl = Number(stopLoss);
-      const tgt = Number(target);
       const qty = Math.floor(Number(quantity));
 
-      if (sl >= ltp || tgt <= ltp || sl >= tgt) {
-        return send(400, { error: "Stop loss must be below LTP and target above LTP" });
+      let gttFields;
+      try {
+        gttFields = buildOcoSellGttFormFields({
+          exchange,
+          tradingsymbol,
+          quantity: qty,
+          lastPrice,
+          stopLoss,
+          target,
+        });
+      } catch (err) {
+        return send(400, { error: err instanceof Error ? err.message : "Invalid GTT params" });
       }
 
-      const slLimit = Math.round((sl - Math.max(sl * 0.002, 0.05)) * 100) / 100;
-      const tgtLimit = Math.round((tgt - Math.max(tgt * 0.002, 0.05)) * 100) / 100;
-
-      const condition = JSON.stringify({
-        exchange,
-        tradingsymbol,
-        trigger_values: [sl, tgt],
-        last_price: ltp,
-      });
-
-      const orders = JSON.stringify([
-        {
-          exchange,
-          tradingsymbol,
-          transaction_type: "SELL",
-          quantity: String(qty),
-          order_type: "LIMIT",
-          product: "CNC",
-          price: slLimit,
-        },
-        {
-          exchange,
-          tradingsymbol,
-          transaction_type: "SELL",
-          quantity: String(qty),
-          order_type: "LIMIT",
-          product: "CNC",
-          price: tgtLimit,
-        },
-      ]);
-
-      const data = await kiteRequest("POST", "/gtt/triggers", accessToken, {
-        type: "two-leg",
-        condition,
-        orders,
-      });
+      const data = await kiteRequest("POST", "/gtt/triggers", accessToken, gttFields);
 
       const triggerId = data.data?.trigger_id;
       if (!triggerId) throw new Error("No trigger_id in Kite GTT response");

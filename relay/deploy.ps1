@@ -11,7 +11,7 @@ $ScpArgs = @("-i", $SshKey)
 $SshArgs = @("-i", $SshKey)
 
 Write-Host "-> Copying relay files to ${Host}:${RemoteDir}"
-& scp @ScpArgs "$ScriptDir\server.mjs" "$ScriptDir\package.json" "${Host}:${RemoteDir}/"
+& scp @ScpArgs "$ScriptDir\server.mjs" "$ScriptDir\gtt-payload.mjs" "$ScriptDir\package.json" "${Host}:${RemoteDir}/"
 
 Write-Host "-> Restarting mcube-kite-relay"
 & ssh @SshArgs $Host "cd $RemoteDir && npm install --omit=dev && systemctl restart mcube-kite-relay && sleep 1 && curl -s http://127.0.0.1:3100/health"

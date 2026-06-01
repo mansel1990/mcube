@@ -1,7 +1,15 @@
 /** Build and validate Kite two-leg (OCO) sell GTT for CNC exits after a buy. */
 
+/** NSE equity tick (₹0.05 for most stocks above ~₹250). */
+export const NSE_EQUITY_TICK = 0.05;
+
+export function roundToTick(price: number, tick = NSE_EQUITY_TICK): number {
+  const rounded = Math.round(price / tick) * tick;
+  return Math.round(rounded * 100) / 100;
+}
+
 export function roundPrice(n: number): number {
-  return Math.round(n * 100) / 100;
+  return roundToTick(n);
 }
 
 /** % move from reference (e.g. LTP) to price. */
@@ -14,10 +22,10 @@ export function priceFromPct(ref: number, pct: number): number {
   return roundPrice(ref * (1 + pct / 100));
 }
 
-/** Sell LIMIT: slightly below trigger so Kite can place the order. */
-export function sellLimitBelowTrigger(trigger: number): number {
-  const buffer = Math.max(trigger * 0.002, 0.05);
-  return roundPrice(trigger - buffer);
+/** Sell LIMIT: slightly below trigger, on tick, so Kite accepts the order. */
+export function sellLimitBelowTrigger(trigger: number, tick = NSE_EQUITY_TICK): number {
+  const buffer = Math.max(trigger * 0.002, tick);
+  return roundToTick(trigger - buffer, tick);
 }
 
 export function validateExitGtt(
