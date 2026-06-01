@@ -99,6 +99,81 @@ const server = createServer(async (req, res) => {
       return send(200, { orderId: String(orderId) });
     }
 
+    if (req.method === "POST" && req.url === "/gtt") {
+      const body = await readJson(req);
+      const {
+        accessToken,
+        symbol,
+        exchange = "NSE",
+        quantity,
+        lastPrice,
+        stopLoss,
+        target,
+      } = body;
+
+      if (
+        !accessToken ||
+        !symbol ||
+        !quantity ||
+        lastPrice == null ||
+        stopLoss == null ||
+        target == null
+      ) {
+        return send(400, { error: "Missing required GTT fields" });
+      }
+
+      const tradingsymbol = String(symbol).toUpperCase();
+      const ltp = Number(lastPrice);
+      const sl = Number(stopLoss);
+      const tgt = Number(target);
+      const qty = Math.floor(Number(quantity));
+
+      if (sl >= ltp || tgt <= ltp || sl >= tgt) {
+        return send(400, { error: "Stop loss must be below LTP and target above LTP" });
+      }
+
+      const slLimit = Math.round((sl - Math.max(sl * 0.002, 0.05)) * 100) / 100;
+      const tgtLimit = Math.round((tgt - Math.max(tgt * 0.002, 0.05)) * 100) / 100;
+
+      const condition = JSON.stringify({
+        exchange,
+        tradingsymbol,
+        trigger_values: [sl, tgt],
+        last_price: ltp,
+      });
+
+      const orders = JSON.stringify([
+        {
+          exchange,
+          tradingsymbol,
+          transaction_type: "SELL",
+          quantity: String(qty),
+          order_type: "LIMIT",
+          product: "CNC",
+          price: slLimit,
+        },
+        {
+          exchange,
+          tradingsymbol,
+          transaction_type: "SELL",
+          quantity: String(qty),
+          order_type: "LIMIT",
+          product: "CNC",
+          price: tgtLimit,
+        },
+      ]);
+
+      const data = await kiteRequest("POST", "/gtt/triggers", accessToken, {
+        type: "two-leg",
+        condition,
+        orders,
+      });
+
+      const triggerId = data.data?.trigger_id;
+      if (!triggerId) throw new Error("No trigger_id in Kite GTT response");
+      return send(200, { triggerId: String(triggerId) });
+    }
+
     if (req.method === "POST" && req.url === "/cancel") {
       const body = await readJson(req);
       const { accessToken, orderId, variety = "regular" } = body;

@@ -58,7 +58,9 @@ export function UnifiedSignalCard({
           <div className="flex items-start justify-between gap-2 mb-3">
             <div>
               <span className="text-lg font-bold text-slate-900">{signal.ticker}</span>
-              <p className="text-[11px] text-slate-400">{fmtDate(signal.signalDate)}</p>
+              <p className="text-[11px] text-slate-400">
+                {signal.exitDate ? `Closed · ${fmtDate(signal.exitDate)}` : fmtDate(signal.signalDate)}
+              </p>
             </div>
             <div className="flex items-center gap-1.5">
               <StrategyBadge source={signal.source} />

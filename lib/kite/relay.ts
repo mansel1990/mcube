@@ -20,6 +20,20 @@ export interface RelayCancelRequest {
   variety?: string;
 }
 
+export interface RelayGttOcoRequest {
+  accessToken: string;
+  symbol: string;
+  exchange?: string;
+  quantity: number;
+  lastPrice: number;
+  stopLoss: number;
+  target: number;
+}
+
+export interface RelayGttResponse {
+  triggerId: string;
+}
+
 function relayBaseUrl(): string {
   const url = process.env.KITE_RELAY_URL?.replace(/\/$/, "");
   if (!url) throw new Error("KITE_RELAY_URL is not configured");
@@ -66,5 +80,17 @@ export async function cancelOrderViaRelay(req: RelayCancelRequest): Promise<void
     accessToken: req.accessToken,
     orderId: req.orderId,
     variety: req.variety ?? "regular",
+  });
+}
+
+export async function placeGttOcoViaRelay(req: RelayGttOcoRequest): Promise<RelayGttResponse> {
+  return relayFetch<RelayGttResponse>("/gtt", {
+    accessToken: req.accessToken,
+    symbol: req.symbol,
+    exchange: req.exchange ?? "NSE",
+    quantity: req.quantity,
+    lastPrice: req.lastPrice,
+    stopLoss: req.stopLoss,
+    target: req.target,
   });
 }

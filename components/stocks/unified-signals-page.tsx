@@ -28,6 +28,15 @@ type SimClosedTrade = {
   status: string;
 };
 
+type ClosedListItem =
+  | { type: "signal"; data: UnifiedSignal }
+  | { type: "sim"; data: SimClosedTrade };
+
+function closedExitDate(item: ClosedListItem): string {
+  const raw = item.type === "signal" ? item.data.exitDate : item.data.exit_date;
+  return normalizeDateStr(raw);
+}
+
 const SWING_SOURCES = new Set<SignalSource>(SOURCE_PRIORITY.filter((s) => s !== "manish"));
 
 const ALL_SOURCES: SignalSource[] = SOURCE_PRIORITY;
@@ -200,6 +209,20 @@ export function UnifiedSignalsPage() {
     }
   }
 
+  const showSimClosed =
+    statusFilter === "closed" && (sourceFilter === "all" || SWING_SOURCES.has(sourceFilter));
+
+  const closedItems: ClosedListItem[] = [];
+  if (statusFilter === "closed") {
+    if (sourceFilter === "all" || sourceFilter === "manish") {
+      closedItems.push(...filtered.map((s) => ({ type: "signal" as const, data: s })));
+    }
+    if (showSimClosed) {
+      closedItems.push(...filteredSimClosed.map((t) => ({ type: "sim" as const, data: t })));
+    }
+    closedItems.sort((a, b) => closedExitDate(b).localeCompare(closedExitDate(a)));
+  }
+
   const filteredOpenCount = countOpen(sourceFilter);
   const filteredClosedCount = countClosed(sourceFilter);
 
@@ -207,12 +230,8 @@ export function UnifiedSignalsPage() {
     return statusFilter === "closed" ? countClosed(src) : countOpen(src);
   }
 
-  const showSimClosed =
-    statusFilter === "closed" && (sourceFilter === "all" || SWING_SOURCES.has(sourceFilter));
   const hasContent =
-    statusFilter === "open"
-      ? filtered.length > 0
-      : filtered.length > 0 || filteredSimClosed.length > 0;
+    statusFilter === "open" ? filtered.length > 0 : closedItems.length > 0;
 
   const handleOrderPlaced = useCallback((order: PlacedOrder) => {
     setPlacedOrder(order);
@@ -368,20 +387,24 @@ export function UnifiedSignalsPage() {
               </div>
             )}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {statusFilter === "closed" && (sourceFilter === "all" || sourceFilter === "manish") &&
-                filtered.map((s) => (
-                  <UnifiedSignalCard
-                    key={s.id}
-                    signal={s}
-                    currentPrice={prices[s.ticker] ?? undefined}
-                    logged={loggedRefs.has(s.id)}
-                    onLogged={fetchAll}
-                    kiteConnected={kiteConnected}
-                    holdingQty={kiteHoldings[s.ticker.toUpperCase()] ?? 0}
-                    defaultTradeAmount={defaultTradeAmount}
-                    onOrderPlaced={handleOrderPlaced}
-                  />
-                ))}
+              {statusFilter === "closed" &&
+                closedItems.map((item) =>
+                  item.type === "signal" ? (
+                    <UnifiedSignalCard
+                      key={item.data.id}
+                      signal={item.data}
+                      currentPrice={prices[item.data.ticker] ?? undefined}
+                      logged={loggedRefs.has(item.data.id)}
+                      onLogged={fetchAll}
+                      kiteConnected={kiteConnected}
+                      holdingQty={kiteHoldings[item.data.ticker.toUpperCase()] ?? 0}
+                      defaultTradeAmount={defaultTradeAmount}
+                      onOrderPlaced={handleOrderPlaced}
+                    />
+                  ) : (
+                    <SimulatedClosedCard key={`sim-${item.data.id}`} trade={item.data} />
+                  )
+                )}
               {statusFilter === "open" &&
                 filtered.map((s) => (
                   <UnifiedSignalCard
@@ -395,10 +418,6 @@ export function UnifiedSignalsPage() {
                     defaultTradeAmount={defaultTradeAmount}
                     onOrderPlaced={handleOrderPlaced}
                   />
-                ))}
-              {statusFilter === "closed" && showSimClosed &&
-                filteredSimClosed.map((t) => (
-                  <SimulatedClosedCard key={String(t.id)} trade={t} />
                 ))}
             </div>
             {statusFilter === "closed" && (
@@ -432,7 +451,10 @@ function SimulatedClosedCard({ trade }: { trade: SimClosedTrade }) {
         <div className="flex items-start justify-between gap-2 mb-2">
           <div>
             <span className="text-lg font-bold text-slate-900">{trade.symbol}</span>
-            <p className="text-[10px] text-slate-500 font-medium mt-0.5">Simulated · ₹10k auto-buy</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Closed · {formatScanDateIST(String(trade.exit_date))}
+            </p>
+            <p className="text-[10px] text-slate-400">Simulated · ₹10k auto-buy</p>
           </div>
           <div className="flex flex-col items-end gap-1.5">
             <StrategyBadge source={trade.strategy as SignalSource} />

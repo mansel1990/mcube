@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireStocksSession } from "@/lib/stocks/require-stocks-session";
+import { validateExitGtt } from "@/lib/kite/gtt-exit";
+import { placeGttOcoViaRelay, placeOrderViaRelay } from "@/lib/kite/relay";
 import { getKiteSession, isKiteTokenValid } from "@/lib/kite/session";
-import { placeOrderViaRelay } from "@/lib/kite/relay";
-import { insertKiteTrade } from "@/lib/kite/trades";
+import { insertKiteTrade, setKiteTradeGttId } from "@/lib/kite/trades";
+
 export async function POST(request: Request) {
   const session = await requireStocksSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -22,6 +24,7 @@ export async function POST(request: Request) {
     stopLoss?: number;
     ltp?: number;
     lotSize?: number;
+    placeExitGtt?: boolean;
   };
 
   try {
@@ -49,6 +52,17 @@ export async function POST(request: Request) {
 
   const ltp = Number(body.ltp);
   const estimatedInr = Number.isFinite(ltp) && ltp > 0 ? qty * ltp : null;
+  const targetPrice = body.targetPrice != null ? Number(body.targetPrice) : undefined;
+  const stopLoss = body.stopLoss != null ? Number(body.stopLoss) : undefined;
+  const placeExitGtt = body.placeExitGtt !== false;
+
+  if (transactionType === "BUY" && placeExitGtt) {
+    if (targetPrice == null || stopLoss == null) {
+      return NextResponse.json({ error: "Target and stop loss required for exit GTT" }, { status: 400 });
+    }
+    const gttErr = validateExitGtt(stopLoss, targetPrice, ltp);
+    if (gttErr) return NextResponse.json({ error: gttErr }, { status: 400 });
+  }
 
   try {
     const { orderId } = await placeOrderViaRelay({
@@ -70,10 +84,38 @@ export async function POST(request: Request) {
       orderType: transactionType,
       qty,
       price: estimatedInr ?? undefined,
-      targetPrice: body.targetPrice,
-      stopLoss: body.stopLoss,
+      targetPrice,
+      stopLoss,
       strategy: body.strategy,
     });
+
+    let gttTriggerId: string | null = null;
+    let gttError: string | null = null;
+
+    if (
+      transactionType === "BUY" &&
+      placeExitGtt &&
+      targetPrice != null &&
+      stopLoss != null &&
+      Number.isFinite(ltp) &&
+      ltp > 0
+    ) {
+      try {
+        const { triggerId } = await placeGttOcoViaRelay({
+          accessToken: kiteSession.access_token,
+          symbol,
+          exchange: "NSE",
+          quantity: qty,
+          lastPrice: ltp,
+          stopLoss,
+          target: targetPrice,
+        });
+        gttTriggerId = triggerId;
+        await setKiteTradeGttId(trade.id, triggerId);
+      } catch (err: unknown) {
+        gttError = err instanceof Error ? err.message : "GTT placement failed";
+      }
+    }
 
     return NextResponse.json({
       tradeId: trade.id,
@@ -82,6 +124,9 @@ export async function POST(request: Request) {
       transactionType,
       qty,
       estimatedInr,
+      gttTriggerId,
+      gttPlaced: gttTriggerId != null,
+      gttError,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Order failed";

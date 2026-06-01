@@ -8,6 +8,8 @@ export type PlacedOrder = {
   symbol: string;
   transactionType: "BUY" | "SELL";
   estimatedInr: number | null;
+  gttPlaced?: boolean;
+  gttError?: string | null;
 };
 
 const CANCEL_WINDOW_MS = 5000;
@@ -80,7 +82,13 @@ export function KiteOrderToast({ order, onDismiss }: Props) {
               <p className="text-sm font-semibold text-slate-900">
                 {order.transactionType === "BUY" ? "Buy" : "Sell"} {order.symbol} · {inrLabel}
               </p>
-              <p className="text-xs text-slate-500 mt-0.5">Order placed</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Order placed
+                {order.transactionType === "BUY" && order.gttPlaced && " · Exit GTT set"}
+                {order.transactionType === "BUY" && order.gttError && (
+                  <span className="text-amber-700"> · GTT failed: {order.gttError}</span>
+                )}
+              </p>
             </>
           )}
           {error && <p className="text-xs text-red-600 mt-1">{error}</p>}

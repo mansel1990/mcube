@@ -12,6 +12,7 @@ export async function ensureKiteTradesSchema() {
       symbol        TEXT NOT NULL,
       exchange      TEXT NOT NULL,
       kite_order_id TEXT,
+      kite_gtt_id   TEXT,
       order_type    TEXT NOT NULL,
       qty           INTEGER NOT NULL,
       price         NUMERIC(10,2),
@@ -23,6 +24,7 @@ export async function ensureKiteTradesSchema() {
       closed_at     TIMESTAMPTZ
     )
   `;
+  await sql`ALTER TABLE kite_trades ADD COLUMN IF NOT EXISTS kite_gtt_id TEXT`;
   tradesMigrated = true;
 }
 
@@ -33,6 +35,7 @@ export interface KiteTradeRow {
   symbol: string;
   exchange: string;
   kite_order_id: string | null;
+  kite_gtt_id: string | null;
   order_type: string;
   qty: number;
   price: string | null;
@@ -87,6 +90,13 @@ export async function getKiteTradeForUser(tradeId: number, userId: string): Prom
     SELECT * FROM kite_trades WHERE id = ${tradeId} AND user_id = ${userId}
   `;
   return (rows[0] as KiteTradeRow | undefined) ?? null;
+}
+
+export async function setKiteTradeGttId(tradeId: number, gttId: string): Promise<void> {
+  await ensureKiteTradesSchema();
+  await sql`
+    UPDATE kite_trades SET kite_gtt_id = ${gttId} WHERE id = ${tradeId}
+  `;
 }
 
 export async function markKiteTradeCancelled(tradeId: number): Promise<void> {

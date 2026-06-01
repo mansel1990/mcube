@@ -73,5 +73,8 @@ Upgrade to `https://relay.mcubetechstudio.com` when Caddy is configured.
 | GET | `/health` | none | — |
 | POST | `/order` | `X-Relay-Secret` | `{ accessToken, symbol, transactionType, quantity, ... }` |
 | POST | `/cancel` | `X-Relay-Secret` | `{ accessToken, orderId }` |
+| POST | `/gtt` | `X-Relay-Secret` | `{ accessToken, symbol, quantity, lastPrice, stopLoss, target }` — two-leg OCO sell GTT |
 
 Market orders use `market_protection=-1` (required by Kite API).
+
+After deploying GTT support, restart the relay: `sudo systemctl restart mcube-kite-relay`.
