@@ -8,6 +8,7 @@ export type PlacedOrder = {
   symbol: string;
   transactionType: "BUY" | "SELL";
   estimatedInr: number | null;
+  limitPrice?: number;
   gttPlaced?: boolean;
   gttError?: string | null;
 };
@@ -80,7 +81,10 @@ export function KiteOrderToast({ order, onDismiss }: Props) {
           ) : (
             <>
               <p className="text-sm font-semibold text-slate-900">
-                {order.transactionType === "BUY" ? "Buy" : "Sell"} {order.symbol} · {inrLabel}
+                {order.transactionType === "BUY" ? "Limit buy" : "Sell"} {order.symbol}
+                {order.limitPrice != null ? ` @ ₹${order.limitPrice.toLocaleString("en-IN")}` : ""}
+                {" · "}
+                {inrLabel}
               </p>
               <p className="text-xs text-slate-500 mt-0.5">
                 Order placed

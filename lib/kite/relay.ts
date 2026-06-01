@@ -7,6 +7,7 @@ export interface RelayOrderRequest {
   transactionType: "BUY" | "SELL";
   orderType?: "MARKET" | "LIMIT";
   quantity: number;
+  price?: number;
   product?: "CNC" | "MIS" | "NRML";
 }
 
@@ -100,6 +101,7 @@ export async function placeOrderViaRelay(req: RelayOrderRequest): Promise<RelayO
     orderType: req.orderType ?? "MARKET",
     quantity: req.quantity,
     product: req.product ?? "CNC",
+    ...(req.price != null ? { price: req.price } : {}),
   });
 }
 

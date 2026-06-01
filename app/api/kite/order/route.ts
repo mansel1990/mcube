@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireStocksSession } from "@/lib/stocks/require-stocks-session";
-import { validateExitGtt } from "@/lib/kite/gtt-exit";
+import { roundToTick, validateExitGtt } from "@/lib/kite/gtt-exit";
 import { placeGttOcoViaRelay, placeOrderViaRelay, relaySupportsGtt } from "@/lib/kite/relay";
 import { getKiteSession, isKiteTokenValid } from "@/lib/kite/session";
 import { insertKiteTrade, setKiteTradeGttId } from "@/lib/kite/trades";
@@ -23,6 +23,7 @@ export async function POST(request: Request) {
     targetPrice?: number;
     stopLoss?: number;
     ltp?: number;
+    limitPrice?: number;
     lotSize?: number;
     placeExitGtt?: boolean;
   };
@@ -51,17 +52,33 @@ export async function POST(request: Request) {
   }
 
   const ltp = Number(body.ltp);
-  const estimatedInr = Number.isFinite(ltp) && ltp > 0 ? qty * ltp : null;
+  const limitPriceRaw = body.limitPrice != null ? Number(body.limitPrice) : ltp;
+  const limitPrice =
+    transactionType === "BUY" && Number.isFinite(limitPriceRaw) && limitPriceRaw > 0
+      ? roundToTick(limitPriceRaw)
+      : undefined;
+  const estimatedInr =
+    transactionType === "BUY" && limitPrice != null
+      ? qty * limitPrice
+      : Number.isFinite(ltp) && ltp > 0
+        ? qty * ltp
+        : null;
   const targetPrice = body.targetPrice != null ? Number(body.targetPrice) : undefined;
   const stopLoss = body.stopLoss != null ? Number(body.stopLoss) : undefined;
   const placeExitGtt = body.placeExitGtt !== false;
 
-  if (transactionType === "BUY" && placeExitGtt) {
-    if (targetPrice == null || stopLoss == null) {
-      return NextResponse.json({ error: "Target and stop loss required for exit GTT" }, { status: 400 });
+  if (transactionType === "BUY") {
+    if (limitPrice == null) {
+      return NextResponse.json({ error: "limitPrice required for buy" }, { status: 400 });
     }
-    const gttErr = validateExitGtt(stopLoss, targetPrice, ltp);
-    if (gttErr) return NextResponse.json({ error: gttErr }, { status: 400 });
+    if (placeExitGtt) {
+      if (targetPrice == null || stopLoss == null) {
+        return NextResponse.json({ error: "Target and stop loss required for exit GTT" }, { status: 400 });
+      }
+      const gttRef = Number.isFinite(ltp) && ltp > 0 ? ltp : limitPrice;
+      const gttErr = validateExitGtt(stopLoss, targetPrice, gttRef);
+      if (gttErr) return NextResponse.json({ error: gttErr }, { status: 400 });
+    }
   }
 
   try {
@@ -72,7 +89,8 @@ export async function POST(request: Request) {
       quantity: qty,
       exchange: "NSE",
       product: "CNC",
-      orderType: "MARKET",
+      orderType: transactionType === "BUY" ? "LIMIT" : "MARKET",
+      ...(transactionType === "BUY" && limitPrice != null ? { price: limitPrice } : {}),
     });
 
     const trade = await insertKiteTrade({
@@ -92,13 +110,16 @@ export async function POST(request: Request) {
     let gttTriggerId: string | null = null;
     let gttError: string | null = null;
 
+    const gttLastPrice =
+      Number.isFinite(ltp) && ltp > 0 ? ltp : limitPrice;
+
     if (
       transactionType === "BUY" &&
       placeExitGtt &&
       targetPrice != null &&
       stopLoss != null &&
-      Number.isFinite(ltp) &&
-      ltp > 0
+      gttLastPrice != null &&
+      gttLastPrice > 0
     ) {
       try {
         if (!(await relaySupportsGtt())) {
@@ -111,7 +132,7 @@ export async function POST(request: Request) {
           symbol,
           exchange: "NSE",
           quantity: qty,
-          lastPrice: ltp,
+          lastPrice: gttLastPrice,
           stopLoss,
           target: targetPrice,
         });
@@ -129,6 +150,7 @@ export async function POST(request: Request) {
       transactionType,
       qty,
       estimatedInr,
+      limitPrice: transactionType === "BUY" ? limitPrice : undefined,
       gttTriggerId,
       gttPlaced: gttTriggerId != null,
       gttError,

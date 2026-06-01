@@ -4,7 +4,7 @@
  */
 import "dotenv/config";
 import { createServer } from "node:http";
-import { buildOcoSellGttFormFields } from "./gtt-payload.mjs";
+import { buildOcoSellGttFormFields, roundToTick } from "./gtt-payload.mjs";
 
 const PORT = Number(process.env.PORT ?? 3100);
 const RELAY_SECRET = process.env.KITE_RELAY_SECRET;
@@ -85,6 +85,7 @@ const server = createServer(async (req, res) => {
         quantity,
         product = "CNC",
         orderType = "MARKET",
+        price,
       } = body;
 
       if (!accessToken || !symbol || !transactionType || !quantity) {
@@ -103,6 +104,12 @@ const server = createServer(async (req, res) => {
 
       if (orderType === "MARKET") {
         orderParams.market_protection = "-1";
+      } else if (orderType === "LIMIT") {
+        const limit = roundToTick(Number(price));
+        if (!Number.isFinite(limit) || limit <= 0) {
+          return send(400, { error: "price required for LIMIT order" });
+        }
+        orderParams.price = String(limit);
       }
 
       const data = await kiteRequest("POST", "/orders/regular", accessToken, orderParams);

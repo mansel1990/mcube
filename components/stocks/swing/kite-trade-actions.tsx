@@ -59,6 +59,7 @@ export function KiteTradeActions({
   }, [refPrice, signalTarget, signalSl]);
 
   const [qty, setQty] = useState(buyDefault?.qty ?? 1);
+  const [limitPrice, setLimitPrice] = useState("");
   const [targetAmt, setTargetAmt] = useState("");
   const [targetPct, setTargetPct] = useState("");
   const [slAmt, setSlAmt] = useState("");
@@ -80,6 +81,10 @@ export function KiteTradeActions({
   );
 
   useEffect(() => {
+    if (ltp != null && ltp > 0) setLimitPrice(String(roundPrice(ltp)));
+  }, [ltp]);
+
+  useEffect(() => {
     if (defaultExit) syncExitFromAmounts(defaultExit.target, defaultExit.stopLoss);
   }, [defaultExit, syncExitFromAmounts]);
 
@@ -88,23 +93,32 @@ export function KiteTradeActions({
     if (side === "SELL" && holdingQty > 0) setQty(holdingQty);
   }, [side, buyDefault, holdingQty]);
 
+  const parsedLimit = Number(limitPrice);
   const parsedTarget = Number(targetAmt);
   const parsedSl = Number(slAmt);
+  const gttRef = refPrice > 0 ? refPrice : parsedLimit;
   const gttValid =
-    refPrice > 0 &&
-    validateExitGtt(parsedSl, parsedTarget, refPrice) == null;
+    gttRef > 0 &&
+    validateExitGtt(parsedSl, parsedTarget, gttRef) == null;
 
-  const estimatedInr = ltp != null && qty > 0 ? qty * ltp : null;
-  const canBuy = buyDefault != null && qty >= 1 && (!placeExitGtt || gttValid);
+  const estimatedInr =
+    parsedLimit > 0 && qty > 0 ? qty * parsedLimit : ltp != null && qty > 0 ? qty * ltp : null;
+  const canBuy =
+    buyDefault != null &&
+    qty >= 1 &&
+    parsedLimit > 0 &&
+    (!placeExitGtt || gttValid);
   const canSell = holdingQty > 0 && qty >= 1 && qty <= holdingQty;
   const buyDisabledReason =
     ltp == null
       ? "Price unavailable"
       : buyDefault == null
         ? "Increase trade size in Settings"
-        : placeExitGtt && !gttValid
-          ? "Fix target / stop loss for GTT"
-          : null;
+        : !(parsedLimit > 0)
+          ? "Enter a valid limit price"
+          : placeExitGtt && !gttValid
+            ? "Fix target / stop loss for GTT"
+            : null;
 
   function onTargetAmtChange(raw: string) {
     setTargetAmt(raw);
@@ -160,11 +174,16 @@ export function KiteTradeActions({
           signalRef,
           strategy,
           ltp: ltp ?? undefined,
-          ...(transactionType === "BUY" && placeExitGtt && gttValid
+          ...(transactionType === "BUY"
             ? {
-                targetPrice: parsedTarget,
-                stopLoss: parsedSl,
-                placeExitGtt: true,
+                limitPrice: parsedLimit,
+                ...(placeExitGtt && gttValid
+                  ? {
+                      targetPrice: parsedTarget,
+                      stopLoss: parsedSl,
+                      placeExitGtt: true,
+                    }
+                  : { placeExitGtt: false }),
               }
             : { placeExitGtt: false }),
         }),
@@ -177,6 +196,7 @@ export function KiteTradeActions({
         symbol: ticker,
         transactionType,
         estimatedInr: data.estimatedInr ?? estimatedInr,
+        limitPrice: data.limitPrice ?? (transactionType === "BUY" ? parsedLimit : undefined),
         gttPlaced: data.gttPlaced === true,
         gttError: data.gttError ?? null,
       });
@@ -196,6 +216,17 @@ export function KiteTradeActions({
       )}
 
       <div className="flex items-center gap-2">
+        <div className="flex-1">
+          <label className="text-[10px] uppercase text-slate-400 font-semibold">Limit buy @</label>
+          <input
+            type="number"
+            step="0.05"
+            min={0}
+            value={limitPrice}
+            onChange={(e) => setLimitPrice(e.target.value)}
+            className="w-full mt-0.5 px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-900 [color-scheme:light] text-sm focus:outline-none focus:border-primary"
+          />
+        </div>
         <div className="flex-1">
           <label className="text-[10px] uppercase text-slate-400 font-semibold">Qty</label>
           <input
@@ -224,6 +255,11 @@ export function KiteTradeActions({
               Exit GTT (target + stop loss on Kite)
             </span>
           </label>
+          {placeExitGtt && (
+            <p className="text-[10px] text-slate-500 pl-5">
+              May need your limit buy to fill before GTT is accepted
+            </p>
+          )}
 
           {placeExitGtt && (
             <>
@@ -274,7 +310,10 @@ export function KiteTradeActions({
                 </div>
               </div>
               <p className="text-[10px] text-slate-500">
-                From signal · ref LTP {fmtInr(ltp)}
+                From signal · LTP {fmtInr(ltp)}
+                {parsedLimit > 0 && parsedLimit !== ltp && (
+                  <span> · limit {fmtInr(parsedLimit)}</span>
+                )}
                 {!gttValid && (
                   <span className="text-amber-700"> · SL must be below LTP, target above</span>
                 )}
@@ -292,7 +331,7 @@ export function KiteTradeActions({
           className="py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1"
         >
           {loading && side === "BUY" ? <Loader2 size={14} className="animate-spin" /> : null}
-          Buy{canBuy ? ` · ${qty}` : ""}
+          Buy{canBuy ? ` · ${qty} @ ${fmtInr(parsedLimit)}` : ""}
         </button>
         <button
           onClick={() => placeOrder("SELL")}
