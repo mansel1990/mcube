@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireStocksSession } from "@/lib/stocks/require-stocks-session";
 import { validateExitGtt } from "@/lib/kite/gtt-exit";
-import { placeGttOcoViaRelay, placeOrderViaRelay } from "@/lib/kite/relay";
+import { placeGttOcoViaRelay, placeOrderViaRelay, relaySupportsGtt } from "@/lib/kite/relay";
 import { getKiteSession, isKiteTokenValid } from "@/lib/kite/session";
 import { insertKiteTrade, setKiteTradeGttId } from "@/lib/kite/trades";
 
@@ -101,6 +101,11 @@ export async function POST(request: Request) {
       ltp > 0
     ) {
       try {
+        if (!(await relaySupportsGtt())) {
+          throw new Error(
+            "Relay missing /gtt endpoint — redeploy relay/server.mjs on the droplet and restart mcube-kite-relay"
+          );
+        }
         const { triggerId } = await placeGttOcoViaRelay({
           accessToken: kiteSession.access_token,
           symbol,

@@ -46,6 +46,34 @@ function relaySecret(): string {
   return secret;
 }
 
+export interface RelayHealth {
+  ok: boolean;
+  version?: number;
+  gtt?: boolean;
+}
+
+export async function getRelayHealth(): Promise<RelayHealth | null> {
+  try {
+    const res = await fetch(`${relayBaseUrl()}/health`, { cache: "no-store" });
+    if (!res.ok) return null;
+    return (await res.json()) as RelayHealth;
+  } catch {
+    return null;
+  }
+}
+
+export async function relaySupportsGtt(): Promise<boolean> {
+  const health = await getRelayHealth();
+  return health?.gtt === true;
+}
+
+function relayErrorMessage(status: number, data: { error?: string }, path: string): string {
+  if (status === 404 && path === "/gtt") {
+    return "Relay missing /gtt endpoint — redeploy relay/server.mjs on the droplet and restart mcube-kite-relay";
+  }
+  return data.error ?? `Relay error (${status})`;
+}
+
 async function relayFetch<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${relayBaseUrl()}${path}`, {
     method: "POST",
@@ -58,7 +86,7 @@ async function relayFetch<T>(path: string, body: unknown): Promise<T> {
 
   const data = (await res.json().catch(() => ({}))) as { error?: string; orderId?: string };
   if (!res.ok) {
-    throw new Error(data.error ?? `Relay error (${res.status})`);
+    throw new Error(relayErrorMessage(res.status, data, path));
   }
   return data as T;
 }

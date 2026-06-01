@@ -1,6 +1,6 @@
 /**
  * Minimal Kite order relay for DigitalOcean (static IP whitelist).
- * Vercel → POST /order|/cancel → this service → Kite API.
+ * Vercel → POST /order|/cancel|/gtt → this service → Kite API.
  */
 import "dotenv/config";
 import { createServer } from "node:http";
@@ -9,6 +9,7 @@ const PORT = Number(process.env.PORT ?? 3100);
 const RELAY_SECRET = process.env.KITE_RELAY_SECRET;
 const API_KEY = process.env.KITE_API_KEY;
 const KITE_BASE = "https://api.kite.trade";
+const RELAY_VERSION = 2;
 
 if (!RELAY_SECRET || !API_KEY) {
   console.error("Missing KITE_RELAY_SECRET or KITE_API_KEY");
@@ -17,6 +18,14 @@ if (!RELAY_SECRET || !API_KEY) {
 
 function auth(req) {
   return req.headers["x-relay-secret"] === RELAY_SECRET;
+}
+
+function pathname(req) {
+  try {
+    return new URL(req.url ?? "/", "http://localhost").pathname.replace(/\/$/, "") || "/";
+  } catch {
+    return req.url?.split("?")[0]?.replace(/\/$/, "") || "/";
+  }
 }
 
 async function readJson(req) {
@@ -54,16 +63,18 @@ const server = createServer(async (req, res) => {
     res.end(JSON.stringify(payload));
   };
 
+  const path = pathname(req);
+
   try {
-    if (req.method === "GET" && req.url === "/health") {
-      return send(200, { ok: true });
+    if (req.method === "GET" && path === "/health") {
+      return send(200, { ok: true, version: RELAY_VERSION, gtt: true });
     }
 
     if (!auth(req)) {
       return send(401, { error: "Unauthorized" });
     }
 
-    if (req.method === "POST" && req.url === "/order") {
+    if (req.method === "POST" && path === "/order") {
       const body = await readJson(req);
       const {
         accessToken,
@@ -99,7 +110,7 @@ const server = createServer(async (req, res) => {
       return send(200, { orderId: String(orderId) });
     }
 
-    if (req.method === "POST" && req.url === "/gtt") {
+    if (req.method === "POST" && path === "/gtt") {
       const body = await readJson(req);
       const {
         accessToken,
@@ -174,7 +185,7 @@ const server = createServer(async (req, res) => {
       return send(200, { triggerId: String(triggerId) });
     }
 
-    if (req.method === "POST" && req.url === "/cancel") {
+    if (req.method === "POST" && path === "/cancel") {
       const body = await readJson(req);
       const { accessToken, orderId, variety = "regular" } = body;
 
@@ -195,5 +206,5 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Kite relay listening on :${PORT}`);
+  console.log(`Kite relay v${RELAY_VERSION} listening on :${PORT}`);
 });
