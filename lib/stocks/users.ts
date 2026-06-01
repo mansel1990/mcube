@@ -30,6 +30,30 @@ export async function listStocksUsers(): Promise<StocksUserRow[]> {
   }));
 }
 
+export async function getStocksUserById(userId: string): Promise<StocksUserRow | null> {
+  await connectToDatabase();
+  const db = mongoose.connection.db;
+  if (!db) throw new Error("Database not connected");
+
+  const oid = mongoose.Types.ObjectId.isValid(userId)
+    ? new mongoose.Types.ObjectId(userId)
+    : null;
+  const user = await db.collection("user").findOne({
+    section: "stocks",
+    $or: [{ id: userId }, ...(oid ? [{ _id: oid }] : [])],
+  });
+
+  if (!user) return null;
+
+  return {
+    id: (user.id as string) ?? String(user._id),
+    username: (user.username as string) ?? "",
+    name: (user.name as string) ?? "",
+    email: (user.email as string) ?? "",
+    createdAt: user.createdAt ? new Date(user.createdAt as Date).toISOString() : "",
+  };
+}
+
 export async function countStocksUsers(): Promise<number> {
   await connectToDatabase();
   const db = mongoose.connection.db;

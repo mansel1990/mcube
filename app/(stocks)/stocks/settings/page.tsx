@@ -1,115 +1,68 @@
 "use client";
 
-import { Suspense } from "react";
-import { useState } from "react";
-import { authClient } from "@/lib/auth-client";
+import { Suspense, useState } from "react";
+import { AccountSettingsCard } from "@/components/stocks/settings/account-settings-card";
 import { NotificationSettingsCard } from "@/components/stocks/settings/notification-settings-card";
 import { KiteSettingsCard } from "@/components/stocks/settings/kite-settings-card";
-import { UsersSettingsCard } from "@/components/stocks/settings/users-settings-card";
 import { TradeSettingsCard } from "@/components/stocks/settings/trade-settings-card";
+import { UsersSettingsCard } from "@/components/stocks/settings/users-settings-card";
+import {
+  getSectionDescription,
+  getSectionTitle,
+  SettingsNav,
+  type SettingsSection,
+} from "@/components/stocks/settings/settings-nav";
+
+function SectionFallback() {
+  return <div className="h-40 rounded-xl bg-white border border-slate-200 animate-pulse" />;
+}
 
 export default function StocksSettingsPage() {
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
-  const [loading, setLoading] = useState(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-    setSuccess(false);
-
-    if (newPassword !== confirm) {
-      setError("New passwords do not match");
-      return;
-    }
-
-    setLoading(true);
-    const { error: authError } = await authClient.changePassword({ currentPassword, newPassword });
-
-    if (authError) {
-      setError(authError.message || "Failed to change password");
-      setLoading(false);
-      return;
-    }
-
-    setSuccess(true);
-    setCurrentPassword("");
-    setNewPassword("");
-    setConfirm("");
-    setLoading(false);
-  }
+  const [section, setSection] = useState<SettingsSection>("account");
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 px-4 py-8">
-      <div className="max-w-lg mx-auto space-y-6">
-        <h1 className="text-2xl font-bold text-slate-900">Settings</h1>
+    <div className="min-h-screen bg-slate-50 text-slate-900 px-4 py-6 sm:py-8">
+      <div className="max-w-4xl mx-auto">
+        <header className="mb-6">
+          <h1 className="text-2xl font-bold text-slate-900">Settings</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Manage your account, broker connection, and preferences.
+          </p>
+        </header>
 
-        <section>
-          <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Kite</h2>
-          <Suspense fallback={<div className="h-32 rounded-xl bg-white border border-slate-200 animate-pulse" />}>
-            <KiteSettingsCard />
-          </Suspense>
-        </section>
+        <div className="grid gap-6 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
+          <aside className="md:sticky md:top-6">
+            <SettingsNav active={section} onChange={setSection} />
+          </aside>
 
-        <section>
-          <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Trading</h2>
-          <TradeSettingsCard />
-        </section>
+          <main className="min-w-0">
+            <div className="mb-4 md:hidden">
+              <h2 className="text-lg font-semibold text-slate-900">{getSectionTitle(section)}</h2>
+              <p className="text-xs text-slate-500 mt-0.5">{getSectionDescription(section)}</p>
+            </div>
 
-        <section>
-          <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Account</h2>
-          <div className="rounded-xl border border-slate-200 bg-white p-6">
-            <h3 className="text-sm font-semibold text-slate-900 mb-4">Change Password</h3>
-            <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-              <input
-                type="password"
-                placeholder="Current password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                required
-                className="px-4 py-3 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
-              />
-              <input
-                type="password"
-                placeholder="New password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                required
-                className="px-4 py-3 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
-              />
-              <input
-                type="password"
-                placeholder="Confirm new password"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                required
-                className="px-4 py-3 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
-              />
-              {error && <p className="text-red-600 text-sm">{error}</p>}
-              {success && <p className="text-green-600 text-sm">Password changed successfully.</p>}
-              <button
-                type="submit"
-                disabled={loading}
-                className="py-2.5 rounded-lg bg-primary text-white text-sm font-medium disabled:opacity-50"
-              >
-                {loading ? "Updating…" : "Update Password"}
-              </button>
-            </form>
-          </div>
-        </section>
+            <div className="hidden md:block mb-5">
+              <h2 className="text-lg font-semibold text-slate-900">{getSectionTitle(section)}</h2>
+              <p className="text-sm text-slate-500 mt-1">{getSectionDescription(section)}</p>
+            </div>
 
-        <section>
-          <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Users</h2>
-          <UsersSettingsCard />
-        </section>
+            <div className="space-y-4">
+              {section === "account" && <AccountSettingsCard />}
 
-        <section>
-          <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Notifications</h2>
-          <NotificationSettingsCard />
-        </section>
+              {section === "broker" && (
+                <Suspense fallback={<SectionFallback />}>
+                  <KiteSettingsCard />
+                </Suspense>
+              )}
+
+              {section === "trading" && <TradeSettingsCard />}
+
+              {section === "notifications" && <NotificationSettingsCard />}
+
+              {section === "users" && <UsersSettingsCard />}
+            </div>
+          </main>
+        </div>
       </div>
     </div>
   );

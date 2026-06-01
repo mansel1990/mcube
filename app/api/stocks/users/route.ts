@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { getStocksSessionUsername, isStocksAdmin } from "@/lib/stocks/admin";
 import { requireStocksSession } from "@/lib/stocks/require-stocks-session";
 import { listStocksUsers } from "@/lib/stocks/users";
 
@@ -7,13 +8,22 @@ export async function GET() {
   const session = await requireStocksSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const username = getStocksSessionUsername(session.user as Record<string, unknown>);
   const users = await listStocksUsers();
-  return NextResponse.json(users);
+  return NextResponse.json({
+    users,
+    canManageUsers: isStocksAdmin(username),
+  });
 }
 
 export async function POST(request: NextRequest) {
   const session = await requireStocksSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const actorUsername = getStocksSessionUsername(session.user as Record<string, unknown>);
+  if (!isStocksAdmin(actorUsername)) {
+    return NextResponse.json({ error: "Only the admin can add users" }, { status: 403 });
+  }
 
   const body = await request.json();
   const { username, name, password } = body as {

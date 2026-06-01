@@ -72,14 +72,32 @@ export function NotificationSettingsCard() {
     }
   }
 
-  if (permState === "unsupported") return null;
+  if (permState === "unsupported") {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white p-6">
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+            <Bell size={18} />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">Daily Buy Alerts</h3>
+            <p className="text-xs text-slate-500 mt-1">
+              Push notifications are not supported in this browser.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
+    <div className="rounded-xl border border-slate-200 bg-white p-6">
       <div className="flex items-start gap-3">
-        <Bell size={18} className="text-primary shrink-0 mt-0.5" />
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <Bell size={18} />
+        </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-slate-900">Daily Buy Alerts</p>
+          <h3 className="text-sm font-semibold text-slate-900">Daily Buy Alerts</h3>
           <p className="text-xs text-slate-500 mt-1 leading-relaxed">
             Push at 9:00 AM with today&apos;s buy ideas, and at 6:30 PM when the scanner finishes.
             On iOS, add to home screen first, then enable here.
