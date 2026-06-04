@@ -164,10 +164,43 @@ export function openTrades(trades: TradeForAnalytics[]): TradeForAnalytics[] {
   return trades.filter((t) => t.status === "open");
 }
 
-function realizedPnlOf(trade: TradeForAnalytics): number {
+export function tradeRealizedPnl(trade: TradeForAnalytics): number {
   if (trade.realizedPnl != null) return trade.realizedPnl;
   if (trade.exitPrice == null) return 0;
   return (trade.exitPrice - trade.entryPrice) * trade.quantity;
+}
+
+function realizedPnlOf(trade: TradeForAnalytics): number {
+  return tradeRealizedPnl(trade);
+}
+
+export interface RecentClosedItem {
+  ticker: string;
+  pnl: number;
+  exitDate: string;
+}
+
+/** Latest closed trades for a compact W/L strip (newest exit first). */
+export function listRecentClosedTrades(
+  trades: TradeForAnalytics[],
+  limit = 8,
+  viewMode: PnlViewMode = "all",
+  periodKey?: string
+): RecentClosedItem[] {
+  let closed = closedTrades(trades);
+  if (viewMode === "month" && periodKey) {
+    closed = closed.filter((t) => t.exitDate && monthKey(t.exitDate) === periodKey);
+  } else if (viewMode === "year" && periodKey) {
+    closed = closed.filter((t) => t.exitDate && dateKey(t.exitDate).slice(0, 4) === periodKey);
+  }
+  return closed
+    .sort((a, b) => (b.exitDate ?? "").localeCompare(a.exitDate ?? ""))
+    .slice(0, limit)
+    .map((t) => ({
+      ticker: (t.ticker ?? "—").toUpperCase(),
+      pnl: tradeRealizedPnl(t),
+      exitDate: t.exitDate!,
+    }));
 }
 
 export function computePortfolioSummary(trades: TradeForAnalytics[]): PortfolioSummary {

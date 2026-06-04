@@ -19,6 +19,7 @@ import {
   filterTradesForTracking,
   fmtInr,
   formatDisplayDate,
+  type TradeForAnalytics,
 } from "@/lib/stocks/portfolio-analytics";
 import { CloseTradeSheet } from "./close-trade-sheet";
 import { PortfolioOverview } from "./portfolio-overview";
@@ -103,6 +104,8 @@ export function PortfolioPage() {
   const [holdings, setHoldings] = useState<KiteHolding[]>([]);
   const [positions, setPositions] = useState<KitePosition[]>([]);
   const [trades, setTrades] = useState<UserTrade[]>([]);
+  const [kiteClosedTrades, setKiteClosedTrades] = useState<TradeForAnalytics[]>([]);
+  const [kiteRealizedPnl, setKiteRealizedPnl] = useState<number | null>(null);
   const [kiteError, setKiteError] = useState<string | null>(null);
   const [kiteConnected, setKiteConnected] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -124,11 +127,22 @@ export function PortfolioPage() {
       if (holdRes.ok) {
         setHoldings(await holdRes.json());
         setKiteConnected(true);
+        const pnlRes = await fetch("/api/kite/portfolio-summary");
+        if (pnlRes.ok) {
+          const pnlData = await pnlRes.json();
+          setKiteClosedTrades(pnlData.trades ?? []);
+          setKiteRealizedPnl(pnlData.summary?.realizedPnl ?? 0);
+        } else {
+          setKiteClosedTrades([]);
+          setKiteRealizedPnl(null);
+        }
       } else if (holdRes.status === 401) {
         const d = await holdRes.json();
         setKiteError(d.error || "Connect Kite in Settings");
         setHoldings([]);
         setKiteConnected(false);
+        setKiteClosedTrades([]);
+        setKiteRealizedPnl(null);
       }
 
       if (posRes.ok) {
@@ -169,6 +183,7 @@ export function PortfolioPage() {
 
   const trackedTrades = useMemo(() => filterTradesForTracking(trades), [trades]);
   const summary = useMemo(() => computePortfolioSummary(trackedTrades), [trackedTrades]);
+  const realizedPnl = kiteConnected && kiteRealizedPnl != null ? kiteRealizedPnl : summary.realizedPnl;
 
   const openTrades = trades.filter((t) => t.status === "open");
   const closedTrades = trades.filter((t) => t.status === "closed");
@@ -199,7 +214,7 @@ export function PortfolioPage() {
                     Since {PORTFOLIO_TRACKING_START_LABEL}
                   </span>
                 </div>
-                <p className="text-xs text-slate-500">Buy via Kite · P&L from holdings + closed trades</p>
+                <p className="text-xs text-slate-500">Buy via Kite · P&L from holdings + closed Kite trades</p>
               </div>
             </div>
             <button
@@ -224,8 +239,8 @@ export function PortfolioPage() {
               </span>
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-[11px] font-medium text-slate-600">
                 Realized{" "}
-                <span className={`font-bold tabular-nums ${pnlClass(summary.realizedPnl)}`}>
-                  {summary.realizedPnl >= 0 ? "+" : "−"}₹{fmt(Math.abs(summary.realizedPnl))}
+                <span className={`font-bold tabular-nums ${pnlClass(realizedPnl)}`}>
+                  {realizedPnl >= 0 ? "+" : "−"}₹{fmt(Math.abs(realizedPnl))}
                 </span>
               </span>
             </div>
@@ -286,6 +301,7 @@ export function PortfolioPage() {
             {tab === "overview" && (
               <PortfolioOverview
                 trades={trades}
+                kiteClosedTrades={kiteClosedTrades}
                 holdings={holdings}
                 kiteConnected={kiteConnected}
               />

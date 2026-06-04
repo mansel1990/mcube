@@ -21,10 +21,14 @@ export async function ensureKiteTradesSchema() {
       status        TEXT DEFAULT 'OPEN',
       strategy      TEXT,
       created_at    TIMESTAMPTZ DEFAULT now(),
-      closed_at     TIMESTAMPTZ
+      closed_at     TIMESTAMPTZ,
+      exit_price    NUMERIC(10,2),
+      exit_date     TEXT
     )
   `;
   await sql`ALTER TABLE kite_trades ADD COLUMN IF NOT EXISTS kite_gtt_id TEXT`;
+  await sql`ALTER TABLE kite_trades ADD COLUMN IF NOT EXISTS exit_price NUMERIC(10,2)`;
+  await sql`ALTER TABLE kite_trades ADD COLUMN IF NOT EXISTS exit_date TEXT`;
   tradesMigrated = true;
 }
 
@@ -43,8 +47,10 @@ export interface KiteTradeRow {
   stop_loss: string | null;
   status: string;
   strategy: string | null;
-  created_at: string;
-  closed_at: string | null;
+  created_at: string | Date;
+  closed_at: string | Date | null;
+  exit_price: string | null;
+  exit_date: string | null;
 }
 
 export async function insertKiteTrade(params: {
@@ -108,10 +114,69 @@ export async function markKiteTradeCancelled(tradeId: number): Promise<void> {
   `;
 }
 
+export async function getOpenKiteBuysForUser(userId: string): Promise<KiteTradeRow[]> {
+  await ensureKiteTradesSchema();
+  const rows = await sql`
+    SELECT * FROM kite_trades
+    WHERE user_id = ${userId}
+      AND order_type = 'BUY'
+      AND status = 'OPEN'
+    ORDER BY created_at ASC
+  `;
+  return rows as KiteTradeRow[];
+}
+
+export async function getClosedKiteBuysForUser(userId: string): Promise<KiteTradeRow[]> {
+  await ensureKiteTradesSchema();
+  const rows = await sql`
+    SELECT * FROM kite_trades
+    WHERE user_id = ${userId}
+      AND order_type = 'BUY'
+      AND status = 'CLOSED'
+    ORDER BY COALESCE(exit_date, closed_at::text) ASC
+  `;
+  return rows as KiteTradeRow[];
+}
+
+export async function updateKiteTradeEntryPrice(tradeId: number, pricePerShare: number): Promise<void> {
+  await ensureKiteTradesSchema();
+  await sql`
+    UPDATE kite_trades SET price = ${pricePerShare} WHERE id = ${tradeId}
+  `;
+}
+
+export async function markKiteTradeClosed(
+  tradeId: number,
+  exitPrice: number,
+  exitDate: string
+): Promise<void> {
+  await ensureKiteTradesSchema();
+  await sql`
+    UPDATE kite_trades
+    SET status = 'CLOSED',
+        exit_price = ${exitPrice},
+        exit_date = ${exitDate},
+        closed_at = now()
+    WHERE id = ${tradeId}
+  `;
+}
+
+export async function markKiteTradeOpen(tradeId: number): Promise<void> {
+  await ensureKiteTradesSchema();
+  await sql`
+    UPDATE kite_trades
+    SET status = 'OPEN',
+        exit_price = NULL,
+        exit_date = NULL,
+        closed_at = NULL
+    WHERE id = ${tradeId}
+  `;
+}
+
 /** Cancel window after order placement (seconds). */
 export const KITE_CANCEL_WINDOW_SEC = 5;
 
-export function isWithinCancelWindow(createdAt: string): boolean {
+export function isWithinCancelWindow(createdAt: string | Date): boolean {
   const placed = new Date(createdAt).getTime();
   return Date.now() - placed <= KITE_CANCEL_WINDOW_SEC * 1000;
 }

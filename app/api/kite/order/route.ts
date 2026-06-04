@@ -101,7 +101,7 @@ export async function POST(request: Request) {
       kiteOrderId: orderId,
       orderType: transactionType,
       qty,
-      price: estimatedInr ?? undefined,
+      price: transactionType === "BUY" && limitPrice != null ? limitPrice : estimatedInr ?? undefined,
       targetPrice,
       stopLoss,
       strategy: body.strategy,

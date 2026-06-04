@@ -33,6 +33,7 @@ import {
   groupRealizedPnlByYear,
   listAvailableMonthKeys,
   listAvailableYears,
+  listRecentClosedTrades,
   todayIST,
   type PnlViewMode,
   type TradeForAnalytics,
@@ -71,11 +72,17 @@ function useIsClient() {
 
 interface PortfolioOverviewProps {
   trades: TradeForAnalytics[];
+  kiteClosedTrades?: TradeForAnalytics[];
   holdings: KiteHoldingLike[];
   kiteConnected: boolean;
 }
 
-export function PortfolioOverview({ trades, holdings, kiteConnected }: PortfolioOverviewProps) {
+export function PortfolioOverview({
+  trades,
+  kiteClosedTrades = [],
+  holdings,
+  kiteConnected,
+}: PortfolioOverviewProps) {
   const isClient = useIsClient();
   const [viewMode, setViewMode] = useState<PnlViewMode>("all");
   const [selectedMonth, setSelectedMonth] = useState(PORTFOLIO_TRACKING_START.slice(0, 7));
@@ -90,7 +97,16 @@ export function PortfolioOverview({ trades, holdings, kiteConnected }: Portfolio
   }
 
   const tracked = useMemo(() => filterTradesForTracking(trades), [trades]);
+  const trackedKite = useMemo(
+    () => (kiteConnected ? filterTradesForTracking(kiteClosedTrades) : []),
+    [kiteConnected, kiteClosedTrades]
+  );
+  const realizedTrades = kiteConnected ? trackedKite : tracked;
   const logSummary = useMemo(() => computePortfolioSummary(tracked), [tracked]);
+  const kiteSummary = useMemo(
+    () => (kiteConnected ? computePortfolioSummary(trackedKite) : null),
+    [kiteConnected, trackedKite]
+  );
 
   const holdingsUnrealized = useMemo(() => holdings.reduce((s, h) => s + (h.pnl ?? 0), 0), [holdings]);
   const holdingsInvested = useMemo(
@@ -103,30 +119,31 @@ export function PortfolioOverview({ trades, holdings, kiteConnected }: Portfolio
   const investedOpen = kiteConnected ? holdingsInvested : logSummary.totalInvestedOpen;
 
   const monthOptions = useMemo(
-    () => listAvailableMonthKeys(tracked, isClient),
-    [tracked, isClient]
+    () => listAvailableMonthKeys(realizedTrades, isClient),
+    [realizedTrades, isClient]
   );
   const yearOptions = useMemo(
-    () => listAvailableYears(tracked, isClient),
-    [tracked, isClient]
+    () => listAvailableYears(realizedTrades, isClient),
+    [realizedTrades, isClient]
   );
 
   const realizedStats = useMemo(() => {
-    if (viewMode === "month") return getRealizedStatsForMonth(tracked, selectedMonth);
-    if (viewMode === "year") return getRealizedStatsForYear(tracked, selectedYear);
+    if (viewMode === "month") return getRealizedStatsForMonth(realizedTrades, selectedMonth);
+    if (viewMode === "year") return getRealizedStatsForYear(realizedTrades, selectedYear);
+    const base = kiteConnected && kiteSummary ? kiteSummary : logSummary;
     return {
-      realizedPnl: logSummary.realizedPnl,
-      closedCount: logSummary.closedCount,
-      wins: logSummary.wins,
-      losses: logSummary.losses,
+      realizedPnl: base.realizedPnl,
+      closedCount: base.closedCount,
+      wins: base.wins,
+      losses: base.losses,
     };
-  }, [viewMode, selectedMonth, selectedYear, tracked, logSummary]);
+  }, [viewMode, selectedMonth, selectedYear, realizedTrades, logSummary, kiteSummary, kiteConnected]);
 
   const netPnl = unrealizedPnl + realizedStats.realizedPnl;
 
-  const monthlyRows = useMemo(() => groupRealizedPnlByMonth(tracked), [tracked]);
-  const yearlyRows = useMemo(() => groupRealizedPnlByYear(tracked), [tracked]);
-  const cumulativeSeries = useMemo(() => buildCumulativePnlSeries(tracked), [tracked]);
+  const monthlyRows = useMemo(() => groupRealizedPnlByMonth(realizedTrades), [realizedTrades]);
+  const yearlyRows = useMemo(() => groupRealizedPnlByYear(realizedTrades), [realizedTrades]);
+  const cumulativeSeries = useMemo(() => buildCumulativePnlSeries(realizedTrades), [realizedTrades]);
 
   const periodLabel =
     viewMode === "month"
@@ -136,7 +153,13 @@ export function PortfolioOverview({ trades, holdings, kiteConnected }: Portfolio
         : "All time";
 
   const chartRows = viewMode === "year" ? yearlyRows : monthlyRows;
-  const hasAnyData = holdings.length > 0 || tracked.length > 0;
+  const hasAnyData = holdings.length > 0 || tracked.length > 0 || trackedKite.length > 0;
+
+  const recentClosed = useMemo(() => {
+    const periodKey =
+      viewMode === "month" ? selectedMonth : viewMode === "year" ? selectedYear : undefined;
+    return listRecentClosedTrades(realizedTrades, 8, viewMode, periodKey);
+  }, [realizedTrades, viewMode, selectedMonth, selectedYear]);
 
   return (
     <div className="space-y-4">
@@ -170,6 +193,10 @@ export function PortfolioOverview({ trades, holdings, kiteConnected }: Portfolio
         </div>
         <p className={`text-xl font-bold tabular-nums ${pnlTone(netPnl)}`}>{signedInr(netPnl)}</p>
       </div>
+
+      {recentClosed.length > 0 && (
+        <RecentExitsStrip items={recentClosed} periodLabel={periodLabel} />
+      )}
 
       <div className="bg-white rounded-2xl border border-slate-200 p-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
@@ -237,11 +264,11 @@ export function PortfolioOverview({ trades, holdings, kiteConnected }: Portfolio
 
         {!hasAnyData ? (
           <p className="text-sm text-slate-500 py-6 text-center">
-            Buy from signals via Kite to see holdings P&L here. Realized history appears when trades are closed.
+            Buy from signals via Kite to see holdings P&L here. Realized history appears when a Kite position is sold (target, stop loss, or manual exit).
           </p>
         ) : chartRows.length === 0 && viewMode !== "all" ? (
           <p className="text-sm text-slate-500 py-6 text-center">
-            No closed trades in {periodLabel}. Realized P&L updates when you close a position.
+            No closed trades in {periodLabel}. Realized P&L updates when a Kite position is sold.
           </p>
         ) : (
           <>
@@ -349,6 +376,47 @@ export function PortfolioOverview({ trades, holdings, kiteConnected }: Portfolio
             </div>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+function RecentExitsStrip({
+  items,
+  periodLabel,
+}: {
+  items: { ticker: string; pnl: number; exitDate: string }[];
+  periodLabel: string;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-2">
+        Recent exits · {periodLabel}
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {items.map((r) => {
+          const win = r.pnl >= 0;
+          return (
+            <span
+              key={`${r.ticker}-${r.exitDate}`}
+              className={`inline-flex items-center gap-1.5 pl-2 pr-2.5 py-1 rounded-lg text-[11px] font-semibold border ${
+                win
+                  ? "bg-emerald-50 border-emerald-100 text-emerald-800"
+                  : "bg-red-50 border-red-100 text-red-800"
+              }`}
+            >
+              <span
+                className={`w-4 h-4 rounded flex items-center justify-center text-[9px] font-bold ${
+                  win ? "bg-emerald-200/80 text-emerald-900" : "bg-red-200/80 text-red-900"
+                }`}
+              >
+                {win ? "W" : "L"}
+              </span>
+              <span>{r.ticker}</span>
+              <span className="tabular-nums opacity-90">{signedInr(r.pnl)}</span>
+            </span>
+          );
+        })}
       </div>
     </div>
   );
