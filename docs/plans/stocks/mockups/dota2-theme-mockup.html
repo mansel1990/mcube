@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>THE DIRE TERMINAL — Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0B0E13; --panel:#151A23; --panel2:#10141C; --border:#2A3140;
+    --radiant:#92A525; --radiant-bright:#A8C432; --dire:#C23C2A; --dire-bright:#E25744;
+    --gold:#F4D03F; --text:#C8CCD4; --head:#F0EDE2; --dim:#7A8294;
+    --divine:#E29B01; --rare:#4C7EFF;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:'Inter',system-ui,sans-serif; font-size:14px;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(76,46,16,.25), transparent),
+      radial-gradient(ellipse 60% 40% at 90% 110%, rgba(34,18,40,.35), transparent);
+    min-height:100vh; padding-bottom:90px;
+  }
+  .num{font-family:Consolas,'SF Mono',monospace}
+  h1,h2,h3,.cz{font-family:'Cinzel',serif; color:var(--head); letter-spacing:.08em; text-transform:uppercase}
+
+  .mock-note{
+    background:repeating-linear-gradient(45deg,#1a1205,#1a1205 12px,#221808 12px,#221808 24px);
+    border-bottom:1px solid #3a2c10; color:var(--gold);
+    text-align:center; font-size:11px; letter-spacing:.15em; padding:6px; text-transform:uppercase;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:0 16px}
+
+  /* ===== header ===== */
+  header.app{display:flex;align-items:center;justify-content:space-between;padding:18px 0 10px}
+  .logo{display:flex;align-items:center;gap:12px}
+  .logo .shield{
+    width:42px;height:42px;border-radius:6px;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(160deg,#2b1c08,#120c04);border:1px solid #4a3410;
+    color:var(--gold);font-size:20px;
+  }
+  .logo h1{font-size:19px;font-weight:900}
+  .logo .sub{font-size:10px;color:var(--dim);letter-spacing:.25em;text-transform:uppercase}
+  .ready-check{
+    display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim);
+    background:var(--panel2);border:1px solid var(--border);border-radius:6px;padding:7px 12px;
+  }
+  .ready-check .dot{width:7px;height:7px;border-radius:50%;background:var(--radiant-bright);box-shadow:0 0 8px var(--radiant-bright);animation:pulse 2s infinite}
+  @keyframes pulse{50%{opacity:.4}}
+
+  /* ===== section headers ===== */
+  .sec{margin-top:26px}
+  .sec-head{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}
+  .sec-head h2{font-size:14px;font-weight:700}
+  .sec-head .tag{font-size:11px;color:var(--dim)}
+  .rule{flex:1;height:1px;background:linear-gradient(90deg,var(--border),transparent)}
+
+  /* ===== retreat banner ===== */
+  .retreat{
+    border:1px solid #5a201a; border-left:3px solid var(--dire-bright); border-radius:8px;
+    background:linear-gradient(90deg,rgba(194,60,42,.16),rgba(194,60,42,.04) 60%,transparent);
+    padding:14px 16px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    box-shadow:0 0 24px rgba(194,60,42,.12);
+  }
+  .retreat .horn{font-size:22px;filter:drop-shadow(0 0 6px rgba(226,87,68,.8))}
+  .retreat .who{display:flex;align-items:center;gap:10px;min-width:210px}
+  .retreat .info{flex:1;min-width:220px}
+  .retreat .call{font-size:11px;letter-spacing:.2em;color:var(--dire-bright);font-weight:700}
+  .retreat .sym{font-size:17px;font-weight:700;color:var(--head)}
+  .retreat .reason{font-size:12px;color:#d9a49c;margin-top:2px}
+  .retreat .pnl{ text-align:right;margin-right:6px}
+  .gg{
+    background:linear-gradient(180deg,#d94f3a,#9e2a1b); color:#fff; border:1px solid #e8755f;
+    font-family:'Cinzel',serif;font-weight:900;letter-spacing:.2em;font-size:14px;
+    padding:10px 26px;border-radius:6px;cursor:pointer;
+    box-shadow:0 2px 12px rgba(217,79,58,.4), inset 0 1px 0 rgba(255,255,255,.25);
+  }
+  .gg:hover{filter:brightness(1.12)}
+
+  /* ===== hero portrait ===== */
+  .hp{position:relative;border-radius:6px;overflow:hidden;border:1px solid var(--border);background:#000;flex-shrink:0}
+  .hp img{display:block;width:100%;height:100%;object-fit:cover}
+  .hp.s48{width:64px;height:36px}
+  .hp.s64{width:86px;height:48px}
+  .hp.ring{box-shadow:0 0 0 1px rgba(0,0,0,.8),0 0 10px var(--accent,transparent)}
+
+  /* ===== cards grid ===== */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px}
+  .card{
+    background:linear-gradient(170deg,var(--panel),var(--panel2));
+    border:1px solid var(--border); border-radius:10px; padding:0; overflow:hidden;
+    position:relative;
+  }
+  .card .stripe{height:3px;background:var(--accent,#444)}
+  .card.divine{border-color:#6b4a06;box-shadow:0 0 18px rgba(226,155,1,.18), inset 0 0 30px rgba(226,155,1,.03)}
+  .card.rare{border-color:#23396b;box-shadow:0 0 18px rgba(76,126,255,.14)}
+  .card .body{padding:13px 14px 14px}
+  .card-top{display:flex;gap:11px;align-items:center}
+  .ct-main{flex:1;min-width:0}
+  .ct-main .hero-name{font-family:'Cinzel',serif;font-size:10.5px;letter-spacing:.14em;color:var(--accent,#999);text-transform:uppercase;font-weight:700}
+  .ct-main .sym{font-size:17px;font-weight:700;color:var(--head);line-height:1.25}
+  .ct-main .date{font-size:11px;color:var(--dim)}
+  .tier{
+    font-family:'Cinzel',serif;font-size:9px;font-weight:900;letter-spacing:.18em;
+    padding:3px 8px;border-radius:4px;text-transform:uppercase;white-space:nowrap;
+  }
+  .tier.divine{color:#ffc24d;border:1px solid #6b4a06;background:rgba(226,155,1,.1)}
+  .tier.rare{color:#84a4ff;border:1px solid #23396b;background:rgba(76,126,255,.1)}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:12px}
+  .stat{background:rgba(0,0,0,.28);border:1px solid #1d2330;border-radius:6px;padding:7px 9px}
+  .stat .l{font-size:9.5px;letter-spacing:.12em;color:var(--dim);text-transform:uppercase}
+  .stat .v{font-size:13.5px;color:var(--head);font-weight:600;margin-top:2px}
+  .stat .v.gold{color:var(--gold)}
+  .stat.tower .l{color:#c9a86a}
+  .buffs{display:flex;gap:6px;margin-top:11px;flex-wrap:wrap;align-items:center}
+  .pill{font-size:10.5px;padding:3px 9px;border-radius:99px;border:1px solid var(--border);background:rgba(255,255,255,.03);color:var(--text)}
+  .pill.live{border-color:#2c4d2c;color:#9fd49f}
+  .pill.live::before{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;background:#6fdc6f;margin-right:5px;box-shadow:0 0 5px #6fdc6f;vertical-align:1px}
+  .actions{display:flex;gap:8px;margin-top:13px}
+  .btn{
+    flex:1;text-align:center;font-family:'Cinzel',serif;font-weight:700;letter-spacing:.16em;font-size:11.5px;
+    padding:9px 4px;border-radius:6px;cursor:pointer;border:1px solid;text-transform:uppercase;
+  }
+  .btn.pick{background:linear-gradient(180deg,#9db32c,#5e7113);border-color:#b6cc4a;color:#0d1102;box-shadow:0 2px 10px rgba(146,165,37,.3),inset 0 1px 0 rgba(255,255,255,.3)}
+  .btn.pick:hover{filter:brightness(1.1)}
+  .btn.scout{background:transparent;border-color:var(--border);color:var(--text)}
+  .btn.scout:hover{border-color:var(--dim)}
+  .pnl-pos{color:var(--radiant-bright)} .pnl-neg{color:var(--dire-bright)}
+
+  /* badges */
+  .badge{font-size:9.5px;font-weight:700;letter-spacing:.12em;padding:3px 8px;border-radius:4px;text-transform:uppercase}
+  .badge.aegis{color:#ffd773;border:1px solid #7a5a10;background:linear-gradient(180deg,rgba(244,208,63,.18),rgba(244,208,63,.05));box-shadow:0 0 10px rgba(244,208,63,.2)}
+  .badge.exit{color:#ff9d8d;border:1px solid #5a201a;background:rgba(194,60,42,.15)}
+  .badge.spawn{color:#9ab2d8;border:1px solid #2c3c5a;background:rgba(76,126,255,.08)}
+  .badge.held{color:var(--dim);border:1px solid var(--border);background:rgba(255,255,255,.03)}
+  .gametime{font-size:10.5px;color:var(--dim)}
+  .gametime b{color:var(--text)}
+
+  /* ===== filter chips ===== */
+  .heroes-bar{display:flex;gap:9px;overflow-x:auto;padding:4px 2px 10px;scrollbar-width:none}
+  .heroes-bar::-webkit-scrollbar{display:none}
+  .hchip{display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;min-width:62px;opacity:.65;transition:.15s}
+  .hchip:hover,.hchip.on{opacity:1}
+  .hchip .face{
+    width:56px;height:56px;border-radius:50%;overflow:hidden;border:2px solid var(--border);background:#000;
+    display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;color:var(--gold);font-size:18px;
+  }
+  .hchip.on .face{border-color:var(--accent,var(--gold));box-shadow:0 0 12px var(--accent,rgba(244,208,63,.5))}
+  .hchip img{width:100%;height:100%;object-fit:cover;object-position:center top;transform:scale(1.6)}
+  .hchip .nm{font-size:9px;letter-spacing:.08em;color:var(--text);text-transform:uppercase;text-align:center;line-height:1.2}
+  .hchip .ct{font-size:9px;color:var(--dim)}
+
+  /* ===== bench ===== */
+  .bench{border:1px dashed #232a38;border-radius:8px;margin-top:18px;background:rgba(255,255,255,.012)}
+  .bench-head{display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer;user-select:none}
+  .bench-head .cz{font-size:11px;color:var(--dim)}
+  .bench-head .arrow{margin-left:auto;color:var(--dim);transition:.2s}
+  .bench.open .arrow{transform:rotate(180deg)}
+  .bench-body{display:none;padding:2px 14px 14px}
+  .bench.open .bench-body{display:block}
+  .bench-row{display:flex;align-items:center;gap:10px;padding:9px 6px;border-top:1px solid #1a202c;filter:grayscale(.7);opacity:.75}
+  .bench-row .sig{width:30px;height:30px;border-radius:6px;background:#1a2030;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:13px}
+  .bench-row .bn{flex:1;font-size:12.5px;color:var(--text)}
+  .bench-row .bs{font-size:11px;color:var(--dim)}
+  .bench-row .trial{font-size:10px;color:#8a93a8;border:1px solid var(--border);padding:2px 7px;border-radius:99px}
+
+  /* ===== scoreboard (demo tab) ===== */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+  .kpi{background:linear-gradient(170deg,var(--panel),var(--panel2));border:1px solid var(--border);border-radius:10px;padding:14px 16px;position:relative;overflow:hidden}
+  .kpi .l{font-size:10px;letter-spacing:.18em;color:var(--dim);text-transform:uppercase;font-family:'Cinzel',serif}
+  .kpi .v{font-size:23px;font-weight:700;color:var(--head);margin-top:6px}
+  .kpi .s{font-size:11px;color:var(--dim);margin-top:3px}
+  .kpi.gold .v{color:var(--gold)}
+  .kpi .glyph{position:absolute;right:10px;top:8px;font-size:26px;opacity:.18}
+  .streak{
+    margin-top:14px;border:1px solid #3a2c10;border-radius:8px;padding:10px 16px;
+    background:linear-gradient(90deg,rgba(244,208,63,.08),transparent);
+    font-family:'Cinzel',serif;color:var(--gold);font-size:13px;letter-spacing:.2em;font-weight:700;
+  }
+  .panel{background:linear-gradient(170deg,var(--panel),var(--panel2));border:1px solid var(--border);border-radius:10px;padding:16px}
+  .panel h3{font-size:12px;margin-bottom:12px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{font-size:9.5px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase;text-align:left;padding:7px 8px;border-bottom:1px solid var(--border);font-weight:600}
+  td{padding:8px;border-bottom:1px solid #1a202c;color:var(--text)}
+  tr:last-child td{border-bottom:none}
+  .mini-hero{display:inline-flex;align-items:center;gap:7px}
+  .mini-hero img{width:30px;height:18px;object-fit:cover;border-radius:3px;border:1px solid var(--border)}
+  .res{font-size:10px;font-weight:700;letter-spacing:.1em;padding:2px 7px;border-radius:4px}
+  .res.w{color:var(--radiant-bright);background:rgba(146,165,37,.12);border:1px solid #3a431a}
+  .res.l{color:var(--dire-bright);background:rgba(194,60,42,.12);border:1px solid #4a1d16}
+
+  /* ===== ranked tab ===== */
+  .networth{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  .networth .nw{font-size:34px;font-weight:700;color:var(--gold)}
+  .networth .nl{font-family:'Cinzel',serif;font-size:11px;letter-spacing:.2em;color:var(--dim);text-transform:uppercase}
+  .slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin-top:14px}
+  .slot{display:flex;gap:11px;align-items:center;background:linear-gradient(170deg,var(--panel),var(--panel2));border:1px solid var(--border);border-radius:9px;padding:11px 13px}
+  .slot .ic{width:44px;height:44px;border-radius:7px;background:radial-gradient(circle at 35% 30%,#2a3346,#141926);border:1px solid #323c52;display:flex;align-items:center;justify-content:center;font-size:18px}
+  .slot .si{flex:1}
+  .slot .ssym{font-weight:700;color:var(--head);font-size:14px}
+  .slot .sqty{font-size:11px;color:var(--dim)}
+  .slot .sval{text-align:right}
+
+  /* ===== HUD nav ===== */
+  nav.hud{
+    position:fixed;bottom:0;left:0;right:0;z-index:50;
+    background:linear-gradient(180deg,rgba(13,16,23,.96),rgba(8,10,15,.99));
+    border-top:1px solid #2c3344; backdrop-filter:blur(8px);
+    display:flex;justify-content:center;gap:6px;padding:8px 10px 12px;
+  }
+  .hud a{
+    font-family:'Cinzel',serif;font-size:10.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--dim);text-decoration:none;padding:9px 22px;border-radius:7px;border:1px solid transparent;
+    display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;
+  }
+  .hud a .ico{font-size:16px}
+  .hud a.on{color:var(--gold);border-color:#3a2c10;background:linear-gradient(180deg,rgba(244,208,63,.1),transparent)}
+
+  /* ===== toast ===== */
+  .toast{
+    position:fixed;left:50%;transform:translateX(-50%);bottom:86px;z-index:60;
+    background:linear-gradient(180deg,#1c1206,#120b03);border:1px solid #6b4a06;border-radius:9px;
+    padding:12px 20px;display:flex;align-items:center;gap:12px;box-shadow:0 6px 30px rgba(0,0,0,.6),0 0 20px rgba(226,155,1,.15);
+    animation:rise .4s ease;
+  }
+  @keyframes rise{from{opacity:0;transform:translate(-50%,12px)}}
+  .toast .fb{font-family:'Cinzel',serif;font-weight:900;color:#ff5f4a;letter-spacing:.18em;font-size:14px;text-shadow:0 0 12px rgba(255,95,74,.6)}
+  .toast .tmsg{font-size:12px;color:var(--text)}
+  .toast .cancel{font-size:11px;color:var(--dim);border:1px solid var(--border);border-radius:5px;padding:4px 10px;cursor:pointer}
+
+  .tab{display:none}.tab.on{display:block}
+  .footer-pad{height:30px}
+  @media (max-width:640px){ .stats{grid-template-columns:repeat(3,1fr)} .retreat .pnl{text-align:left} }
+</style>
+</head>
+<body>
+
+<div class="mock-note">Static mockup · sample data · no live connection</div>
+
+<div class="wrap">
+  <header class="app">
+    <div class="logo">
+      <div class="shield">&#9876;</div>
+      <div>
+        <h1>The Dire Terminal</h1>
+        <div class="sub">mcube &middot; stocks</div>
+      </div>
+    </div>
+    <div class="ready-check"><span class="dot"></span> Match ready &middot; scouted <b style="color:var(--text)">&nbsp;12 Jun, 6:00 PM IST</b></div>
+  </header>
+
+  <!-- ================= WAR ROOM ================= -->
+  <div class="tab on" id="tab-war">
+
+    <!-- RETREAT -->
+    <div class="sec">
+      <div class="sec-head"><h2 style="color:var(--dire-bright)">Retreat Calls</h2><span class="tag">1 tonight</span><div class="rule"></div></div>
+      <div class="retreat">
+        <div class="horn">&#128680;</div>
+        <div class="who">
+          <div class="hp s64 ring" style="--accent:rgba(170,120,255,.5)"><img src="https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/spectre.png" alt="Spectre"></div>
+          <div>
+            <div class="call">RETREAT!</div>
+            <div class="sym">HINDALCO</div>
+            <div style="font-size:10.5px;color:#a98fd6;font-family:'Cinzel',serif;letter-spacing:.1em">RUDRASHAKTI</div>
+          </div>
+        </div>
+        <div class="info">
+          <div class="reason">&#127983; <b style="color:#e8b3a9">Your tower has fallen</b> — closed below 20 EMA &#8377;712.40</div>
+          <div class="buffs" style="margin-top:7px">
+            <span class="pill live">LIVE &#8377;709.85</span>
+            <span class="pill">Entry &#8377;648.20</span>
+            <span class="gametime">held <b>11</b> days</span>
+          </div>
+        </div>
+        <div class="pnl">
+          <div class="num pnl-pos" style="font-size:19px;font-weight:700">+&#8377;951 <span style="font-size:13px">(+9.5%)</span></div>
+          <div style="font-size:10px;color:var(--dim);letter-spacing:.1em">UNREALIZED GOLD</div>
+        </div>
+        <button class="gg">GG &middot; Sell</button>
+      </div>
+    </div>
+
+    <!-- ON THE MAP -->
+    <div class="sec">
+      <div class="sec-head"><h2>On the Map</h2><span class="tag">3 heroes alive</span><div class="rule"></div></div>
+      <div class="grid">
+
+        <div class="card" style="--accent:#9b7bd8">
+          <div class="stripe"></div>
+          <div class="body">
+            <div class="card-top">
+              <div class="hp s64"><img src="https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/spectre.png" alt="Spectre"></div>
+              <div class="ct-main">
+                <div class="hero-name">RudraShakti</div>
+                <div class="sym">SAIL</div>
+                <div class="date">picked 02 Jun</div>
+              </div>
+              <span class="badge aegis">&#128737; Aegis</span>
+            </div>
+            <div class="stats">
+              <div class="stat"><div class="l">Live</div><div class="v num">&#8377;142.60</div></div>
+              <div class="stat"><div class="l">Gold</div><div class="v num pnl-pos">+12.4%</div></div>
+              <div class="stat tower"><div class="l">&#127983; Tower 10E</div><div class="v num">&#8377;136.90</div></div>
+            </div>
+            <div class="buffs">
+              <span class="pill live">LIVE</span>
+              <span class="gametime">game time <b>DAY 8/20</b></span>
+              <span class="gametime">start gold <b class="num" style="color:var(--gold)">&#8377;10,000</b></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="--accent:#7da0c4">
+          <div class="stripe"></div>
+          <div class="body">
+            <div class="card-top">
+              <div class="hp s64"><img src="https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/mirana.png" alt="Mirana"></div>
+              <div class="ct-main">
+                <div class="hero-name">MiRana</div>
+                <div class="sym">CIPLA</div>
+                <div class="date">picked 09 Jun</div>
+              </div>
+            </div>
+            <div class="stats">
+              <div class="stat"><div class="l">Live</div><div class="v num">&#8377;1,512.30</div></div>
+              <div class="stat"><div class="l">Gold</div><div class="v num pnl-pos">+1.8%</div></div>
+              <div class="stat tower"><div class="l">&#127983; Tower SL</div><div class="v num">&#8377;1,461.00</div></div>
+            </div>
+            <div class="buffs">
+              <span class="pill live">LIVE</span>
+              <span class="gametime">game time <b>DAY 3</b></span>
+              <span class="gametime">target <b class="num">&#8377;1,560</b></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="--accent:#b4533a">
+          <div class="stripe"></div>
+          <div class="body">
+            <div class="card-top">
+              <div class="hp s64"><img src="https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/pudge.png" alt="Pudge"></div>
+              <div class="ct-main">
+                <div class="hero-name">GaMomra</div>
+                <div class="sym">JSWENERGY</div>
+                <div class="date">picked 10 Jun</div>
+              </div>
+            </div>
+            <div class="stats">
+              <div class="stat"><div class="l">Live</div><div class="v num">&#8377;578.40</div></div>
+              <div class="stat"><div class="l">Gold</div><div class="v num pnl-neg">-1.1%</div></div>
+              <div class="stat tower"><div class="l">&#127983; Tower SL</div><div class="v num">&#8377;561.20</div></div>
+            </div>
+            <div class="buffs">
+              <span class="pill live">LIVE</span>
+              <span class="gametime">game time <b>DAY 2</b></span>
+              <span class="gametime">start gold <b class="num" style="color:var(--gold)">&#8377;15,000</b></span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- PICK PHASE -->
+    <div class="sec">
+      <div class="sec-head"><h2 style="color:var(--radiant-bright)">Pick Phase</h2><span class="tag">5 picks scouted tonight</span><div class="rule"></div></div>
+
+      <div class="heroes-bar">
+        <div class="hchip on" style="--accent:rgba(244,208,63,.6)"><div class="face">&#9733;</div><div class="nm">All</div><div class="ct">5</div></div>
+        <div class="hchip" style="--accent:rgba(155,123,216,.7)"><div class="face"><img src="https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/spectre.png"></div><div class="nm">RudraShakti</div><div class="ct">2</div></div>
+        <div class="hchip" style="--accent:rgba(139,98,182,.7)"><div class="face"><img src="https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/obsidian_destroyer.png"></div><div class="nm">GARudaVahana</div><div class="ct">1</div></div>
+        <div class="hchip" style="--accent:rgba(118,160,76,.7)"><div class="face"><img src="https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/windrunner.png"></div><div class="nm">Wayuputra</div><div class="ct">1</div></div>
+        <div class="hchip" style="--accent:rgba(96,170,96,.7)"><div class="face"><img src="https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/furion.png"></div><div class="nm">Gobin xood</div><div class="ct">0</div></div>
+        <div class="hchip" style="--accent:rgba(180,83,58,.7)"><div class="face"><img src="https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/pudge.png"></div><div class="nm">GaMomra</div><div class="ct">1</div></div>
+        <div class="hchip" style="--accent:rgba(212,180,60,.7)"><div class="face"><img src="https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/techies.png"></div><div class="nm">TeCNa</div><div class="ct">0</div></div>
+        <div class="hchip" style="--accent:rgba(168,134,90,.7)"><div class="face"><img src="https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/meepo.png"></div><div class="nm">KlaMeReous</div><div class="ct">0</div></div>
+        <div class="hchip" style="--accent:rgba(125,160,196,.7)"><div class="face"><img src="https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/mirana.png"></div><div class="nm">MiRana</div><div class="ct">0</div></div>
+        <div class="hchip" style="--accent:rgba(220,160,80,.7)"><div class="face"><img src="https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/invoker.png"></div><div class="nm">Manish</div><div class="ct">0</div></div>
+      </div>
+
+      <div class="grid">
+
+        <!-- Divine pick: Pudge -->
+        <div class="card divine" style="--accent:#b4533a">
+          <div class="stripe" style="background:linear-gradient(90deg,#E29B01,#b4533a)"></div>
+          <div class="body">
+            <div class="card-top">
+              <div class="hp s64"><img src="https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/pudge.png" alt="Pudge"></div>
+              <div class="ct-main">
+                <div class="hero-name" style="color:#e08a6e">GaMomra</div>
+                <div class="sym">TATASTEEL</div>
+                <div class="date">12 Jun &middot; gap +3.4%</div>
+              </div>
+              <span class="tier divine">Divine</span>
+            </div>
+            <div class="stats">
+              <div class="stat"><div class="l">Entry Zone</div><div class="v num">&#8377;176.4&ndash;178.1</div></div>
+              <div class="stat"><div class="l">Target</div><div class="v num">&#8377;191.50</div></div>
+              <div class="stat tower"><div class="l">&#127983; Tower SL</div><div class="v num">&#8377;170.80</div></div>
+            </div>
+            <div class="buffs">
+              <span class="pill live">LIVE &#8377;177.25</span>
+              <span class="pill">Vol 3.1x</span><span class="pill">RSI 64</span><span class="pill">R:R 2.4</span>
+            </div>
+            <div class="actions">
+              <button class="btn pick">&#9876; Pick</button>
+              <button class="btn scout">Scout (log)</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Rare pick: Spectre -->
+        <div class="card rare" style="--accent:#9b7bd8">
+          <div class="stripe"></div>
+          <div class="body">
+            <div class="card-top">
+              <div class="hp s64"><img src="https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/spectre.png" alt="Spectre"></div>
+              <div class="ct-main">
+                <div class="hero-name">RudraShakti</div>
+                <div class="sym">NTPC</div>
+                <div class="date">12 Jun &middot; RS line 20d high</div>
+              </div>
+              <span class="tier rare">Rare</span>
+            </div>
+            <div class="stats">
+              <div class="stat"><div class="l">Entry Zone</div><div class="v num">&#8377;368.2&ndash;371.0</div></div>
+              <div class="stat tower"><div class="l">&#127983; Tower 20E</div><div class="v num">&#8377;356.40</div></div>
+              <div class="stat"><div class="l">Disaster SL</div><div class="v num">&#8377;349.10</div></div>
+            </div>
+            <div class="buffs">
+              <span class="pill live">LIVE &#8377;369.90</span>
+              <span class="pill">Vol 1.8x</span><span class="pill">RSI 58</span><span class="pill" style="border-color:#3d3356;color:#b9a3e8">RS &uarr; vs Nifty</span>
+            </div>
+            <div class="actions">
+              <button class="btn pick">&#9876; Pick</button>
+              <button class="btn scout">Scout (log)</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Spectre: already on map -->
+        <div class="card" style="--accent:#9b7bd8;opacity:.62;filter:grayscale(.45)">
+          <div class="stripe"></div>
+          <div class="body">
+            <div class="card-top">
+              <div class="hp s64"><img src="https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/spectre.png" alt="Spectre"></div>
+              <div class="ct-main">
+                <div class="hero-name">RudraShakti</div>
+                <div class="sym">SAIL</div>
+                <div class="date">12 Jun &middot; signal still strong</div>
+              </div>
+              <span class="badge held">Already on the map</span>
+            </div>
+            <div class="buffs" style="margin-top:12px">
+              <span class="pill">One position per hero &middot; no re-buy</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- OD: pending fill -->
+        <div class="card rare" style="--accent:#8b62b6">
+          <div class="stripe"></div>
+          <div class="body">
+            <div class="card-top">
+              <div class="hp s64"><img src="https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/obsidian_destroyer.png" alt="Outworld Destroyer"></div>
+              <div class="ct-main">
+                <div class="hero-name" style="color:#a98fd6">GARudaVahana</div>
+                <div class="sym">RELIANCE</div>
+                <div class="date">12 Jun &middot; vol regime shift</div>
+              </div>
+              <span class="badge spawn">&#9203; Waiting to spawn</span>
+            </div>
+            <div class="stats">
+              <div class="stat"><div class="l">Entry Zone</div><div class="v num">&#8377;2,856&ndash;2,874</div></div>
+              <div class="stat"><div class="l">Target</div><div class="v num">&#8377;2,990</div></div>
+              <div class="stat tower"><div class="l">&#127983; Tower SL</div><div class="v num">&#8377;2,798</div></div>
+            </div>
+            <div class="buffs">
+              <span class="pill live">LIVE &#8377;2,881.40</span>
+              <span class="pill">Score 0.83</span><span class="pill" style="color:var(--gold);border-color:#3a2c10">Start gold &#8377;15,000</span>
+            </div>
+            <div class="actions">
+              <button class="btn pick">&#9876; Pick</button>
+              <button class="btn scout">Scout (log)</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Windranger rare -->
+        <div class="card rare" style="--accent:#76a04c">
+          <div class="stripe"></div>
+          <div class="body">
+            <div class="card-top">
+              <div class="hp s64"><img src="https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/windrunner.png" alt="Windranger"></div>
+              <div class="ct-main">
+                <div class="hero-name" style="color:#9cc46e">Wayuputra</div>
+                <div class="sym">POLYCAB</div>
+                <div class="date">12 Jun &middot; volume wave detected</div>
+              </div>
+              <span class="tier rare">Rare</span>
+            </div>
+            <div class="stats">
+              <div class="stat"><div class="l">Entry Zone</div><div class="v num">&#8377;6,410&ndash;6,455</div></div>
+              <div class="stat"><div class="l">Target</div><div class="v num">&#8377;6,720</div></div>
+              <div class="stat tower"><div class="l">&#127983; Tower SL</div><div class="v num">&#8377;6,255</div></div>
+            </div>
+            <div class="buffs">
+              <span class="pill live">LIVE &#8377;6,432.10</span>
+              <span class="pill">Vol 2.2x</span><span class="pill">Score 0.71</span>
+            </div>
+            <div class="actions">
+              <button class="btn pick">&#9876; Pick</button>
+              <button class="btn scout">Scout (log)</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- BENCH -->
+      <div class="bench" id="bench">
+        <div class="bench-head" onclick="document.getElementById('bench').classList.toggle('open')">
+          <span style="font-size:14px">&#129682;</span>
+          <span class="cz">Benched — on trial &middot; fighting for a roster spot</span>
+          <span class="arrow">&#9660;</span>
+        </div>
+        <div class="bench-body">
+          <div class="bench-row"><div class="sig">&#128200;</div><div class="bn">EMA Pullback <span class="bs">&middot; paper only</span></div><div class="bs num">30d: <span class="pnl-pos">+&#8377;640</span> &middot; 41% W</div><span class="trial">TRIAL</span></div>
+          <div class="bench-row"><div class="sig">&#9889;</div><div class="bn">Breakout <span class="bs">&middot; paper only</span></div><div class="bs num">30d: <span class="pnl-neg">-&#8377;210</span> &middot; 0% W (2)</div><span class="trial">TRIAL</span></div>
+          <div class="bench-row"><div class="sig">&#127793;</div><div class="bn">Fib Pullback <span class="bs">&middot; paper only</span></div><div class="bs num">30d: <span class="pnl-neg">-&#8377;1,120</span> &middot; 20% W</div><span class="trial">TRIAL</span></div>
+          <div class="bench-row"><div class="sig">&#127786;</div><div class="bn">VCP <span class="bs">&middot; paper only</span></div><div class="bs num">30d: 0 closed</div><span class="trial">TRIAL</span></div>
+          <div class="bench-row"><div class="sig">&#128123;</div><div class="bn">Fear Reversion <span class="bs">&middot; paper only</span></div><div class="bs num">30d: 0 signals (VIX &lt; 15)</div><span class="trial">TRIAL</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= DEMO MODE ================= -->
+  <div class="tab" id="tab-demo">
+    <div class="sec">
+      <div class="sec-head"><h2>Demo Mode &middot; Bot Match</h2><span class="tag">paper gold — not real</span><div class="rule"></div></div>
+
+      <div class="kpis">
+        <div class="kpi gold"><div class="glyph">&#129689;</div><div class="l">Net Worth</div><div class="v num">+&#8377;18,420</div><div class="s">last 60 days &middot; paper</div></div>
+        <div class="kpi"><div class="glyph">&#9876;</div><div class="l">Record</div><div class="v num">31 W &ndash; 27 L</div><div class="s">53.4% win rate</div></div>
+        <div class="kpi"><div class="glyph">&#128121;</div><div class="l">Roshan</div><div class="v num pnl-pos">+&#8377;2,140</div><div class="s">HINDALCO &middot; RudraShakti</div></div>
+        <div class="kpi"><div class="glyph">&#128176;</div><div class="l">Avg Gold / Game</div><div class="v num pnl-pos">+&#8377;318</div><div class="s">per closed trade</div></div>
+      </div>
+
+      <div class="streak">&#9733;&#9733;&#9733; KILLING SPREE — 3 wins in a row</div>
+
+      <div class="panel" style="margin-top:14px">
+        <h3>Gold Advantage <span style="color:var(--dim);font-family:Inter;letter-spacing:0;text-transform:none">&middot; cumulative paper P&amp;L, 60d</span></h3>
+        <svg viewBox="0 0 800 220" style="width:100%;height:auto;display:block">
+          <defs>
+            <linearGradient id="gr" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#A8C432" stop-opacity=".5"/><stop offset="1" stop-color="#A8C432" stop-opacity=".02"/>
+            </linearGradient>
+            <linearGradient id="gd" x1="0" y1="1" x2="0" y2="0">
+              <stop offset="0" stop-color="#E25744" stop-opacity=".5"/><stop offset="1" stop-color="#E25744" stop-opacity=".02"/>
+            </linearGradient>
+          </defs>
+          <line x1="0" y1="130" x2="800" y2="130" stroke="#2A3140" stroke-width="1" stroke-dasharray="4 4"/>
+          <!-- dire dip -->
+          <path d="M0,130 L40,138 L80,152 L120,148 L160,162 L200,144 L235,130 Z" fill="url(#gd)"/>
+          <path d="M0,130 L40,138 L80,152 L120,148 L160,162 L200,144 L235,130" fill="none" stroke="#E25744" stroke-width="2"/>
+          <!-- radiant climb -->
+          <path d="M235,130 L280,118 L320,108 L360,114 L400,96 L440,84 L480,92 L520,70 L560,76 L600,58 L640,62 L680,44 L720,50 L760,30 L800,22 L800,130 Z" fill="url(#gr)"/>
+          <path d="M235,130 L280,118 L320,108 L360,114 L400,96 L440,84 L480,92 L520,70 L560,76 L600,58 L640,62 L680,44 L720,50 L760,30 L800,22" fill="none" stroke="#A8C432" stroke-width="2.5"/>
+          <circle cx="800" cy="22" r="4" fill="#A8C432"/>
+          <text x="788" y="14" fill="#F4D03F" font-size="12" text-anchor="end" font-family="Consolas">+&#8377;18,420</text>
+          <text x="6" y="125" fill="#7A8294" font-size="10" font-family="Consolas">RADIANT</text>
+          <text x="6" y="145" fill="#7A8294" font-size="10" font-family="Consolas">DIRE</text>
+        </svg>
+      </div>
+
+      <div class="panel" style="margin-top:14px">
+        <h3>Match History</h3>
+        <table>
+          <thead><tr><th>Hero</th><th>Stock</th><th>Picked</th><th>Result</th><th>Duration</th><th style="text-align:right">Gold</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><span class="mini-hero"><img src="https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/spectre.png">RudraShakti</span></td>
+              <td><b>HINDALCO</b></td><td class="num">20 May</td>
+              <td><span class="res w">W &middot; Objective secured</span></td><td class="num">14 days</td>
+              <td class="num pnl-pos" style="text-align:right">+&#8377;2,140</td>
+            </tr>
+            <tr>
+              <td><span class="mini-hero"><img src="https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/pudge.png">GaMomra</span></td>
+              <td><b>BHEL</b></td><td class="num">28 May</td>
+              <td><span class="res w">W &middot; Fresh meat</span></td><td class="num">6 days</td>
+              <td class="num pnl-pos" style="text-align:right">+&#8377;1,480</td>
+            </tr>
+            <tr>
+              <td><span class="mini-hero"><img src="https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/windrunner.png">Wayuputra</span></td>
+              <td><b>LTIM</b></td><td class="num">02 Jun</td>
+              <td><span class="res l">L &middot; You have been slain</span></td><td class="num">4 days</td>
+              <td class="num pnl-neg" style="text-align:right">-&#8377;620</td>
+            </tr>
+            <tr>
+              <td><span class="mini-hero"><img src="https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/meepo.png">KlaMeReous</span></td>
+              <td><b>DABUR</b></td><td class="num">03 Jun</td>
+              <td><span class="res w">W &middot; Poofed home</span></td><td class="num">5 days</td>
+              <td class="num pnl-pos" style="text-align:right">+&#8377;390</td>
+            </tr>
+            <tr>
+              <td><span class="mini-hero"><img src="https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/spectre.png">RudraShakti</span></td>
+              <td><b>VEDL</b></td><td class="num">05 Jun</td>
+              <td><span class="res l">L &middot; The game went late</span></td><td class="num">20 days</td>
+              <td class="num pnl-neg" style="text-align:right">-&#8377;180</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="panel" style="margin-top:14px">
+        <h3 style="color:var(--dim)">Bench Trial Scoreboard <span style="font-family:Inter;letter-spacing:0;text-transform:none">&middot; paper only, 30/90d</span></h3>
+        <table>
+          <thead><tr><th>Strategy</th><th>30d Gold</th><th>30d W%</th><th>90d Gold</th><th>Verdict window</th></tr></thead>
+          <tbody style="filter:grayscale(.4);opacity:.85">
+            <tr><td>EMA Pullback</td><td class="num pnl-pos">+&#8377;640</td><td class="num">41%</td><td class="num pnl-pos">+&#8377;1,155</td><td style="color:var(--dim)">Sep 2026 review</td></tr>
+            <tr><td>Fib Pullback</td><td class="num pnl-neg">-&#8377;1,120</td><td class="num">20%</td><td class="num pnl-neg">-&#8377;1,908</td><td style="color:var(--dim)">Sep 2026 review</td></tr>
+            <tr><td>Breakout</td><td class="num pnl-neg">-&#8377;210</td><td class="num">0% (2)</td><td class="num pnl-neg">-&#8377;381</td><td style="color:var(--dim)">Sep 2026 review</td></tr>
+            <tr><td>VCP</td><td class="num">0 closed</td><td class="num">—</td><td class="num">0 closed</td><td style="color:var(--dim)">Sep 2026 review</td></tr>
+            <tr><td>Fear Reversion</td><td class="num">no signals</td><td class="num">—</td><td class="num">—</td><td style="color:var(--dim)">VIX gated</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= RANKED ================= -->
+  <div class="tab" id="tab-ranked">
+    <div class="sec">
+      <div class="sec-head"><h2 style="color:var(--gold)">Ranked &middot; Real Gold</h2><span class="tag">this is real money</span><div class="rule"></div></div>
+
+      <div class="panel">
+        <div class="networth">
+          <span class="nl">Net Worth</span>
+          <span class="nw num">+&#8377;42,860</span>
+          <span class="num pnl-pos" style="font-size:14px">+6.1% all-time</span>
+          <span style="margin-left:auto;font-size:11px;color:var(--dim)">Season: <b style="color:var(--text)">Jun 2026</b> &middot; tracking since 01 Jun 2026</span>
+        </div>
+        <svg viewBox="0 0 800 120" style="width:100%;height:auto;display:block;margin-top:10px">
+          <defs><linearGradient id="gr2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F4D03F" stop-opacity=".35"/><stop offset="1" stop-color="#F4D03F" stop-opacity=".02"/></linearGradient></defs>
+          <path d="M0,100 L100,92 L200,96 L300,78 L400,70 L500,74 L600,52 L700,40 L800,28 L800,120 L0,120 Z" fill="url(#gr2)"/>
+          <path d="M0,100 L100,92 L200,96 L300,78 L400,70 L500,74 L600,52 L700,40 L800,28" fill="none" stroke="#F4D03F" stroke-width="2"/>
+        </svg>
+      </div>
+
+      <div class="sec-head" style="margin-top:20px"><h2 style="font-size:12px">Inventory &middot; Holdings</h2><div class="rule"></div></div>
+      <div class="slots">
+        <div class="slot">
+          <div class="ic">&#128481;</div>
+          <div class="si"><div class="ssym">HINDALCO</div><div class="sqty">15 qty &middot; avg &#8377;648.20</div></div>
+          <div class="sval"><div class="num" style="color:var(--gold);font-weight:700">&#8377;10,648</div><div class="num pnl-pos" style="font-size:11px">+9.5%</div></div>
+        </div>
+        <div class="slot">
+          <div class="ic">&#128737;</div>
+          <div class="si"><div class="ssym">SAIL</div><div class="sqty">78 qty &middot; avg &#8377;126.90</div></div>
+          <div class="sval"><div class="num" style="color:var(--gold);font-weight:700">&#8377;11,123</div><div class="num pnl-pos" style="font-size:11px">+12.4%</div></div>
+        </div>
+        <div class="slot">
+          <div class="ic">&#9876;</div>
+          <div class="si"><div class="ssym">CIPLA</div><div class="sqty">7 qty &middot; avg &#8377;1,485.00</div></div>
+          <div class="sval"><div class="num" style="color:var(--gold);font-weight:700">&#8377;10,586</div><div class="num pnl-pos" style="font-size:11px">+1.8%</div></div>
+        </div>
+        <div class="slot">
+          <div class="ic">&#129513;</div>
+          <div class="si"><div class="ssym">JSWENERGY</div><div class="sqty">26 qty &middot; avg &#8377;584.80</div></div>
+          <div class="sval"><div class="num" style="color:var(--gold);font-weight:700">&#8377;15,038</div><div class="num pnl-neg" style="font-size:11px">-1.1%</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer-pad"></div>
+</div>
+
+<!-- FIRST BLOOD toast -->
+<div class="toast" id="toast">
+  <span class="fb">&#128481; FIRST BLOOD</span>
+  <span class="tmsg">BUY 56 &times; TATASTEEL @ &#8377;177.30 placed via Kite</span>
+  <span class="cancel" onclick="document.getElementById('toast').style.display='none'">Cancel &middot; 5s</span>
+</div>
+
+<!-- HUD nav -->
+<nav class="hud">
+  <a class="on" onclick="show('war',this)"><span class="ico">&#9876;</span>War Room</a>
+  <a onclick="show('demo',this)"><span class="ico">&#129302;</span>Demo</a>
+  <a onclick="show('ranked',this)"><span class="ico">&#128081;</span>Ranked</a>
+  <a><span class="ico">&#9881;</span>Options</a>
+</nav>
+
+<script>
+  function show(id, el){
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+    document.getElementById('tab-'+id).classList.add('on');
+    document.querySelectorAll('.hud a').forEach(a=>a.classList.remove('on'));
+    el.classList.add('on');
+    window.scrollTo({top:0});
+  }
+  setTimeout(()=>{const t=document.getElementById('toast'); if(t) t.style.display='none';}, 9000);
+</script>
+</body>
+</html>

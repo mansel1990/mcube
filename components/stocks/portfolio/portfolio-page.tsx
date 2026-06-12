@@ -76,7 +76,7 @@ type Tab = "overview" | "trades" | "holdings" | "positions";
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "overview", label: "Overview", icon: <LayoutDashboard size={14} /> },
   { id: "trades", label: "Logged Trades", icon: <BookOpen size={14} /> },
-  { id: "holdings", label: "Holdings", icon: <Building2 size={14} /> },
+  { id: "holdings", label: "Inventory", icon: <Building2 size={14} /> },
   { id: "positions", label: "Positions", icon: <Zap size={14} /> },
 ];
 
@@ -93,7 +93,7 @@ function fmt(n: number, decimals = 0) {
 }
 
 function pnlClass(n: number) {
-  return n >= 0 ? "text-emerald-600" : "text-red-600";
+  return n >= 0 ? "text-[#bcdb3e]" : "text-[#f06352]";
 }
 
 export function PortfolioPage() {
@@ -198,30 +198,38 @@ export function PortfolioPage() {
   };
 
   return (
-    <div className="min-h-full bg-[#F8FAFC]">
+    <div className="min-h-full">
       {/* Header */}
-      <div className="bg-white border-b border-slate-200">
+      <div className="bg-[#11161f]/95 backdrop-blur-xl border-b border-[#2a3344]">
         <div className="px-4 md:px-6 py-4">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-sm">
-                <Briefcase size={22} className="text-white" />
+              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#2b1c08] to-[#120c04] border border-[#6b4c16] flex items-center justify-center shrink-0">
+                <Briefcase size={20} className="text-[var(--dota-gold)]" />
               </div>
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h1 className="text-xl font-bold text-slate-900">Portfolio</h1>
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                  <h1 className="cz text-xl font-black leading-tight">Ranked</h1>
+                  <span
+                    className="badge-aegis cz text-[9px] font-black px-2 py-0.5 rounded"
+                    style={{ letterSpacing: "0.14em" }}
+                  >
+                    Real Gold
+                  </span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full border border-[var(--dota-border)] bg-black/30 text-[var(--dota-dim)]">
                     Since {PORTFOLIO_TRACKING_START_LABEL}
                   </span>
                 </div>
-                <p className="text-xs text-slate-500">Buy via Kite · P&L from holdings + closed Kite trades</p>
+                <p className="text-xs text-[var(--dota-dim)]">
+                  Real money — not Demo Mode · Buy via Kite · P&L from holdings + closed Kite trades
+                </p>
               </div>
             </div>
             <button
               type="button"
               onClick={fetchData}
               disabled={loading}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-semibold hover:bg-slate-200 transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#574212] bg-[rgba(255,216,77,0.06)] text-[var(--dota-gold)] text-xs font-semibold hover:bg-[rgba(255,216,77,0.12)] transition-colors disabled:opacity-50"
             >
               <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
               Refresh
@@ -230,14 +238,14 @@ export function PortfolioPage() {
 
           {!loading && tab === "overview" && (holdings.length > 0 || trackedTrades.length > 0) && (
             <div className="mt-3 flex flex-wrap gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-[11px] font-medium text-slate-600">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/30 border border-[var(--dota-border)] text-[11px] font-medium text-[var(--dota-dim)]">
                 Unrealized{" "}
                 <span className={`font-bold tabular-nums ${pnlClass(kiteConnected ? holdingsPnl : summary.unrealizedPnl)}`}>
                   {(kiteConnected ? holdingsPnl : summary.unrealizedPnl) >= 0 ? "+" : "−"}₹
                   {fmt(Math.abs(kiteConnected ? holdingsPnl : summary.unrealizedPnl))}
                 </span>
               </span>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-[11px] font-medium text-slate-600">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/30 border border-[var(--dota-border)] text-[11px] font-medium text-[var(--dota-dim)]">
                 Realized{" "}
                 <span className={`font-bold tabular-nums ${pnlClass(realizedPnl)}`}>
                   {realizedPnl >= 0 ? "+" : "−"}₹{fmt(Math.abs(realizedPnl))}
@@ -247,7 +255,7 @@ export function PortfolioPage() {
           )}
 
           {kiteError && (tab === "holdings" || tab === "positions") && (
-            <div className="mt-3 flex items-center gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+            <div className="mt-3 flex items-center gap-2 text-xs text-[var(--dota-gold)] bg-[rgba(255,216,77,0.05)] border border-[#574212] rounded-xl px-3 py-2.5">
               <AlertCircle size={14} className="shrink-0" />
               <span>{kiteError} — </span>
               <Link href="/stocks/settings" className="font-semibold underline">
@@ -258,7 +266,7 @@ export function PortfolioPage() {
         </div>
 
         {/* Tabs */}
-        <div className="px-4 md:px-6 flex gap-1 overflow-x-auto pb-0 border-t border-slate-100 pt-2">
+        <div className="px-4 md:px-6 flex gap-1 overflow-x-auto pb-0 border-t border-[#2a3344] pt-2">
           {TABS.map(({ id, label, icon }) => {
             const count = tabCounts[id];
             const active = tab === id;
@@ -269,8 +277,8 @@ export function PortfolioPage() {
                 onClick={() => setTabAndUrl(id)}
                 className={`flex items-center gap-1.5 px-4 py-2.5 rounded-t-xl text-xs font-semibold whitespace-nowrap border-b-2 transition-colors ${
                   active
-                    ? "border-emerald-600 text-emerald-700 bg-emerald-50/50"
-                    : "border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                    ? "border-[var(--dota-gold)] text-[var(--dota-gold)] bg-[rgba(255,216,77,0.06)]"
+                    : "border-transparent text-[var(--dota-dim)] hover:text-[var(--dota-text)] hover:bg-white/[0.03]"
                 }`}
               >
                 {icon}
@@ -278,7 +286,9 @@ export function PortfolioPage() {
                 {count != null && count > 0 && (
                   <span
                     className={`ml-0.5 px-1.5 py-0.5 rounded-md text-[10px] ${
-                      active ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"
+                      active
+                        ? "bg-[rgba(255,216,77,0.15)] text-[var(--dota-gold)]"
+                        : "bg-white/[0.06] text-[var(--dota-dim)]"
                     }`}
                   >
                     {count}
@@ -293,8 +303,8 @@ export function PortfolioPage() {
       <div className="px-4 md:px-6 py-5">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
-            <div className="w-9 h-9 border-2 border-emerald-200 border-t-emerald-600 rounded-full animate-spin" />
-            <p className="text-sm text-slate-500">Loading portfolio…</p>
+            <div className="w-9 h-9 border-2 border-[#574212] border-t-[var(--dota-gold)] rounded-full animate-spin" />
+            <p className="cz text-[10px] !text-[var(--dota-dim)]">Counting the gold…</p>
           </div>
         ) : (
           <>
@@ -310,8 +320,8 @@ export function PortfolioPage() {
             {tab === "holdings" && (
               <>
                 {holdings.length > 0 && (
-                  <div className="mb-4 flex items-center justify-between px-4 py-3 rounded-xl bg-white border border-slate-200">
-                    <span className="text-xs font-medium text-slate-600">Total holdings P&L</span>
+                  <div className="mb-4 flex items-center justify-between px-4 py-3 rounded-xl dota-panel">
+                    <span className="cz text-[10px] font-bold !text-[var(--dota-dim)]">Inventory P&L</span>
                     <span className={`text-sm font-bold tabular-nums ${pnlClass(holdingsPnl)}`}>
                       {holdingsPnl >= 0 ? "+" : "−"}₹{fmt(Math.abs(holdingsPnl))}
                     </span>
@@ -329,16 +339,17 @@ export function PortfolioPage() {
                     return (
                       <div
                         key={`${h.exchange}-${h.tradingsymbol}`}
-                        className="bg-white rounded-2xl border border-slate-200 p-4 hover:border-slate-300 transition-colors"
+                        className="dota-panel rounded-xl p-4 hover:border-[#4a5468] transition-colors anim-rise"
                       >
                         <div className="flex justify-between gap-3">
                           <div className="min-w-0">
-                            <p className="font-bold text-slate-900">{h.tradingsymbol}</p>
-                            <p className="text-xs text-slate-500 mt-0.5">
+                            <p className="font-bold text-[var(--dota-head)]">{h.tradingsymbol}</p>
+                            <p className="text-xs text-[var(--dota-dim)] mt-0.5">
                               {h.quantity} qty · avg ₹{fmt(h.average_price, 2)}
                             </p>
-                            <p className="text-[10px] text-slate-400 mt-1">
-                              Invested ₹{fmt(invested)} · LTP ₹{fmt(h.last_price, 2)}
+                            <p className="text-[10px] text-[var(--dota-dim)] mt-1">
+                              Invested <span className="font-semibold text-[var(--dota-gold)]">₹{fmt(invested)}</span>{" "}
+                              · LTP ₹{fmt(h.last_price, 2)}
                             </p>
                           </div>
                           <div className="text-right shrink-0">
@@ -347,7 +358,7 @@ export function PortfolioPage() {
                               {pnlPct >= 0 ? "+" : ""}
                               {pnlPct.toFixed(2)}%
                             </p>
-                            <p className="text-[10px] text-slate-400 mt-0.5">
+                            <p className="text-[10px] text-[var(--dota-dim)] mt-0.5">
                               Day {h.day_change_percentage?.toFixed(2) ?? 0}%
                             </p>
                           </div>
@@ -362,8 +373,8 @@ export function PortfolioPage() {
             {tab === "positions" && (
               <>
                 {positions.length > 0 && (
-                  <div className="mb-4 flex items-center justify-between px-4 py-3 rounded-xl bg-white border border-slate-200">
-                    <span className="text-xs font-medium text-slate-600">Intraday P&L</span>
+                  <div className="mb-4 flex items-center justify-between px-4 py-3 rounded-xl dota-panel">
+                    <span className="cz text-[10px] font-bold !text-[var(--dota-dim)]">Intraday P&L</span>
                     <span className={`text-sm font-bold tabular-nums ${pnlClass(positionsPnl)}`}>
                       {positionsPnl >= 0 ? "+" : "−"}₹{fmt(Math.abs(positionsPnl))}
                     </span>
@@ -376,18 +387,18 @@ export function PortfolioPage() {
                   {positions.map((p) => (
                     <div
                       key={`${p.exchange}-${p.tradingsymbol}-${p.product}`}
-                      className="bg-white rounded-2xl border border-slate-200 p-4"
+                      className="dota-panel rounded-xl p-4 anim-rise"
                     >
                       <div className="flex justify-between gap-3">
                         <div>
-                          <p className="font-bold text-slate-900">{p.tradingsymbol}</p>
-                          <p className="text-xs text-slate-500 mt-0.5">
+                          <p className="font-bold text-[var(--dota-head)]">{p.tradingsymbol}</p>
+                          <p className="text-xs text-[var(--dota-dim)] mt-0.5">
                             {p.product} · {p.quantity} qty · LTP ₹{fmt(p.last_price, 2)}
                           </p>
                         </div>
                         <div className="text-right">
                           <PnlBadge value={p.pnl} unit="inr" />
-                          <p className="text-[10px] text-slate-500 mt-1">M2M ₹{fmt(p.m2m ?? 0)}</p>
+                          <p className="text-[10px] text-[var(--dota-dim)] mt-1">M2M ₹{fmt(p.m2m ?? 0)}</p>
                         </div>
                       </div>
                     </div>
@@ -409,7 +420,7 @@ export function PortfolioPage() {
                 {openTrades.length > 0 && (
                   <section className="mb-6">
                     <div className="flex items-center justify-between mb-3">
-                      <h2 className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                      <h2 className="cz text-[11px] font-bold !text-[var(--dota-radiant-bright)]">
                         Open · {openTrades.length}
                       </h2>
                       <p className={`text-xs font-semibold tabular-nums ${pnlClass(summary.unrealizedPnl)}`}>
@@ -444,7 +455,7 @@ export function PortfolioPage() {
                 {closedTrades.length > 0 && (
                   <section>
                     <div className="flex items-center justify-between mb-3">
-                      <h2 className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                      <h2 className="cz text-[11px] font-bold !text-[var(--dota-dim)]">
                         Closed · {closedTrades.length}
                       </h2>
                       <p className={`text-xs font-semibold tabular-nums ${pnlClass(summary.realizedPnl)}`}>
@@ -491,11 +502,11 @@ function EmptyState({
   linkLabel?: string;
 }) {
   return (
-    <div className="text-center py-16 bg-white rounded-2xl border border-slate-200">
-      <Briefcase size={40} className="mx-auto text-emerald-200 mb-4" />
-      <p className="text-sm text-slate-600 mb-4 max-w-xs mx-auto">{message}</p>
+    <div className="text-center py-16 dota-panel rounded-xl">
+      <Briefcase size={40} className="mx-auto text-[#6b4c16] mb-4" />
+      <p className="text-sm text-[var(--dota-dim)] mb-4 max-w-xs mx-auto">{message}</p>
       {href && linkLabel && (
-        <Link href={href} className="text-sm font-semibold text-emerald-700 hover:underline">
+        <Link href={href} className="text-sm font-semibold text-[var(--dota-gold)] hover:underline">
           {linkLabel} →
         </Link>
       )}
@@ -517,17 +528,17 @@ function ClosedTradeCard({ trade: t }: { trade: UserTrade }) {
       : null;
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-4">
+    <div className="dota-panel rounded-xl p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-bold text-slate-900">{t.ticker}</span>
+            <span className="font-bold text-[var(--dota-head)]">{t.ticker}</span>
             <StrategyBadge source={t.source as SignalSource} />
           </div>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs text-[var(--dota-dim)] mt-1">
             {t.quantity} × ₹{fmt(t.entryPrice, 2)} → ₹{fmt(t.exitPrice ?? 0, 2)}
           </p>
-          <p className="text-[10px] text-slate-400 mt-1">
+          <p className="text-[10px] text-[var(--dota-dim)] mt-1">
             {formatDisplayDate(t.entryDate)} → {t.exitDate ? formatDisplayDate(t.exitDate) : "—"}
             {holdDays != null && ` · ${holdDays}d hold`}
           </p>
@@ -572,25 +583,25 @@ function LoggedTradeCard({
   const invested = t.invested ?? t.quantity * t.entryPrice;
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-4 border-l-4 border-l-emerald-500">
+    <div className="dota-panel rounded-xl p-4 border-l-4 border-l-[#bcdb3e]">
       <div className="flex items-start justify-between gap-3 mb-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-bold text-slate-900">{t.ticker}</span>
+            <span className="font-bold text-[var(--dota-head)]">{t.ticker}</span>
             <StrategyBadge source={t.source as SignalSource} />
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full border border-[#4a5621] bg-[rgba(176,210,50,0.12)] text-[#bcdb3e]">
               Open
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs text-[var(--dota-dim)] mt-1">
             {t.quantity} × ₹{fmt(t.entryPrice, 2)} · {formatDisplayDate(t.entryDate)}
           </p>
-          <p className="text-[10px] text-slate-400 mt-0.5">
-            Invested ₹{fmt(invested)}
+          <p className="text-[10px] text-[var(--dota-dim)] mt-0.5">
+            Invested <span className="font-semibold text-[var(--dota-gold)]">₹{fmt(invested)}</span>
             {t.livePrice != null && ` · LTP ₹${fmt(t.livePrice, 2)}`}
           </p>
           {(t.target != null || t.stopLoss != null) && !editing && (
-            <p className="text-[10px] text-slate-400 mt-1">
+            <p className="text-[10px] text-[var(--dota-dim)] mt-1">
               Target ₹{t.target ?? "—"} · SL ₹{t.stopLoss ?? "—"}
             </p>
           )}
@@ -605,48 +616,52 @@ function LoggedTradeCard({
               </p>
             </>
           ) : (
-            <span className="text-xs text-slate-400">Price unavailable</span>
+            <span className="text-xs text-[var(--dota-dim)]">Price unavailable</span>
           )}
         </div>
       </div>
       {editing ? (
-        <div className="flex flex-wrap gap-2 items-end mt-3 pt-3 border-t border-slate-100">
+        <div className="flex flex-wrap gap-2 items-end mt-3 pt-3 border-t border-[#2a3344]">
           <input
             placeholder="Target ₹"
             value={editTarget}
             onChange={(e) => setEditTarget(e.target.value)}
-            className="w-28 px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+            className="w-28 px-3 py-2 text-xs rounded-lg border border-[var(--dota-border)] bg-black/30 text-[var(--dota-head)] placeholder:text-[var(--dota-dim)] focus:outline-none focus:ring-2 focus:ring-[rgba(255,216,77,0.2)] [color-scheme:dark]"
           />
           <input
             placeholder="SL ₹"
             value={editSl}
             onChange={(e) => setEditSl(e.target.value)}
-            className="w-28 px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+            className="w-28 px-3 py-2 text-xs rounded-lg border border-[var(--dota-border)] bg-black/30 text-[var(--dota-head)] placeholder:text-[var(--dota-dim)] focus:outline-none focus:ring-2 focus:ring-[rgba(255,216,77,0.2)] [color-scheme:dark]"
           />
           <button
             type="button"
             onClick={onSave}
-            className="px-3 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700"
+            className="btn-pick px-3 py-2 text-xs font-semibold rounded-lg"
           >
             Save
           </button>
-          <button type="button" onClick={onCancelEdit} className="px-3 py-2 text-xs text-slate-500">
+          <button
+            type="button"
+            onClick={onCancelEdit}
+            className="px-3 py-2 text-xs text-[var(--dota-dim)] hover:text-[var(--dota-text)]"
+          >
             Cancel
           </button>
         </div>
       ) : (
-        <div className="flex gap-2 mt-3 pt-3 border-t border-slate-100">
+        <div className="flex gap-2 mt-3 pt-3 border-t border-[#2a3344]">
           <button
             type="button"
             onClick={onEdit}
-            className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200"
+            className="px-3 py-1.5 text-xs font-semibold text-[var(--dota-text)] border border-[var(--dota-border)] bg-white/[0.04] rounded-lg hover:bg-white/[0.08]"
           >
             Target / SL
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 rounded-lg hover:bg-emerald-100"
+            className="btn-gg px-3 py-1.5 text-xs font-semibold rounded-lg"
           >
             Close trade
           </button>

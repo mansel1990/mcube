@@ -55,11 +55,13 @@ function signedInr(n: number, decimals = 0) {
 }
 
 function pnlTone(n: number) {
-  return n >= 0 ? "text-emerald-600" : "text-red-600";
+  return n >= 0 ? "text-[#bcdb3e]" : "text-[#f06352]";
 }
 
 function pnlBg(n: number) {
-  return n >= 0 ? "bg-emerald-50 border-emerald-100" : "bg-red-50 border-red-100";
+  return n >= 0
+    ? "bg-[rgba(176,210,50,0.08)] border-[#4a5621]"
+    : "bg-[rgba(212,69,49,0.08)] border-[#5e2a1f]";
 }
 
 function useIsClient() {
@@ -182,30 +184,33 @@ export function PortfolioOverview({
         />
       </div>
 
-      <div className={`flex items-center justify-between gap-4 px-4 py-3 rounded-xl border ${pnlBg(netPnl)}`}>
+      <div className="dota-panel glow-divine flex items-center justify-between gap-4 px-4 py-4 rounded-xl anim-rise">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-            Net P&L · {periodLabel}
+          <p
+            className="cz text-[11px] font-black !text-[var(--dota-gold)]"
+            style={{ letterSpacing: "0.2em" }}
+          >
+            Net Worth · {periodLabel}
           </p>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Unrealized (current) + realized ({periodLabel.toLowerCase()})
+          <p className="text-xs text-[var(--dota-dim)] mt-1">
+            Real gold — unrealized (current) + realized ({periodLabel.toLowerCase()})
           </p>
         </div>
-        <p className={`text-xl font-bold tabular-nums ${pnlTone(netPnl)}`}>{signedInr(netPnl)}</p>
+        <p className="cz text-3xl font-black tabular-nums !text-[var(--dota-gold)]">{signedInr(netPnl)}</p>
       </div>
 
       {recentClosed.length > 0 && (
         <RecentExitsStrip items={recentClosed} periodLabel={periodLabel} />
       )}
 
-      <div className="bg-white rounded-2xl border border-slate-200 p-4">
+      <div className="dota-panel rounded-2xl p-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-          <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-            <BarChart3 size={16} className="text-emerald-600" />
+          <h2 className="cz text-[13px] font-bold flex items-center gap-2">
+            <BarChart3 size={16} className="text-[var(--dota-gold)]" />
             P&L breakdown
           </h2>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex gap-1 p-1 bg-slate-100 rounded-xl">
+            <div className="flex gap-1 p-1 bg-black/40 border border-[var(--dota-border)] rounded-xl">
               {(
                 [
                   ["all", "All time"],
@@ -218,7 +223,9 @@ export function PortfolioOverview({
                   type="button"
                   onClick={() => setViewModeWithDefaults(mode)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                    viewMode === mode ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                    viewMode === mode
+                      ? "bg-[rgba(255,216,77,0.12)] text-[var(--dota-gold)] ring-1 ring-[#574212]"
+                      : "text-[var(--dota-dim)] hover:text-[var(--dota-text)]"
                   }`}
                 >
                   {label}
@@ -231,7 +238,7 @@ export function PortfolioOverview({
                 <select
                   value={selectedMonth}
                   onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="appearance-none pl-3 pr-8 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  className="appearance-none pl-3 pr-8 py-1.5 rounded-lg border border-[var(--dota-border)] bg-black/30 text-xs font-semibold text-[var(--dota-text)] focus:outline-none focus:ring-2 focus:ring-[rgba(255,216,77,0.2)] [color-scheme:dark]"
                 >
                   {monthOptions.map((key) => (
                     <option key={key} value={key}>
@@ -239,7 +246,7 @@ export function PortfolioOverview({
                     </option>
                   ))}
                 </select>
-                <ChevronDown size={14} className="absolute right-2 pointer-events-none text-slate-400" />
+                <ChevronDown size={14} className="absolute right-2 pointer-events-none text-[var(--dota-dim)]" />
               </label>
             )}
 
@@ -248,7 +255,7 @@ export function PortfolioOverview({
                 <select
                   value={selectedYear}
                   onChange={(e) => setSelectedYear(e.target.value)}
-                  className="appearance-none pl-3 pr-8 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  className="appearance-none pl-3 pr-8 py-1.5 rounded-lg border border-[var(--dota-border)] bg-black/30 text-xs font-semibold text-[var(--dota-text)] focus:outline-none focus:ring-2 focus:ring-[rgba(255,216,77,0.2)] [color-scheme:dark]"
                 >
                   {yearOptions.map((year) => (
                     <option key={year} value={year}>
@@ -256,18 +263,18 @@ export function PortfolioOverview({
                     </option>
                   ))}
                 </select>
-                <ChevronDown size={14} className="absolute right-2 pointer-events-none text-slate-400" />
+                <ChevronDown size={14} className="absolute right-2 pointer-events-none text-[var(--dota-dim)]" />
               </label>
             )}
           </div>
         </div>
 
         {!hasAnyData ? (
-          <p className="text-sm text-slate-500 py-6 text-center">
+          <p className="text-sm text-[var(--dota-dim)] py-6 text-center">
             Buy from signals via Kite to see holdings P&L here. Realized history appears when a Kite position is sold (target, stop loss, or manual exit).
           </p>
         ) : chartRows.length === 0 && viewMode !== "all" ? (
-          <p className="text-sm text-slate-500 py-6 text-center">
+          <p className="text-sm text-[var(--dota-dim)] py-6 text-center">
             No closed trades in {periodLabel}. Realized P&L updates when a Kite position is sold.
           </p>
         ) : (
@@ -275,27 +282,30 @@ export function PortfolioOverview({
             {chartRows.length > 0 && isClient && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
                 <div>
-                  <h3 className="text-[10px] font-semibold text-slate-500 mb-2 uppercase tracking-wide">
+                  <h3 className="text-[10px] font-semibold text-[var(--dota-dim)] mb-2 uppercase tracking-wide">
                     {viewMode === "year" ? "Yearly" : "Monthly"} realized
                   </h3>
                   <ResponsiveContainer width="100%" height={180}>
                     <BarChart data={chartRows} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                      <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#94A3B8" }} />
-                      <YAxis tick={{ fontSize: 10, fill: "#94A3B8" }} tickFormatter={(v) => `₹${v}`} />
-                      <ReferenceLine y={0} stroke="#CBD5E1" />
+                      <CartesianGrid strokeDasharray="3 3" stroke="#38415a" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#7A8294" }} />
+                      <YAxis tick={{ fontSize: 10, fill: "#7A8294" }} tickFormatter={(v) => `₹${v}`} />
+                      <ReferenceLine y={0} stroke="#4a5468" />
                       <Tooltip
                         formatter={(v: number | undefined) => [signedInr(v ?? 0), "Realized"]}
                         contentStyle={{
-                          background: "#fff",
-                          border: "1px solid #E2E8F0",
+                          background: "#1b2230",
+                          border: "1px solid #38415a",
                           borderRadius: 8,
                           fontSize: 12,
+                          color: "#C8CCD4",
                         }}
+                        labelStyle={{ color: "#C8CCD4" }}
+                        cursor={{ fill: "rgba(255,216,77,0.05)" }}
                       />
                       <Bar dataKey="realized" radius={[6, 6, 0, 0]}>
                         {chartRows.map((row) => (
-                          <Cell key={row.key} fill={row.realized >= 0 ? "#10B981" : "#EF4444"} />
+                          <Cell key={row.key} fill={row.realized >= 0 ? "#bcdb3e" : "#f06352"} />
                         ))}
                       </Bar>
                     </BarChart>
@@ -304,30 +314,32 @@ export function PortfolioOverview({
 
                 {cumulativeSeries.length > 1 && viewMode === "all" && (
                   <div>
-                    <h3 className="text-[10px] font-semibold text-slate-500 mb-2 uppercase tracking-wide">
+                    <h3 className="text-[10px] font-semibold text-[var(--dota-dim)] mb-2 uppercase tracking-wide">
                       Cumulative realized
                     </h3>
                     <ResponsiveContainer width="100%" height={180}>
                       <LineChart data={cumulativeSeries} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
-                        <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#94A3B8" }} />
-                        <YAxis tick={{ fontSize: 10, fill: "#94A3B8" }} tickFormatter={(v) => `₹${v}`} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#38415a" />
+                        <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#7A8294" }} />
+                        <YAxis tick={{ fontSize: 10, fill: "#7A8294" }} tickFormatter={(v) => `₹${v}`} />
                         <Tooltip
                           formatter={(v: number | undefined) => [signedInr(v ?? 0), "Cumulative"]}
                           contentStyle={{
-                            background: "#fff",
-                            border: "1px solid #E2E8F0",
+                            background: "#1b2230",
+                            border: "1px solid #38415a",
                             borderRadius: 8,
                             fontSize: 12,
+                            color: "#C8CCD4",
                           }}
+                          labelStyle={{ color: "#C8CCD4" }}
                         />
-                        <ReferenceLine y={0} stroke="#CBD5E1" />
+                        <ReferenceLine y={0} stroke="#4a5468" />
                         <Line
                           type="monotone"
                           dataKey="cumulative"
-                          stroke="#059669"
+                          stroke="#F4D03F"
                           strokeWidth={2}
-                          dot={{ r: 3, fill: "#059669" }}
+                          dot={{ r: 3, fill: "#F4D03F" }}
                         />
                       </LineChart>
                     </ResponsiveContainer>
@@ -339,7 +351,7 @@ export function PortfolioOverview({
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {monthlyRows.length > 0 && viewMode !== "year" && (
                 <BreakdownTable
-                  title="By month"
+                  title="Seasons · By month"
                   rows={monthlyRows.map((r) => ({
                     key: r.key,
                     label: r.label,
@@ -357,7 +369,7 @@ export function PortfolioOverview({
               )}
               {yearlyRows.length > 0 && viewMode !== "month" && (
                 <BreakdownTable
-                  title="By year"
+                  title="Seasons · By year"
                   rows={yearlyRows.map((r) => ({
                     key: r.key,
                     label: r.label,
@@ -389,8 +401,8 @@ function RecentExitsStrip({
   periodLabel: string;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-2">
+    <div className="dota-panel rounded-xl px-3 py-2.5">
+      <p className="cz text-[10px] font-bold !text-[var(--dota-dim)] mb-2">
         Recent exits · {periodLabel}
       </p>
       <div className="flex flex-wrap gap-1.5">
@@ -401,13 +413,13 @@ function RecentExitsStrip({
               key={`${r.ticker}-${r.exitDate}`}
               className={`inline-flex items-center gap-1.5 pl-2 pr-2.5 py-1 rounded-lg text-[11px] font-semibold border ${
                 win
-                  ? "bg-emerald-50 border-emerald-100 text-emerald-800"
-                  : "bg-red-50 border-red-100 text-red-800"
+                  ? "bg-[rgba(176,210,50,0.12)] border-[#4a5621] text-[#bcdb3e]"
+                  : "bg-[rgba(212,69,49,0.12)] border-[#5e2a1f] text-[#f06352]"
               }`}
             >
               <span
                 className={`w-4 h-4 rounded flex items-center justify-center text-[9px] font-bold ${
-                  win ? "bg-emerald-200/80 text-emerald-900" : "bg-red-200/80 text-red-900"
+                  win ? "bg-[rgba(176,210,50,0.3)] text-[#c4dd5e]" : "bg-[rgba(212,69,49,0.3)] text-[#f08a7a]"
                 }`}
               >
                 {win ? "W" : "L"}
@@ -437,23 +449,27 @@ function PnlPanel({
 }) {
   const positive = value >= 0;
   return (
-    <div className={`rounded-2xl border p-4 ${pnlBg(value)}`}>
+    <div className={`rounded-xl border p-4 anim-rise ${pnlBg(value)}`}>
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{title}</p>
-          <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>
+          <p className="cz text-[10px] font-bold !text-[var(--dota-dim)]">{title}</p>
+          <p className="text-xs text-[var(--dota-dim)] mt-0.5">{subtitle}</p>
         </div>
-        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${positive ? "bg-emerald-100" : "bg-red-100"}`}>
+        <div
+          className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+            positive ? "bg-[rgba(176,210,50,0.15)]" : "bg-[rgba(212,69,49,0.15)]"
+          }`}
+        >
           {positive ? (
-            <TrendingUp size={16} className="text-emerald-700" />
+            <TrendingUp size={16} className="text-[#bcdb3e]" />
           ) : (
-            <TrendingDown size={16} className="text-red-700" />
+            <TrendingDown size={16} className="text-[#f06352]" />
           )}
         </div>
       </div>
       <p className={`text-2xl font-bold tabular-nums mt-3 ${pnlTone(value)}`}>{signedInr(value)}</p>
       {(invested || extra) && (
-        <p className="text-[10px] text-slate-500 mt-1">
+        <p className="text-[10px] text-[var(--dota-dim)] mt-1">
           {invested}
           {invested && extra ? " · " : ""}
           {extra}
@@ -475,34 +491,34 @@ function BreakdownTable({
   onSelect: (key: string) => void;
 }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-100">
-      <div className="px-4 py-2 bg-slate-50 border-b border-slate-100">
-        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{title}</p>
+    <div className="overflow-hidden rounded-xl dota-panel">
+      <div className="px-4 py-2 bg-black/30 border-b border-[#2a3344]">
+        <p className="cz text-[10px] font-bold !text-[var(--dota-dim)]">{title}</p>
       </div>
       <table className="w-full text-sm">
         <thead>
-          <tr className="text-left border-b border-slate-100">
-            <th className="px-3 py-2 text-[10px] font-semibold text-slate-400">Period</th>
-            <th className="px-3 py-2 text-[10px] font-semibold text-slate-400 text-right">Trades</th>
-            <th className="px-3 py-2 text-[10px] font-semibold text-slate-400 text-right">Realized</th>
+          <tr className="text-left border-b border-[#2a3344]">
+            <th className="px-3 py-2 text-[10px] font-semibold text-[var(--dota-dim)]">Period</th>
+            <th className="px-3 py-2 text-[10px] font-semibold text-[var(--dota-dim)] text-right">Trades</th>
+            <th className="px-3 py-2 text-[10px] font-semibold text-[var(--dota-dim)] text-right">Realized</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-50">
+        <tbody className="divide-y divide-[#2a3344]">
           {[...rows].reverse().map((row) => (
             <tr
               key={row.key}
               onClick={() => onSelect(row.key)}
               className={`cursor-pointer transition-colors ${
-                highlightKey === row.key ? "bg-emerald-50" : "hover:bg-slate-50"
+                highlightKey === row.key ? "bg-[rgba(255,216,77,0.07)]" : "hover:bg-white/[0.03]"
               }`}
             >
               <td className="px-3 py-2.5">
-                <span className="font-medium text-slate-900">{row.label}</span>
-                <span className="block text-[10px] text-slate-400">
+                <span className="font-medium text-[var(--dota-head)]">{row.label}</span>
+                <span className="block text-[10px] text-[var(--dota-dim)]">
                   {row.wins}W · {row.losses}L
                 </span>
               </td>
-              <td className="px-3 py-2.5 text-right text-slate-600 tabular-nums">{row.trades}</td>
+              <td className="px-3 py-2.5 text-right text-[var(--dota-text)] tabular-nums">{row.trades}</td>
               <td className={`px-3 py-2.5 text-right font-semibold tabular-nums ${pnlTone(row.realized)}`}>
                 {signedInr(row.realized)}
               </td>

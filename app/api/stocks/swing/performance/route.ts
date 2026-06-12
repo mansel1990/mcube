@@ -4,6 +4,63 @@ import { SIM_CAPITAL } from "@/lib/stocks/types";
 
 const MANISH_INVESTMENT = SIM_CAPITAL;
 
+const ML_STRATEGIES = [
+  "s05_garch_volume",
+  "s07_wavelet_volume",
+  "sanjay_xgb_b8",
+  "s08_gap_momentum",
+  "s06_tcn_ohlcv",
+  "s11_cluster_meanrev",
+];
+
+function mapMlToTrade(row: Record<string, unknown>) {
+  const n = (v: unknown) => (v == null ? null : parseFloat(String(v)));
+  const entryPrice = n(row.entry_price) ?? n(row.signal_close) ?? 0;
+  const isClosed = row.status === "CLOSED";
+  return {
+    id: `ml-${row.trade_id}`,
+    signal_date: String(row.signal_date).slice(0, 10),
+    strategy: row.strategy,
+    symbol: row.ticker,
+    entry_price: entryPrice,
+    target_price: n(row.target_price) ?? 0,
+    stop_loss_price: n(row.stop_price) ?? 0,
+    investment: n(row.invested_rs) ?? 0,
+    exit_date: row.exit_date ? String(row.exit_date).slice(0, 10) : null,
+    exit_price: n(row.exit_price),
+    exit_reason: row.exit_reason ?? null,
+    pnl: n(row.pnl_rs),
+    // daily_suggestor stores fractions (0.0352 = 3.52%); swing tables store percent
+    pnl_pct: n(row.pnl_pct) != null ? n(row.pnl_pct)! * 100 : null,
+    status: isClosed ? "closed" : "open",
+  };
+}
+
+type MappedTrade = ReturnType<typeof mapMlToTrade>;
+
+function statsFor(strategy: string, trades: MappedTrade[]) {
+  const closed = trades.filter((t) => t.status === "closed");
+  const wins = closed.filter((t) => t.exit_reason === "target" || t.exit_reason === "target_hit").length;
+  const losses = closed.filter((t) => t.exit_reason === "stop" || t.exit_reason === "stop_loss").length;
+  const pnls = closed.map((t) => t.pnl ?? 0);
+  const sum = pnls.reduce((s, p) => s + p, 0);
+  return {
+    strategy,
+    total_trades: trades.length,
+    closed_trades: closed.length,
+    open_trades: trades.length - closed.length,
+    wins,
+    losses,
+    total_pnl: sum,
+    avg_pnl: closed.length ? sum / closed.length : 0,
+    best_trade: pnls.length ? Math.max(...pnls) : 0,
+    worst_trade: pnls.length ? Math.min(...pnls) : 0,
+    avg_pnl_pct: closed.length
+      ? closed.reduce((s, t) => s + (t.pnl_pct ?? 0), 0) / closed.length
+      : 0,
+  };
+}
+
 function mapManishToTrade(row: Record<string, unknown>) {
   const entryPrice = row.entry_price ? parseFloat(String(row.entry_price)) : 0;
   const exitPrice = row.exit_price ? parseFloat(String(row.exit_price)) : null;
@@ -31,7 +88,17 @@ function mapManishToTrade(row: Record<string, unknown>) {
 
 export async function GET() {
   try {
-    const [swingTrades, swingStats, manishRows] = await Promise.all([
+    const mlQuery = sql`
+        SELECT trade_id, ticker, strategy, signal_date, status, signal_close,
+               entry_price, target_price, stop_price, exit_date, exit_price,
+               exit_reason, pnl_pct, pnl_rs, invested_rs
+        FROM daily_suggestor.trades
+        WHERE strategy = ANY(${ML_STRATEGIES}) AND status <> 'CANCELLED'
+        ORDER BY signal_date DESC
+        LIMIT 3000
+      `.catch(() => [] as Record<string, unknown>[]);
+
+    const [swingTrades, swingStats, manishRows, mlRows] = await Promise.all([
       sql`
         SELECT * FROM swing.strategy_performance
         WHERE signal_date >= CURRENT_DATE - INTERVAL '60 days'
@@ -54,12 +121,17 @@ export async function GET() {
         GROUP BY strategy
         ORDER BY strategy
       `,
+      // Manish scans run irregularly — no 60-day cutoff or his whole history
+      // disappears from Demo Mode during quiet stretches. Full table is small.
       sql`
         SELECT id, signal_date, ticker, entry_price, status, exit_date, exit_price, pnl_pct, exit_reason
         FROM sim.stock_suggestions
-        WHERE signal_date >= CURRENT_DATE - INTERVAL '60 days'
         ORDER BY signal_date DESC
+        LIMIT 1000
       `,
+      // ML strategies from the daily_suggestor orchestrator (full paper book;
+      // CANCELLED = never filled, excluded). Non-fatal if the schema moves.
+      mlQuery,
     ]);
 
     const manishTrades = (manishRows as Record<string, unknown>[]).map(mapManishToTrade);
@@ -83,13 +155,20 @@ export async function GET() {
       avg_pnl_pct: manishClosed.length ? manishClosed.reduce((s, t) => s + (t.pnl_pct ?? 0), 0) / manishClosed.length : 0,
     }] : [];
 
-    const trades = [...manishTrades, ...(swingTrades as Record<string, unknown>[])].sort((a, b) => {
-      const da = String(a.signal_date);
-      const db = String(b.signal_date);
-      return db.localeCompare(da);
-    });
+    const mlTrades = (mlRows as Record<string, unknown>[]).map(mapMlToTrade);
+    const mlStats = ML_STRATEGIES.map((s) =>
+      statsFor(s, mlTrades.filter((t) => t.strategy === s))
+    ).filter((s) => s.total_trades > 0);
 
-    const stats = [...manishStats, ...(swingStats as Record<string, unknown>[])];
+    const trades = [...manishTrades, ...mlTrades, ...(swingTrades as Record<string, unknown>[])].sort(
+      (a, b) => {
+        const da = String(a.signal_date);
+        const db = String(b.signal_date);
+        return db.localeCompare(da);
+      }
+    );
+
+    const stats = [...manishStats, ...mlStats, ...(swingStats as Record<string, unknown>[])];
 
     return NextResponse.json({ trades, stats });
   } catch (err) {

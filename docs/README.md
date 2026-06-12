@@ -29,6 +29,7 @@ Deployed on Vercel. Auto-deploys on push to `main`.
 |---|---|
 | [reference/architecture.md](reference/architecture.md) | App structure, auth, routing, DB connections |
 | [reference/stocks-section.md](reference/stocks-section.md) | Everything about the Stocks / swing trading UI |
+| [reference/stocks-functional-behaviour.md](reference/stocks-functional-behaviour.md) | End-to-end functional behaviour: scanner cron → DB → /stocks UI (verified 2026-06-12) |
 | [reference/components.md](reference/components.md) | Reusable components — SignalCard, StrategyInfoDrawer, AppShell |
 | [reference/api-routes.md](reference/api-routes.md) | All API route files and what they query |
 | [reference/performance-tracking.md](reference/performance-tracking.md) | How the performance page works end-to-end |
@@ -46,6 +47,7 @@ Deployed on Vercel. Auto-deploys on push to `main`.
 | [plans/stocks/stocks-ui-redesign-prd.md](plans/stocks/stocks-ui-redesign-prd.md) | UI consolidation, trade logging, portfolio v1, PWA |
 | [plans/stocks/kite-integration-prd.md](plans/stocks/kite-integration-prd.md) | Kite Connect integration & trading dashboard |
 | [plans/stocks/stocks-predictions-ui-plan.md](plans/stocks/stocks-predictions-ui-plan.md) | ML predictions UI (Prophet + sentiment) |
+| [plans/stocks/stocks-dota2-theme-prd.md](plans/stocks/stocks-dota2-theme-prd.md) | DOTA2 full-immersion theme redesign of the stocks section |
 
 ### Admin
 

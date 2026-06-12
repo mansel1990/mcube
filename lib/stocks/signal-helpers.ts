@@ -68,6 +68,8 @@ export async function fetchAllSignalsBySource(): Promise<Record<SignalSource, Un
     fetchSwingSource("fear_reversion"),
   ]);
 
+  // ML strategies are served separately from daily_suggestor.trades
+  // (see /api/stocks/ml/signals) — empty here so the record stays total.
   return {
     manish,
     breakout,
@@ -77,6 +79,12 @@ export async function fetchAllSignalsBySource(): Promise<Record<SignalSource, Un
     mean_reversion,
     fib_pullback,
     fear_reversion,
+    s05_garch_volume: [],
+    s07_wavelet_volume: [],
+    sanjay_xgb_b8: [],
+    s08_gap_momentum: [],
+    s06_tcn_ohlcv: [],
+    s11_cluster_meanrev: [],
   };
 }
 

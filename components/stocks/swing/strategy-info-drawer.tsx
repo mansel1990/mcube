@@ -2,8 +2,20 @@
 
 import { X } from "lucide-react";
 import { useEffect } from "react";
+import { HERO_META } from "@/lib/stocks/heroes";
+import { sourceToStrategyKey, type SignalSource } from "@/lib/stocks/types";
 
 export type StrategyKey = "breakout" | "ema" | "vcp" | "rs" | "mr" | "fr" | "fib";
+
+/** Reverse of sourceToStrategyKey — lets the drawer find the hero bound to a strategy. */
+const KEY_TO_SOURCE: Partial<Record<StrategyKey, SignalSource>> = (() => {
+  const map: Partial<Record<StrategyKey, SignalSource>> = {};
+  (Object.keys(HERO_META) as SignalSource[]).forEach((source) => {
+    const key = sourceToStrategyKey(source);
+    if (key) map[key] = source;
+  });
+  return map;
+})();
 
 interface Filter {
   label: string;
@@ -28,8 +40,8 @@ const STRATEGY_INFO: Record<StrategyKey, StrategyInfo> = {
   breakout: {
     title: "Consolidation Breakout",
     tagline: "Stocks coiling below resistance, ready to explode on volume.",
-    accentClass: "text-violet-700",
-    bgClass: "bg-violet-50",
+    accentClass: "text-violet-400",
+    bgClass: "bg-violet-500/10",
     market: "Trending / Bull",
     riskProfile: "Medium",
     holdDays: "3 – 7 days",
@@ -46,8 +58,8 @@ const STRATEGY_INFO: Record<StrategyKey, StrategyInfo> = {
   ema: {
     title: "EMA Pullback",
     tagline: "Buy the dip in an uptrend — institutions add at the 20 EMA.",
-    accentClass: "text-emerald-700",
-    bgClass: "bg-emerald-50",
+    accentClass: "text-emerald-400",
+    bgClass: "bg-emerald-500/10",
     market: "Trending / Bull",
     riskProfile: "Low – Medium",
     holdDays: "3 – 7 days",
@@ -65,8 +77,8 @@ const STRATEGY_INFO: Record<StrategyKey, StrategyInfo> = {
   vcp: {
     title: "Volatility Contraction Pattern (VCP)",
     tagline: "Mark Minervini's setup — tightening contractions before a explosive move.",
-    accentClass: "text-purple-700",
-    bgClass: "bg-purple-50",
+    accentClass: "text-purple-400",
+    bgClass: "bg-purple-500/10",
     market: "Any — but strongest in early bull runs",
     riskProfile: "Low (tight stop)",
     holdDays: "5 – 20 days",
@@ -84,8 +96,8 @@ const STRATEGY_INFO: Record<StrategyKey, StrategyInfo> = {
   rs: {
     title: "Relative Strength Resilience",
     tagline: "Stocks that refuse to fall when the market is weak — tomorrow's leaders.",
-    accentClass: "text-rose-700",
-    bgClass: "bg-rose-50",
+    accentClass: "text-rose-400",
+    bgClass: "bg-rose-500/10",
     market: "Flat / Correcting (Nifty not up >1% over 10 days)",
     riskProfile: "Medium",
     holdDays: "5 – 15 days",
@@ -103,8 +115,8 @@ const STRATEGY_INFO: Record<StrategyKey, StrategyInfo> = {
   mr: {
     title: "Mean Reversion (Extreme Oversold)",
     tagline: "RSI < 30 bounce at major support — snap back to the 20 EMA.",
-    accentClass: "text-teal-700",
-    bgClass: "bg-teal-50",
+    accentClass: "text-teal-400",
+    bgClass: "bg-teal-500/10",
     market: "Any — best in ranging / correcting markets",
     riskProfile: "High (short-duration trade)",
     holdDays: "2 – 5 days",
@@ -122,8 +134,8 @@ const STRATEGY_INFO: Record<StrategyKey, StrategyInfo> = {
   fr: {
     title: "Fear Reversion",
     tagline: "VIX spikes, blue chips panic-sell to support — buy the institutional absorption candle.",
-    accentClass: "text-orange-700",
-    bgClass: "bg-orange-50",
+    accentClass: "text-orange-400",
+    bgClass: "bg-orange-500/10",
     market: "Sideways / Correcting (VIX > 15)",
     riskProfile: "Medium (tight stop)",
     holdDays: "2 – 5 days",
@@ -142,8 +154,8 @@ const STRATEGY_INFO: Record<StrategyKey, StrategyInfo> = {
   fib: {
     title: "Fib Pullback (Discount Zone)",
     tagline: "Uptrends that retrace past the 50% Fib of the last swing leg — buy the discount.",
-    accentClass: "text-cyan-700",
-    bgClass: "bg-cyan-50",
+    accentClass: "text-cyan-400",
+    bgClass: "bg-cyan-500/10",
     market: "Trending / Bull",
     riskProfile: "Medium",
     holdDays: "3 – 10 days",
@@ -170,6 +182,8 @@ interface Props {
 
 export function StrategyInfoDrawer({ strategy, open, onClose }: Props) {
   const info = STRATEGY_INFO[strategy];
+  const source = KEY_TO_SOURCE[strategy];
+  const hero = source ? HERO_META[source] : null;
 
   // Close on Escape
   useEffect(() => {
@@ -185,23 +199,41 @@ export function StrategyInfoDrawer({ strategy, open, onClose }: Props) {
     <div className="fixed inset-0 z-[70] flex justify-end">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
         onClick={onClose}
       />
 
       {/* Drawer */}
-      <div className="relative w-full max-w-sm bg-white shadow-2xl flex flex-col h-full overflow-hidden animate-in slide-in-from-right duration-200">
+      <div className="relative w-full max-w-sm bg-[#1b2230] border-l border-[#38415a] text-[var(--dota-text)] shadow-2xl shadow-black/60 flex flex-col h-full overflow-hidden animate-in slide-in-from-right duration-200">
         {/* Header */}
-        <div className={`${info.bgClass} px-5 pt-5 pb-4 border-b border-slate-200/60`}>
+        <div className={`${info.bgClass} px-5 pt-5 pb-4 border-b border-[var(--dota-border)]`}>
+          {hero && (
+            <div
+              className="mb-3 rounded-lg border bg-black/30 px-3 py-2.5"
+              style={{ borderColor: hero.accent }}
+            >
+              <p className="cz text-[12px] font-bold" style={{ color: hero.accent }}>
+                {hero.name}
+                {hero.dota && (
+                  <span className="ml-2 text-[9px] tracking-[0.2em] text-[var(--dota-dim)]">
+                    {hero.dota}
+                  </span>
+                )}
+              </p>
+              <p className="text-[11px] text-[var(--dota-dim)] mt-1 leading-relaxed italic">
+                {hero.lore}
+              </p>
+            </div>
+          )}
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-1">Strategy Guide</p>
+              <p className="cz text-[9px] font-semibold !text-[var(--dota-dim)] mb-1">Strategy Guide</p>
               <h2 className={`text-base font-bold ${info.accentClass} leading-tight`}>{info.title}</h2>
-              <p className="text-xs text-slate-500 mt-1 leading-relaxed">{info.tagline}</p>
+              <p className="text-xs text-[var(--dota-dim)] mt-1 leading-relaxed">{info.tagline}</p>
             </div>
             <button
               onClick={onClose}
-              className="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-slate-700 hover:bg-white/60 transition-colors shrink-0 mt-0.5"
+              className="w-8 h-8 flex items-center justify-center rounded-full text-[var(--dota-dim)] hover:text-[var(--dota-head)] hover:bg-white/5 transition-colors shrink-0 mt-0.5"
             >
               <X size={16} />
             </button>
@@ -219,7 +251,7 @@ export function StrategyInfoDrawer({ strategy, open, onClose }: Props) {
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
           {/* Filters */}
           <section>
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">All filters must pass</h3>
+            <h3 className="cz text-[10px] font-bold !text-[var(--dota-dim)] mb-3">All filters must pass</h3>
             <div className="space-y-3">
               {info.filters.map((f, i) => (
                 <div key={i} className="flex gap-3">
@@ -227,8 +259,8 @@ export function StrategyInfoDrawer({ strategy, open, onClose }: Props) {
                     {i + 1}
                   </div>
                   <div>
-                    <p className="text-xs font-semibold text-slate-900">{f.label}</p>
-                    <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">{f.desc}</p>
+                    <p className="text-xs font-semibold text-[var(--dota-head)]">{f.label}</p>
+                    <p className="text-[11px] text-[var(--dota-dim)] mt-0.5 leading-relaxed">{f.desc}</p>
                   </div>
                 </div>
               ))}
@@ -237,15 +269,15 @@ export function StrategyInfoDrawer({ strategy, open, onClose }: Props) {
 
           {/* Exit logic */}
           <section>
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Entry / Exit plan</h3>
-            <div className="bg-slate-50 rounded-xl px-4 py-3 text-xs text-slate-600 leading-relaxed border border-slate-200/60">
+            <h3 className="cz text-[10px] font-bold !text-[var(--dota-dim)] mb-2">Entry / Exit plan</h3>
+            <div className="dota-stat rounded-xl px-4 py-3 text-xs text-[var(--dota-text)] leading-relaxed">
               {info.exitLogic}
             </div>
           </section>
 
           {/* Pro tip */}
           <section>
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Pro tip</h3>
+            <h3 className="cz text-[10px] font-bold !text-[var(--dota-dim)] mb-2">Pro tip</h3>
             <div className={`${info.bgClass} rounded-xl px-4 py-3 text-xs ${info.accentClass} leading-relaxed`}>
               {info.tip}
             </div>
@@ -253,7 +285,7 @@ export function StrategyInfoDrawer({ strategy, open, onClose }: Props) {
 
           {/* Risk profile */}
           <section className="pb-4">
-            <div className="flex items-center gap-3 text-xs text-slate-500">
+            <div className="flex items-center gap-3 text-xs text-[var(--dota-dim)]">
               <span className="font-semibold">Risk profile:</span>
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${info.bgClass} ${info.accentClass}`}>
                 {info.riskProfile}
@@ -268,9 +300,9 @@ export function StrategyInfoDrawer({ strategy, open, onClose }: Props) {
 
 function QuickStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-white/60 rounded-lg px-2.5 py-2 text-center">
-      <p className="text-[9px] text-slate-400 uppercase tracking-wide font-semibold">{label}</p>
-      <p className="text-[10px] font-bold text-slate-700 mt-0.5 leading-tight">{value}</p>
+    <div className="dota-stat rounded-lg px-2.5 py-2 text-center">
+      <p className="text-[9px] text-[var(--dota-dim)] uppercase tracking-wide font-semibold">{label}</p>
+      <p className="text-[10px] font-bold text-[var(--dota-head)] mt-0.5 leading-tight">{value}</p>
     </div>
   );
 }

@@ -2,12 +2,12 @@ export default function StocksLoading() {
   return (
     <div className="h-[calc(100vh-3.5rem-4rem)] md:h-[calc(100vh-3.5rem)] flex flex-col">
       {/* Header skeleton */}
-      <div className="px-4 md:px-6 pt-5 pb-3 border-b border-slate-200/60">
+      <div className="px-4 md:px-6 pt-5 pb-3 border-b border-[#2a3344]">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-slate-200 animate-pulse" />
+          <div className="h-10 w-10 rounded-xl bg-[#242d40] animate-pulse" />
           <div className="space-y-2">
-            <div className="h-5 w-40 rounded bg-slate-200 animate-pulse" />
-            <div className="h-3 w-56 rounded bg-slate-100 animate-pulse" />
+            <div className="h-5 w-40 rounded bg-[#242d40] animate-pulse" />
+            <div className="h-3 w-56 rounded bg-[#1b2230] animate-pulse" />
           </div>
         </div>
       </div>
@@ -18,17 +18,17 @@ export default function StocksLoading() {
           {Array.from({ length: 6 }).map((_, i) => (
             <div
               key={i}
-              className="h-44 rounded-2xl bg-white shadow-sm border border-slate-200/60 p-4 space-y-3"
+              className="h-44 rounded-xl bg-[#161c28] border border-[#2a3344] p-4 space-y-3"
             >
               <div className="flex items-center justify-between">
-                <div className="h-4 w-24 rounded bg-slate-200 animate-pulse" />
-                <div className="h-5 w-16 rounded-full bg-slate-100 animate-pulse" />
+                <div className="h-4 w-24 rounded bg-[#242d40] animate-pulse" />
+                <div className="h-5 w-16 rounded-full bg-[#1b2230] animate-pulse" />
               </div>
-              <div className="h-3 w-full rounded bg-slate-100 animate-pulse" />
+              <div className="h-3 w-full rounded bg-[#1b2230] animate-pulse" />
               <div className="grid grid-cols-3 gap-2 pt-2">
-                <div className="h-12 rounded-lg bg-slate-100 animate-pulse" />
-                <div className="h-12 rounded-lg bg-slate-100 animate-pulse" />
-                <div className="h-12 rounded-lg bg-slate-100 animate-pulse" />
+                <div className="h-12 rounded-lg bg-[#1b2230] animate-pulse" />
+                <div className="h-12 rounded-lg bg-[#1b2230] animate-pulse" />
+                <div className="h-12 rounded-lg bg-[#1b2230] animate-pulse" />
               </div>
             </div>
           ))}

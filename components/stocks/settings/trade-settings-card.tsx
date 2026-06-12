@@ -41,14 +41,14 @@ export function TradeSettingsCard() {
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-6">
+    <div className="rounded-xl dota-panel p-6">
       <div className="flex items-start gap-3 mb-5">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#6b4c16] bg-[#1c1610] text-[var(--dota-gold)]">
           <TrendingUp size={18} />
         </div>
         <div>
-          <h3 className="text-sm font-semibold text-slate-900">Default Trade Size</h3>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <h3 className="cz text-[11px] font-bold">Gold Per Pick · Default Trade Size</h3>
+          <p className="text-xs text-[var(--dota-dim)] mt-0.5">
             Target ₹ per buy. Quantity is calculated from live price, rounded down to whole shares.
             You can adjust qty on each signal before buying.
           </p>
@@ -56,11 +56,14 @@ export function TradeSettingsCard() {
       </div>
 
       {loading ? (
-        <Loader2 size={18} className="animate-spin text-slate-400" />
+        <Loader2 size={18} className="animate-spin text-[var(--dota-dim)]" />
       ) : (
         <form onSubmit={handleSave} className="space-y-3">
           <div>
-            <label htmlFor="trade-amount" className="text-[11px] font-medium text-slate-600">
+            <label
+              htmlFor="trade-amount"
+              className="text-[10px] uppercase tracking-wide text-[var(--dota-dim)] font-semibold"
+            >
               Amount per trade (₹)
             </label>
             <input
@@ -70,19 +73,19 @@ export function TradeSettingsCard() {
               step={500}
               value={amount}
               onChange={(e) => setAmount(Number(e.target.value))}
-              className="mt-1 w-full max-w-xs px-3 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+              className="mt-1 w-full max-w-xs px-3 py-2.5 rounded-lg border border-[var(--dota-border)] bg-black/30 text-[var(--dota-head)] [color-scheme:dark] text-sm focus:outline-none focus:border-[#6b4c16]"
             />
           </div>
           <div className="flex items-center gap-3">
             <button
               type="submit"
               disabled={saving}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-primary text-white text-sm font-medium disabled:opacity-50"
+              className="btn-pick inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-bold disabled:opacity-50"
             >
               {saving && <Loader2 size={14} className="animate-spin" />}
               {saving ? "Saving…" : "Save preference"}
             </button>
-            {saved && <span className="text-xs text-emerald-600">Saved.</span>}
+            {saved && <span className="text-xs text-[var(--dota-radiant-bright)]">Saved.</span>}
           </div>
         </form>
       )}

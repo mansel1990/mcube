@@ -17,6 +17,9 @@ interface UsersResponse {
   canManageUsers: boolean;
 }
 
+const inputCls =
+  "mt-1 w-full px-3 py-2.5 rounded-lg border border-[var(--dota-border)] bg-black/30 text-[var(--dota-head)] [color-scheme:dark] text-sm placeholder:text-[var(--dota-dim)] focus:outline-none focus:border-[#6b4c16]";
+
 export function UsersSettingsCard() {
   const [users, setUsers] = useState<StocksUser[]>([]);
   const [canManageUsers, setCanManageUsers] = useState(false);
@@ -91,14 +94,14 @@ export function UsersSettingsCard() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-slate-200 bg-white p-6">
+      <div className="rounded-xl dota-panel p-6">
         <div className="flex items-start gap-3 mb-4">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#6b4c16] bg-[#1c1610] text-[var(--dota-gold)]">
             <Users size={18} />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-semibold text-slate-900">Team Access</h3>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <h3 className="cz text-[11px] font-bold">Party · Team Access</h3>
+            <p className="text-xs text-[var(--dota-dim)] mt-0.5">
               {canManageUsers
                 ? "You can add or remove stocks accounts."
                 : `Only ${STOCKS_ADMIN_USERNAME} can add or remove users.`}
@@ -108,12 +111,12 @@ export function UsersSettingsCard() {
 
         {loading ? (
           <div className="flex justify-center py-8">
-            <Loader2 size={22} className="animate-spin text-slate-400" />
+            <Loader2 size={22} className="animate-spin text-[var(--dota-dim)]" />
           </div>
         ) : users.length === 0 ? (
-          <p className="text-sm text-slate-500 py-4 text-center">No users found.</p>
+          <p className="text-sm text-[var(--dota-dim)] py-4 text-center">No users found.</p>
         ) : (
-          <ul className="divide-y divide-slate-100 rounded-xl border border-slate-100 overflow-hidden">
+          <ul className="divide-y divide-[#2a3344] rounded-xl border border-[#2a3344] overflow-hidden">
             {users.map((u) => {
               const admin = isStocksAdmin(u.username);
               const canDelete = canManageUsers && !admin;
@@ -121,23 +124,23 @@ export function UsersSettingsCard() {
               return (
                 <li
                   key={u.id}
-                  className="flex items-center justify-between gap-3 px-4 py-3 bg-slate-50/40 hover:bg-slate-50 transition-colors"
+                  className="flex items-center justify-between gap-3 px-4 py-3 bg-black/20 hover:bg-white/5 transition-colors"
                 >
                   <div className="min-w-0 flex items-center gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white border border-slate-200 text-xs font-semibold text-slate-600 uppercase">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#1c1610] border border-[#6b4c16] text-xs font-semibold text-[var(--dota-gold)] uppercase">
                       {u.username.slice(0, 2)}
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-medium text-slate-900 truncate">{u.username}</p>
+                        <p className="text-sm font-medium text-[var(--dota-head)] truncate">{u.username}</p>
                         {admin && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700 border border-violet-100">
+                          <span className="badge-aegis inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold">
                             <Shield size={10} />
                             Admin
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-slate-500 truncate">{u.name}</p>
+                      <p className="text-[11px] text-[var(--dota-dim)] truncate">{u.name}</p>
                     </div>
                   </div>
 
@@ -146,7 +149,7 @@ export function UsersSettingsCard() {
                       type="button"
                       onClick={() => handleDelete(u.id, u.username)}
                       disabled={deletingId === u.id}
-                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:opacity-50 shrink-0"
+                      className="inline-flex items-center gap-1 rounded-lg border border-[#76302a] bg-transparent px-2.5 py-1.5 text-xs text-[var(--dota-dire-bright)] hover:bg-[rgba(212,69,49,0.1)] disabled:opacity-50 shrink-0 transition-colors"
                       title="Remove user"
                     >
                       {deletingId === u.id ? (
@@ -165,27 +168,27 @@ export function UsersSettingsCard() {
       </div>
 
       {canManageUsers && (
-        <div className="rounded-xl border border-slate-200 bg-white p-6">
+        <div className="rounded-xl dota-panel p-6">
           {!showAddForm ? (
             <button
               type="button"
               onClick={() => setShowAddForm(true)}
-              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
+              className="btn-pick inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold"
             >
               <UserPlus size={15} />
-              Add team member
+              Add to party
             </button>
           ) : (
             <form onSubmit={handleCreate} className="space-y-3">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-slate-900">New team member</p>
+                <p className="cz text-[11px] font-bold">New party member</p>
                 <button
                   type="button"
                   onClick={() => {
                     setShowAddForm(false);
                     setError(null);
                   }}
-                  className="text-xs text-slate-500 hover:text-slate-800"
+                  className="text-xs text-[var(--dota-dim)] hover:text-[var(--dota-head)]"
                 >
                   Cancel
                 </button>
@@ -193,7 +196,10 @@ export function UsersSettingsCard() {
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
-                  <label htmlFor="new-username" className="text-[11px] font-medium text-slate-600">
+                  <label
+                    htmlFor="new-username"
+                    className="text-[10px] uppercase tracking-wide text-[var(--dota-dim)] font-semibold"
+                  >
                     Username
                   </label>
                   <input
@@ -202,11 +208,14 @@ export function UsersSettingsCard() {
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     required
-                    className="mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                    className={inputCls}
                   />
                 </div>
                 <div>
-                  <label htmlFor="new-name" className="text-[11px] font-medium text-slate-600">
+                  <label
+                    htmlFor="new-name"
+                    className="text-[10px] uppercase tracking-wide text-[var(--dota-dim)] font-semibold"
+                  >
                     Display name
                   </label>
                   <input
@@ -215,13 +224,16 @@ export function UsersSettingsCard() {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     required
-                    className="mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                    className={inputCls}
                   />
                 </div>
               </div>
 
               <div>
-                <label htmlFor="new-password" className="text-[11px] font-medium text-slate-600">
+                <label
+                  htmlFor="new-password"
+                  className="text-[10px] uppercase tracking-wide text-[var(--dota-dim)] font-semibold"
+                >
                   Temporary password
                 </label>
                 <input
@@ -232,12 +244,12 @@ export function UsersSettingsCard() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   minLength={6}
-                  className="mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                  className={inputCls}
                 />
               </div>
 
               {error && (
-                <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 border border-red-100">
+                <p className="rounded-lg bg-[rgba(212,69,49,0.1)] px-3 py-2 text-xs text-[var(--dota-dire-bright)] border border-[#76302a]">
                   {error}
                 </p>
               )}
@@ -245,7 +257,7 @@ export function UsersSettingsCard() {
               <button
                 type="submit"
                 disabled={creating}
-                className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
+                className="btn-pick inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold disabled:opacity-50"
               >
                 {creating && <Loader2 size={14} className="animate-spin" />}
                 {creating ? "Creating…" : "Create account"}
@@ -254,7 +266,7 @@ export function UsersSettingsCard() {
           )}
 
           {!showAddForm && error && (
-            <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 border border-red-100">
+            <p className="mt-3 rounded-lg bg-[rgba(212,69,49,0.1)] px-3 py-2 text-xs text-[var(--dota-dire-bright)] border border-[#76302a]">
               {error}
             </p>
           )}

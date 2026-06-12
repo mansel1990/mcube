@@ -6,7 +6,14 @@ export type SignalSource =
   | "rs_resilience"
   | "mean_reversion"
   | "fib_pullback"
-  | "fear_reversion";
+  | "fear_reversion"
+  // ML strategies from daily_suggestor (persisted in daily_suggestor.trades)
+  | "s05_garch_volume"
+  | "s07_wavelet_volume"
+  | "sanjay_xgb_b8"
+  | "s08_gap_momentum"
+  | "s06_tcn_ohlcv"
+  | "s11_cluster_meanrev";
 
 export interface UnifiedSignal {
   id: string;
@@ -32,6 +39,8 @@ export interface UnifiedSignal {
   peers: string[] | null;
   entryZ: number | null;
   peerSlopePct: number | null;
+  /** ML model probability (daily_suggestor strategies only) */
+  proba?: number | null;
 }
 
 export const SOURCE_SHORT: Record<SignalSource, string> = {
@@ -43,6 +52,12 @@ export const SOURCE_SHORT: Record<SignalSource, string> = {
   mean_reversion: "Mean Rev",
   fib_pullback: "Fib",
   fear_reversion: "Fear",
+  s05_garch_volume: "GARudaVahana",
+  s07_wavelet_volume: "Wayuputra",
+  sanjay_xgb_b8: "Gobin xood",
+  s08_gap_momentum: "GaMomra",
+  s06_tcn_ohlcv: "TeCNa",
+  s11_cluster_meanrev: "KlaMeReous",
 };
 
 export const SOURCE_PRIORITY: SignalSource[] = [
@@ -54,6 +69,12 @@ export const SOURCE_PRIORITY: SignalSource[] = [
   "mean_reversion",
   "fib_pullback",
   "fear_reversion",
+  "s05_garch_volume",
+  "s07_wavelet_volume",
+  "sanjay_xgb_b8",
+  "s08_gap_momentum",
+  "s06_tcn_ohlcv",
+  "s11_cluster_meanrev",
 ];
 
 export const SOURCE_META: Record<
@@ -140,7 +161,27 @@ export const SOURCE_META: Record<
     badge: "border border-slate-200 bg-slate-50 text-slate-700",
     activeBtn: "bg-orange-600 text-white border-orange-600 shadow-md shadow-orange-200",
   },
+  // ML strategies (legacy light-theme meta kept neutral; the Dota UI uses HERO_META)
+  s05_garch_volume: mlMeta("GARCH Volume", "GARudaVahana"),
+  s07_wavelet_volume: mlMeta("Wavelet Volume", "Wayuputra"),
+  sanjay_xgb_b8: mlMeta("XGBoost B8", "Gobin xood"),
+  s08_gap_momentum: mlMeta("Gap Momentum", "GaMomra"),
+  s06_tcn_ohlcv: mlMeta("TCN OHLCV", "TeCNa"),
+  s11_cluster_meanrev: mlMeta("Cluster MeanRev", "KlaMeReous"),
 };
+
+function mlMeta(label: string, short: string) {
+  return {
+    label,
+    short,
+    color: "text-slate-700",
+    bg: "bg-slate-50",
+    border: "border-slate-200",
+    stripe: "bg-slate-500",
+    badge: "border border-slate-200 bg-slate-50 text-slate-700",
+    activeBtn: "bg-slate-700 text-white border-slate-700 shadow-md shadow-slate-200",
+  };
+}
 
 export function sourceToStrategyKey(source: SignalSource): "breakout" | "ema" | "vcp" | "rs" | "mr" | "fr" | "fib" | null {
   const map: Record<SignalSource, "breakout" | "ema" | "vcp" | "rs" | "mr" | "fr" | "fib" | null> = {
@@ -152,6 +193,12 @@ export function sourceToStrategyKey(source: SignalSource): "breakout" | "ema" | 
     mean_reversion: "mr",
     fib_pullback: "fib",
     fear_reversion: "fr",
+    s05_garch_volume: null,
+    s07_wavelet_volume: null,
+    sanjay_xgb_b8: null,
+    s08_gap_momentum: null,
+    s06_tcn_ohlcv: null,
+    s11_cluster_meanrev: null,
   };
   return map[source];
 }

@@ -74,14 +74,14 @@ export function NotificationSettingsCard() {
 
   if (permState === "unsupported") {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-6">
+      <div className="rounded-xl dota-panel p-6">
         <div className="flex items-start gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--dota-border)] bg-black/30 text-[var(--dota-dim)]">
             <Bell size={18} />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-slate-900">Daily Buy Alerts</h3>
-            <p className="text-xs text-slate-500 mt-1">
+            <h3 className="cz text-[11px] font-bold">Announcer · Daily Buy Alerts</h3>
+            <p className="text-xs text-[var(--dota-dim)] mt-1">
               Push notifications are not supported in this browser.
             </p>
           </div>
@@ -91,46 +91,46 @@ export function NotificationSettingsCard() {
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-6">
+    <div className="rounded-xl dota-panel p-6">
       <div className="flex items-start gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#6b4c16] bg-[#1c1610] text-[var(--dota-gold)]">
           <Bell size={18} />
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-semibold text-slate-900">Daily Buy Alerts</h3>
-          <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+          <h3 className="cz text-[11px] font-bold">Announcer · Daily Buy Alerts</h3>
+          <p className="text-xs text-[var(--dota-dim)] mt-1 leading-relaxed">
             Push at 9:00 AM with today&apos;s buy ideas, and at 6:30 PM when the scanner finishes.
             On iOS, add to home screen first, then enable here.
           </p>
 
           {permState === "granted" ? (
             <div className="mt-3 flex items-center gap-3">
-              <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
-                <Check size={14} /> Notifications enabled
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-[var(--dota-radiant-bright)]">
+                <Check size={14} /> Announcer enabled
               </span>
               <button
                 onClick={handleDisable}
                 disabled={loading}
-                className="text-xs text-slate-500 hover:text-slate-800 underline disabled:opacity-50"
+                className="text-xs text-[var(--dota-dim)] hover:text-[var(--dota-head)] underline disabled:opacity-50"
               >
                 Disable
               </button>
             </div>
           ) : permState === "denied" ? (
-            <p className="mt-3 text-xs text-amber-700">
+            <p className="mt-3 text-xs text-amber-400">
               Notifications are blocked in your browser. Enable them in browser settings.
             </p>
           ) : (
             <button
               onClick={handleEnable}
               disabled={loading}
-              className="mt-3 px-4 py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 disabled:opacity-50"
+              className="btn-pick mt-3 px-4 py-2 rounded-lg text-xs font-bold disabled:opacity-50"
             >
               {loading ? "Enabling…" : "Enable Notifications"}
             </button>
           )}
 
-          {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+          {error && <p className="mt-2 text-xs text-[var(--dota-dire-bright)]">{error}</p>}
         </div>
       </div>
     </div>

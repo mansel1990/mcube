@@ -207,56 +207,61 @@ export function KiteTradeActions({
     }
   }
 
+  const inputCls =
+    "w-full mt-0.5 px-2 py-1.5 rounded-lg border border-[var(--dota-border)] bg-black/30 text-[var(--dota-head)] [color-scheme:dark] text-sm focus:outline-none focus:border-[#6b4c16]";
+  const smallInputCls =
+    "px-1.5 py-1 rounded border border-[var(--dota-border)] bg-black/30 text-[var(--dota-head)] text-xs [color-scheme:dark]";
+
   return (
     <div className="space-y-2">
       {holdingQty > 0 && (
-        <p className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-1 rounded-md inline-block">
-          You hold {holdingQty}
+        <p className="text-[10px] font-semibold text-[var(--dota-gold)] border border-[#574212] bg-[rgba(255,216,77,0.06)] px-2 py-1 rounded-md inline-block">
+          On the map · you hold {holdingQty}
         </p>
       )}
 
       <div className="flex items-center gap-2">
         <div className="flex-1">
-          <label className="text-[10px] uppercase text-slate-400 font-semibold">Limit buy @</label>
+          <label className="text-[10px] uppercase tracking-wide text-[var(--dota-dim)] font-semibold">Limit buy @</label>
           <input
             type="number"
             step="0.05"
             min={0}
             value={limitPrice}
             onChange={(e) => setLimitPrice(e.target.value)}
-            className="w-full mt-0.5 px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-900 [color-scheme:light] text-sm focus:outline-none focus:border-primary"
+            className={inputCls}
           />
         </div>
         <div className="flex-1">
-          <label className="text-[10px] uppercase text-slate-400 font-semibold">Qty</label>
+          <label className="text-[10px] uppercase tracking-wide text-[var(--dota-dim)] font-semibold">Qty</label>
           <input
             type="number"
             min={1}
             value={qty}
             onChange={(e) => setQty(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
-            className="w-full mt-0.5 px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-900 [color-scheme:light] text-sm focus:outline-none focus:border-primary"
+            className={inputCls}
           />
         </div>
         {estimatedInr != null && qty > 0 && (
-          <p className="text-[11px] text-slate-500 pt-4 shrink-0">≈{fmtInr(estimatedInr)}</p>
+          <p className="text-[11px] text-[var(--dota-gold)] pt-4 shrink-0">≈{fmtInr(estimatedInr)}</p>
         )}
       </div>
 
       {ltp != null && ltp > 0 && (
-        <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-2 space-y-2">
+        <div className="rounded-lg border border-[#2a3344] bg-black/20 p-2 space-y-2">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
               checked={placeExitGtt}
               onChange={(e) => setPlaceExitGtt(e.target.checked)}
-              className="rounded border-slate-300"
+              className="rounded border-[var(--dota-border)] bg-black/40 [color-scheme:dark]"
             />
-            <span className="text-[10px] font-semibold text-slate-700">
+            <span className="text-[10px] font-semibold text-[var(--dota-text)]">
               Exit GTT (target + stop loss on Kite)
             </span>
           </label>
           {placeExitGtt && (
-            <p className="text-[10px] text-slate-500 pl-5">
+            <p className="text-[10px] text-[var(--dota-dim)] pl-5">
               May need your limit buy to fill before GTT is accepted
             </p>
           )}
@@ -265,7 +270,7 @@ export function KiteTradeActions({
             <>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-[10px] uppercase text-emerald-600 font-semibold">
+                  <label className="text-[10px] uppercase tracking-wide text-[#bcdb3e] font-semibold">
                     Target
                   </label>
                   <div className="flex gap-1 mt-0.5">
@@ -274,21 +279,21 @@ export function KiteTradeActions({
                       step="0.05"
                       value={targetAmt}
                       onChange={(e) => onTargetAmtChange(e.target.value)}
-                      className="flex-1 min-w-0 px-1.5 py-1 rounded border border-slate-200 bg-white text-slate-900 text-xs [color-scheme:light]"
+                      className={`flex-1 min-w-0 ${smallInputCls}`}
                       placeholder="₹"
                     />
                     <input
                       type="text"
                       value={targetPct}
                       onChange={(e) => onTargetPctChange(e.target.value)}
-                      className="w-14 px-1 py-1 rounded border border-slate-200 bg-white text-slate-900 text-xs text-right [color-scheme:light]"
+                      className={`w-14 text-right ${smallInputCls}`}
                       placeholder="%"
                     />
                   </div>
                 </div>
                 <div>
-                  <label className="text-[10px] uppercase text-red-600 font-semibold">
-                    Stop loss
+                  <label className="text-[10px] uppercase tracking-wide text-[#f06352] font-semibold">
+                    🗼 Tower SL
                   </label>
                   <div className="flex gap-1 mt-0.5">
                     <input
@@ -296,26 +301,26 @@ export function KiteTradeActions({
                       step="0.05"
                       value={slAmt}
                       onChange={(e) => onSlAmtChange(e.target.value)}
-                      className="flex-1 min-w-0 px-1.5 py-1 rounded border border-slate-200 bg-white text-slate-900 text-xs [color-scheme:light]"
+                      className={`flex-1 min-w-0 ${smallInputCls}`}
                       placeholder="₹"
                     />
                     <input
                       type="text"
                       value={slPct}
                       onChange={(e) => onSlPctChange(e.target.value)}
-                      className="w-14 px-1 py-1 rounded border border-slate-200 bg-white text-slate-900 text-xs text-right [color-scheme:light]"
+                      className={`w-14 text-right ${smallInputCls}`}
                       placeholder="%"
                     />
                   </div>
                 </div>
               </div>
-              <p className="text-[10px] text-slate-500">
+              <p className="text-[10px] text-[var(--dota-dim)]">
                 From signal · LTP {fmtInr(ltp)}
                 {parsedLimit > 0 && parsedLimit !== ltp && (
                   <span> · limit {fmtInr(parsedLimit)}</span>
                 )}
                 {!gttValid && (
-                  <span className="text-amber-700"> · SL must be below LTP, target above</span>
+                  <span className="text-amber-400"> · SL must be below LTP, target above</span>
                 )}
               </p>
             </>
@@ -328,25 +333,25 @@ export function KiteTradeActions({
           onClick={() => placeOrder("BUY")}
           disabled={loading || !canBuy}
           title={buyDisabledReason ?? undefined}
-          className="py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1"
+          className="btn-pick py-2 rounded-lg text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1"
         >
           {loading && side === "BUY" ? <Loader2 size={14} className="animate-spin" /> : null}
-          Buy{canBuy ? ` · ${qty} @ ${fmtInr(parsedLimit)}` : ""}
+          ⚔ Pick{canBuy ? ` · ${qty} @ ${fmtInr(parsedLimit)}` : ""}
         </button>
         <button
           onClick={() => placeOrder("SELL")}
           disabled={loading || !canSell}
-          className="py-2 rounded-lg bg-red-600 text-white text-xs font-semibold hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1"
+          className="btn-gg py-2 rounded-lg text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1"
         >
           {loading && side === "SELL" ? <Loader2 size={14} className="animate-spin" /> : null}
-          Sell{holdingQty > 0 ? ` · ${Math.min(qty, holdingQty)}` : ""}
+          GG · Sell{holdingQty > 0 ? ` · ${Math.min(qty, holdingQty)}` : ""}
         </button>
       </div>
 
       {buyDisabledReason && !canBuy && (
-        <p className="text-[10px] text-amber-700">{buyDisabledReason}</p>
+        <p className="text-[10px] text-amber-400">{buyDisabledReason}</p>
       )}
-      {error && <p className="text-[10px] text-red-600">{error}</p>}
+      {error && <p className="text-[10px] text-[var(--dota-dire-bright)]">{error}</p>}
     </div>
   );
 }

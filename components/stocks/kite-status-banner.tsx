@@ -22,16 +22,16 @@ export function KiteStatusBanner() {
   if (!show) return null;
 
   return (
-    <div className="mx-4 md:mx-6 mt-3 flex items-center gap-3 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
-      <AlertTriangle size={16} className="shrink-0 text-amber-600" />
+    <div className="mx-4 md:mx-6 mt-3 flex items-center gap-3 px-4 py-2.5 rounded-xl border border-[#5a4310] bg-[rgba(245,173,20,0.08)] text-amber-200">
+      <AlertTriangle size={16} className="shrink-0 text-amber-400" />
       <p className="text-xs flex-1">
         {expired
-          ? "Kite token expired — reconnect before placing trades or viewing live portfolio."
-          : "Connect your Kite account to sync holdings and positions."}
+          ? "Disconnected from the game coordinator — Kite token expired. Reconnect before placing trades."
+          : "Connect to the game coordinator (Kite) to sync holdings and place orders."}
       </p>
       <Link
         href="/stocks/settings"
-        className="text-xs font-semibold text-amber-800 hover:underline shrink-0"
+        className="text-xs font-semibold text-amber-300 hover:underline shrink-0"
       >
         {expired ? "Reconnect" : "Connect"}
       </Link>

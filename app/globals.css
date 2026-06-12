@@ -42,6 +42,131 @@ body {
   box-shadow: 0 0 30px rgba(37, 99, 235, 0.2);
 }
 
+/* ───────────────────────────────────────────────────────────────
+   DOTA2 theme — scoped to the stocks section (.theme-dota wrapper)
+   Tokens per docs/plans/stocks/stocks-dota2-theme-prd.md §3.3
+─────────────────────────────────────────────────────────────── */
+.theme-dota {
+  --dota-bg: #0e1219;
+  --dota-panel: #1b2230;
+  --dota-panel2: #151b27;
+  --dota-border: #38415a;
+  --dota-radiant: #a2b82e;
+  --dota-radiant-bright: #bcdb3e;
+  --dota-dire: #d44531;
+  --dota-dire-bright: #f06352;
+  --dota-gold: #ffd84d;
+  --dota-text: #d8dce5;
+  --dota-head: #f7f4ea;
+  --dota-dim: #8e98ad;
+  --dota-divine: #f5ad14;
+  --dota-rare: #6b94ff;
+
+  background-color: var(--dota-bg);
+  color: var(--dota-text);
+  color-scheme: dark;
+}
+
+.theme-dota .dota-bg-texture {
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(110, 66, 22, 0.28), transparent),
+    radial-gradient(ellipse 60% 40% at 90% 110%, rgba(58, 32, 70, 0.38), transparent);
+}
+
+.theme-dota .cz {
+  font-family: var(--font-cinzel), serif;
+  color: var(--dota-head);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.theme-dota .dota-panel {
+  background: linear-gradient(170deg, var(--dota-panel), var(--dota-panel2));
+  border: 1px solid var(--dota-border);
+}
+
+.theme-dota .dota-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.theme-dota .dota-card:hover {
+  transform: translateY(-2px);
+}
+
+.theme-dota .dota-stat {
+  background: rgba(0, 0, 0, 0.32);
+  border: 1px solid #2a3344;
+}
+
+.theme-dota .glow-divine {
+  border-color: #8f6408 !important;
+  box-shadow: 0 0 22px rgba(245, 173, 20, 0.26), inset 0 0 36px rgba(245, 173, 20, 0.05);
+}
+.theme-dota .dota-card.glow-divine:hover {
+  box-shadow: 0 0 30px rgba(245, 173, 20, 0.38), inset 0 0 36px rgba(245, 173, 20, 0.06);
+}
+
+.theme-dota .glow-rare {
+  border-color: #34509a !important;
+  box-shadow: 0 0 20px rgba(107, 148, 255, 0.2);
+}
+.theme-dota .dota-card.glow-rare:hover {
+  box-shadow: 0 0 28px rgba(107, 148, 255, 0.32);
+}
+
+.theme-dota .glow-retreat {
+  background: linear-gradient(90deg, rgba(212, 69, 49, 0.2), rgba(212, 69, 49, 0.05) 60%, transparent);
+  border: 1px solid #76302a;
+  border-left: 3px solid var(--dota-dire-bright);
+  box-shadow: 0 0 28px rgba(212, 69, 49, 0.16);
+}
+
+.theme-dota .btn-pick {
+  background: linear-gradient(180deg, #c2dd46, #7e9a1c);
+  border: 1px solid #d9f06a;
+  color: #131802;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.2);
+  box-shadow: 0 2px 14px rgba(176, 210, 50, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.theme-dota .btn-pick:hover { filter: brightness(1.08); }
+
+.theme-dota .btn-gold {
+  background: linear-gradient(180deg, #ffd84d, #d09a1e);
+  border: 1px solid #ffe98c;
+  color: #221502;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
+  box-shadow: 0 2px 14px rgba(255, 216, 77, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+.theme-dota .btn-gold:hover { filter: brightness(1.07); }
+
+.theme-dota .btn-gg {
+  background: linear-gradient(180deg, #ef5d44, #b03020);
+  border: 1px solid #ff8a72;
+  color: #fff;
+  box-shadow: 0 2px 14px rgba(239, 93, 68, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.theme-dota .btn-gg:hover { filter: brightness(1.1); }
+
+.theme-dota .badge-aegis {
+  color: #ffe08a;
+  border: 1px solid #9a7416;
+  background: linear-gradient(180deg, rgba(255, 216, 77, 0.22), rgba(255, 216, 77, 0.07));
+  box-shadow: 0 0 12px rgba(255, 216, 77, 0.25);
+}
+
+.theme-dota ::-webkit-scrollbar-track { background: var(--dota-bg); }
+.theme-dota ::-webkit-scrollbar-thumb { background: #232a38; }
+.theme-dota ::-webkit-scrollbar-thumb:hover { background: #323c52; }
+
+@keyframes dota-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.theme-dota .anim-rise { animation: dota-rise 0.35s ease both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-dota .anim-rise { animation: none; }
+}
+
 /* Hide scrollbar for clean aesthetics */
 ::-webkit-scrollbar {
   width: 8px;
