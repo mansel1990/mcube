@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { sql } from "@/lib/sql";
-import { sortSignalsNewestFirst } from "@/lib/stocks/signal-helpers";
+import { sortSignalsNewestFirst } from "@/lib/stocks/signal-sort";
 import type { UnifiedSignal } from "@/lib/stocks/types";
 
 type Row = {

@@ -7,7 +7,7 @@ import { RefreshCw, ChevronDown, Swords } from "lucide-react";
 import { formatScanDateIST, isScanStale, isWithinDays, maxDateStr, normalizeDateStr } from "@/lib/stocks/format-date";
 import type { SignalSource, UnifiedSignal } from "@/lib/stocks/types";
 import { SOURCE_PRIORITY } from "@/lib/stocks/types";
-import { sortSignalsNewestFirst } from "@/lib/stocks/signal-helpers";
+import { sortSignalsNewestFirst } from "@/lib/stocks/signal-sort";
 import {
   HERO_META,
   ACTIVE_SOURCES,
