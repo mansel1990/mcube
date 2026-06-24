@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { sql } from "@/lib/sql";
+import { sortSignalsNewestFirst } from "@/lib/stocks/signal-helpers";
 import type { UnifiedSignal } from "@/lib/stocks/types";
 
 type Row = {
@@ -37,10 +38,9 @@ export async function GET() {
              proba, signal_close, buy_range_low, buy_range_high, target_pct, stop_pct
       FROM daily_suggestor.trades
       WHERE status = 'OPEN_PENDING_FILL'
-      ORDER BY strategy, signal_date DESC, proba DESC NULLS LAST
+      ORDER BY signal_date DESC, proba DESC NULLS LAST
     `) as Row[];
 
-    // Rank by proba within strategy + scan date
     const rankKey = (r: Row) => `${r.strategy}|${r.signal_date.slice(0, 10)}`;
     const seen: Record<string, number> = {};
 
@@ -78,7 +78,7 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json({ ok: true, data: signals });
+    return NextResponse.json({ ok: true, data: sortSignalsNewestFirst(signals) });
   } catch {
     // Schema unreachable — degrade gracefully
     return NextResponse.json({ ok: true, data: [] });

@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { RefreshCw, ChevronDown, Swords } from "lucide-react";
-import { formatScanDateIST, isWithinDays, maxDateStr, normalizeDateStr } from "@/lib/stocks/format-date";
+import { formatScanDateIST, isScanStale, isWithinDays, maxDateStr, normalizeDateStr } from "@/lib/stocks/format-date";
 import type { SignalSource, UnifiedSignal } from "@/lib/stocks/types";
 import { SOURCE_PRIORITY } from "@/lib/stocks/types";
+import { sortSignalsNewestFirst } from "@/lib/stocks/signal-helpers";
 import {
   HERO_META,
   ACTIVE_SOURCES,
@@ -266,14 +267,19 @@ export function UnifiedSignalsPage() {
   // Pick Phase grouping (PRD §2.3 — "5 scouted, 2 recommended"):
   // Divine picks from the active roster on top, Rare after, bench picks last.
   const openPicks = statusFilter === "open" ? filtered : [];
-  const divinePicks = openPicks.filter(
-    (s) => HERO_META[s.source].roster === "active" && tierOf(s.signalStrength) === "divine"
+  const divinePicks = sortSignalsNewestFirst(
+    openPicks.filter(
+      (s) => HERO_META[s.source].roster === "active" && tierOf(s.signalStrength) === "divine"
+    )
   );
-  const rarePicks = openPicks.filter(
-    (s) => HERO_META[s.source].roster === "active" && tierOf(s.signalStrength) !== "divine"
+  const rarePicks = sortSignalsNewestFirst(
+    openPicks.filter(
+      (s) => HERO_META[s.source].roster === "active" && tierOf(s.signalStrength) !== "divine"
+    )
   );
-  const benchPicks = openPicks.filter((s) => HERO_META[s.source].roster === "bench");
+  const benchPicks = sortSignalsNewestFirst(openPicks.filter((s) => HERO_META[s.source].roster === "bench"));
   const divineCount = divinePicks.length;
+  const scanStale = isScanStale(lastScanDate);
 
   let filteredSimClosed: SimClosedTrade[] = [];
   if (statusFilter === "closed") {
@@ -492,6 +498,14 @@ export function UnifiedSignalsPage() {
           <button onClick={clearFresh} className="text-[var(--dota-gold)] hover:underline shrink-0">
             Show all
           </button>
+        </div>
+      )}
+
+      {scanStale && lastScanDate && statusFilter === "open" && (
+        <div className="mx-4 mt-3 px-3 py-2.5 rounded-lg border border-[#76302a] bg-[rgba(212,69,49,0.08)] text-xs text-[#ffb4a6]">
+          <span className="font-semibold text-[#ff9d8d]">Scanner offline — </span>
+          Last evening scan was {formatScanDateIST(lastScanDate)}. New picks normally land by 6 PM IST on
+          weekdays. Check the DigitalOcean cron or run the scanner manually.
         </div>
       )}
 

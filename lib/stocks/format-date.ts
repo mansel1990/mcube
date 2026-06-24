@@ -37,3 +37,21 @@ export function maxDateStr(dates: string[]): string | null {
   if (!valid.length) return null;
   return valid.reduce((max, d) => (d > max ? d : max), valid[0]);
 }
+
+/** True when the last evening scan is older than expected for the current IST weekday. */
+export function isScanStale(lastScanDate: string | null): boolean {
+  const normalized = normalizeDateStr(lastScanDate);
+  if (!normalized) return false;
+
+  const last = new Date(normalized + "T12:00:00+05:30");
+  const now = new Date(
+    new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+  );
+  const diffDays = Math.floor((now.getTime() - last.getTime()) / 86_400_000);
+  const dow = now.getDay(); // 0 Sun … 6 Sat
+
+  if (dow === 0) return diffDays > 2;
+  if (dow === 6) return diffDays > 1;
+  if (dow === 1) return diffDays > 3;
+  return diffDays > 1;
+}

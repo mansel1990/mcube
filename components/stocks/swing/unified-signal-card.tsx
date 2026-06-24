@@ -201,10 +201,10 @@ export function UnifiedSignalCard({
             <TierBadge tier={tier} />
           </div>
           <span
-            className="absolute bottom-1.5 right-2.5 z-10 text-[9px] font-medium text-[var(--dota-text)] opacity-90"
+            className="absolute bottom-1.5 right-2.5 z-10 text-[9px] font-semibold text-[var(--dota-text)] opacity-95"
             style={{ textShadow: "0 1px 3px rgba(0,0,0,0.9)" }}
           >
-            {fmtDate(signal.signalDate)}
+            Suggested · {fmtDate(signal.signalDate)}
           </span>
         </div>
 
@@ -264,6 +264,12 @@ export function UnifiedSignalCard({
                 </span>
               )}
             </div>
+          )}
+
+          {hasTargetRow && (
+            <p className="text-[10px] text-[var(--dota-dim)] mb-2 leading-snug">
+              Exit: nightly scan — target hit, stop loss, or max hold. Retreat banner when it&apos;s time to sell.
+            </p>
           )}
 
           <div className="pt-2 border-t border-[#2a3344] space-y-2">
