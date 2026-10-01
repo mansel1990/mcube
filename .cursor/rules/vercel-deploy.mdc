@@ -1,0 +1,20 @@
+---
+description: Confirm a Vercel production build will succeed before pushing
+alwaysApply: true
+---
+
+# Vercel deploy check
+
+This app deploys on Vercel with `next build`. Before pushing, run that build and ESLint, and do not push until both pass.
+
+```bash
+npx eslint . --max-warnings 0
+npm run build
+```
+
+- `npm run build` is the Vercel build. A type error, a bad import, or two pages resolving to the same URL fails the deployment.
+- Do not add a second `app/page.tsx` next to `app/(studio)/page.tsx`. Both would claim `/`.
+- Keep studio styles under `.studio`. Do not change the global tokens in `app/globals.css` or `tailwind.config.ts` for marketing work.
+- Every image path used by the site must exist under `public/`. Do not commit `public/case-studies/unused/` or the base64 prototype HTML.
+- Do not commit `.next/`, `.env*`, or `.vercel`.
+- If the build fails only because a local env var is missing, say which variable. Do not print its value. Vercel already has the project env.
