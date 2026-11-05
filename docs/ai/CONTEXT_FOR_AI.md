@@ -83,6 +83,10 @@ Desktop sidebar shows all 9 items flat.
 ## Env vars needed
 DATABASE_URL, MONGODB_URI, AUTH_SECRET, BETTER_AUTH_URL, NEXT_PUBLIC_APP_URL
 
+## Mansel Live (added 2026-11-05)
+
+Standalone route `/live-trade-mansel` for one account (stocks admin `sanjay`, optional `MLIVE_USER_ID`). New Postgres schema `mlive` (`scripts/sql/mlive/001_init.sql`). The web writes intents only. Orders and GTTs are placed by `engine/` on the server static IP, via `npm run engine -- <job>`. Rules live in `lib/mlive/rules.ts` and are tested with `npm run engine:test`. Ship with `dry_run` true and mode `approve`. The scanner in the trading repo is not modified; `import-ideas` copies `swing.rs_signals` and `swing.ema_signals`. `/stocks` no longer places Kite orders. Paper `UserTrade` logging stays.
+
 ## Before every push
 ```bash
 bash -c "cd /c/Projects/mcube && npx next build > /tmp/build.log 2>&1; echo EXIT:\$?; tail -20 /tmp/build.log"

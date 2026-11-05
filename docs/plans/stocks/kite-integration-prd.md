@@ -2,7 +2,7 @@
 **Project**: MCube Stocks — mcubetechstudio.com/stocks  
 **Authors**: Sanjay + Brother  
 **Date**: 2026-05-28  
-**Status**: Draft — Phase 1 partially shipped (see [remaining work PRD](./kite-integration-remaining-prd.md))
+**Status**: Superseded by Mansel Live (`docs/plans/stocks/mlive-prd.md`). The `/stocks` paper log stays. Live orders are not placed from this app.
 
 ---
 

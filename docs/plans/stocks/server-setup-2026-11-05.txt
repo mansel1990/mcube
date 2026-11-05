@@ -115,4 +115,8 @@ WHY
 [ ] One small test buy on the site: check the order and GTT in Kite
 [ ] Delete .tmp_q.mjs from the local mcube folder
 [ ] Delete the swing-trade GitHub "Daily evening scan" workflow
-[ ] Safety rules -> live.* schema, /live-trade-mansel, order engine
+[x] Mansel Live uses schema mlive (not live.*). Route /live-trade-mansel. Engine is engine/ in this repo.
+    Install on the server with: bash engine/deploy.sh --install
+    Env file: /etc/mcube/mlive.env
+    Cron file written by that script: /etc/cron.d/mlive
+    Kite redirect for this app: https://mcubetechstudio.com/api/mlive/kite/callback

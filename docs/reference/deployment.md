@@ -27,6 +27,10 @@ Build must exit 0. Any TypeScript errors block the deploy.
 | AUTH_SECRET | better-auth session secret |
 | BETTER_AUTH_URL | Production URL (e.g. https://mcube.vercel.app) |
 | NEXT_PUBLIC_APP_URL | Same as BETTER_AUTH_URL |
+| KITE_API_KEY, KITE_API_SECRET | Mansel Live login only |
+| MLIVE_TOKEN_KEY | Same value on Vercel and in `/etc/mcube/mlive.env` |
+
+The order engine does not run on Vercel. It runs on the server at `/opt/mcube-src/mcube` (`bash engine/deploy.sh --install`).
 
 ## Common TypeScript build errors seen historically
 - `Formatter<number, "Cumulative P&L">` — Recharts tooltip formatter must accept `number | undefined` and use `v ?? 0` fallback

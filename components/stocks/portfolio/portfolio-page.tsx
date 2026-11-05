@@ -3,15 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  Briefcase,
-  RefreshCw,
-  AlertCircle,
-  LayoutDashboard,
-  BookOpen,
-  Building2,
-  Zap,
-} from "lucide-react";
+import { Briefcase, RefreshCw, LayoutDashboard, BookOpen } from "lucide-react";
 import type { SignalSource } from "@/lib/stocks/types";
 import {
   PORTFOLIO_TRACKING_START_LABEL,
@@ -19,35 +11,10 @@ import {
   filterTradesForTracking,
   fmtInr,
   formatDisplayDate,
-  type TradeForAnalytics,
 } from "@/lib/stocks/portfolio-analytics";
 import { CloseTradeSheet } from "./close-trade-sheet";
 import { PortfolioOverview } from "./portfolio-overview";
 import { PnlBadge, StrategyBadge } from "../strategy-badge";
-
-interface KiteHolding {
-  tradingsymbol: string;
-  exchange: string;
-  quantity: number;
-  average_price: number;
-  last_price: number;
-  pnl: number;
-  day_change: number;
-  day_change_percentage: number;
-}
-
-interface KitePosition {
-  tradingsymbol: string;
-  exchange: string;
-  quantity: number;
-  average_price: number;
-  last_price: number;
-  pnl: number;
-  m2m: number;
-  unrealised: number;
-  realised: number;
-  product: string;
-}
 
 interface UserTrade {
   _id: string;
@@ -71,20 +38,15 @@ interface UserTrade {
   livePrice?: number;
 }
 
-type Tab = "overview" | "trades" | "holdings" | "positions";
+type Tab = "overview" | "trades";
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "overview", label: "Overview", icon: <LayoutDashboard size={14} /> },
   { id: "trades", label: "Logged Trades", icon: <BookOpen size={14} /> },
-  { id: "holdings", label: "Inventory", icon: <Building2 size={14} /> },
-  { id: "positions", label: "Positions", icon: <Zap size={14} /> },
 ];
 
 function normalizeTab(raw: string | null): Tab {
-  if (raw === "logged") return "trades";
-  if (raw === "trades" || raw === "holdings" || raw === "positions" || raw === "overview") {
-    return raw;
-  }
+  if (raw === "logged" || raw === "trades") return "trades";
   return "overview";
 }
 
@@ -101,13 +63,7 @@ export function PortfolioPage() {
   const router = useRouter();
   const tab = normalizeTab(params.get("tab"));
 
-  const [holdings, setHoldings] = useState<KiteHolding[]>([]);
-  const [positions, setPositions] = useState<KitePosition[]>([]);
   const [trades, setTrades] = useState<UserTrade[]>([]);
-  const [kiteClosedTrades, setKiteClosedTrades] = useState<TradeForAnalytics[]>([]);
-  const [kiteRealizedPnl, setKiteRealizedPnl] = useState<number | null>(null);
-  const [kiteError, setKiteError] = useState<string | null>(null);
-  const [kiteConnected, setKiteConnected] = useState(false);
   const [loading, setLoading] = useState(true);
   const [closeTarget, setCloseTarget] = useState<UserTrade | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -116,41 +72,8 @@ export function PortfolioPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    setKiteError(null);
     try {
-      const [holdRes, posRes, tradesRes] = await Promise.all([
-        fetch("/api/kite/holdings"),
-        fetch("/api/kite/positions"),
-        fetch("/api/stocks/trades"),
-      ]);
-
-      if (holdRes.ok) {
-        setHoldings(await holdRes.json());
-        setKiteConnected(true);
-        const pnlRes = await fetch("/api/kite/portfolio-summary");
-        if (pnlRes.ok) {
-          const pnlData = await pnlRes.json();
-          setKiteClosedTrades(pnlData.trades ?? []);
-          setKiteRealizedPnl(pnlData.summary?.realizedPnl ?? 0);
-        } else {
-          setKiteClosedTrades([]);
-          setKiteRealizedPnl(null);
-        }
-      } else if (holdRes.status === 401) {
-        const d = await holdRes.json();
-        setKiteError(d.error || "Connect Kite in Settings");
-        setHoldings([]);
-        setKiteConnected(false);
-        setKiteClosedTrades([]);
-        setKiteRealizedPnl(null);
-      }
-
-      if (posRes.ok) {
-        const data = await posRes.json();
-        const net = (data.net ?? []) as KitePosition[];
-        setPositions(net.filter((p) => p.quantity !== 0));
-      }
-
+      const tradesRes = await fetch("/api/stocks/trades");
       if (tradesRes.ok) setTrades(await tradesRes.json());
     } finally {
       setLoading(false);
@@ -183,18 +106,14 @@ export function PortfolioPage() {
 
   const trackedTrades = useMemo(() => filterTradesForTracking(trades), [trades]);
   const summary = useMemo(() => computePortfolioSummary(trackedTrades), [trackedTrades]);
-  const realizedPnl = kiteConnected && kiteRealizedPnl != null ? kiteRealizedPnl : summary.realizedPnl;
+  const realizedPnl = summary.realizedPnl;
 
   const openTrades = trades.filter((t) => t.status === "open");
   const closedTrades = trades.filter((t) => t.status === "closed");
-  const holdingsPnl = holdings.reduce((s, h) => s + (h.pnl ?? 0), 0);
-  const positionsPnl = positions.reduce((s, p) => s + (p.pnl ?? 0), 0);
 
   const tabCounts: Record<Tab, number | null> = {
     overview: null,
     trades: trades.length,
-    holdings: holdings.length,
-    positions: positions.length,
   };
 
   return (
@@ -221,7 +140,7 @@ export function PortfolioPage() {
                   </span>
                 </div>
                 <p className="text-xs text-[var(--dota-dim)]">
-                  Real money — not Demo Mode · Buy via Kite · P&L from holdings + closed Kite trades
+                  Paper log — not Demo Mode · P&L from trades you logged
                 </p>
               </div>
             </div>
@@ -236,13 +155,13 @@ export function PortfolioPage() {
             </button>
           </div>
 
-          {!loading && tab === "overview" && (holdings.length > 0 || trackedTrades.length > 0) && (
+          {!loading && tab === "overview" && trackedTrades.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/30 border border-[var(--dota-border)] text-[11px] font-medium text-[var(--dota-dim)]">
                 Unrealized{" "}
-                <span className={`font-bold tabular-nums ${pnlClass(kiteConnected ? holdingsPnl : summary.unrealizedPnl)}`}>
-                  {(kiteConnected ? holdingsPnl : summary.unrealizedPnl) >= 0 ? "+" : "−"}₹
-                  {fmt(Math.abs(kiteConnected ? holdingsPnl : summary.unrealizedPnl))}
+                <span className={`font-bold tabular-nums ${pnlClass(summary.unrealizedPnl)}`}>
+                  {summary.unrealizedPnl >= 0 ? "+" : "−"}₹
+                  {fmt(Math.abs(summary.unrealizedPnl))}
                 </span>
               </span>
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/30 border border-[var(--dota-border)] text-[11px] font-medium text-[var(--dota-dim)]">
@@ -254,15 +173,6 @@ export function PortfolioPage() {
             </div>
           )}
 
-          {kiteError && (tab === "holdings" || tab === "positions") && (
-            <div className="mt-3 flex items-center gap-2 text-xs text-[var(--dota-gold)] bg-[rgba(255,216,77,0.05)] border border-[#574212] rounded-xl px-3 py-2.5">
-              <AlertCircle size={14} className="shrink-0" />
-              <span>{kiteError} — </span>
-              <Link href="/stocks/settings" className="font-semibold underline">
-                Connect in Settings
-              </Link>
-            </div>
-          )}
         </div>
 
         {/* Tabs */}
@@ -309,109 +219,14 @@ export function PortfolioPage() {
         ) : (
           <>
             {tab === "overview" && (
-              <PortfolioOverview
-                trades={trades}
-                kiteClosedTrades={kiteClosedTrades}
-                holdings={holdings}
-                kiteConnected={kiteConnected}
-              />
-            )}
-
-            {tab === "holdings" && (
-              <>
-                {holdings.length > 0 && (
-                  <div className="mb-4 flex items-center justify-between px-4 py-3 rounded-xl dota-panel">
-                    <span className="cz text-[10px] font-bold !text-[var(--dota-dim)]">Inventory P&L</span>
-                    <span className={`text-sm font-bold tabular-nums ${pnlClass(holdingsPnl)}`}>
-                      {holdingsPnl >= 0 ? "+" : "−"}₹{fmt(Math.abs(holdingsPnl))}
-                    </span>
-                  </div>
-                )}
-                {holdings.length === 0 && !kiteError && (
-                  <EmptyState message="No holdings in your Kite account." />
-                )}
-                <div className="space-y-3">
-                  {holdings.map((h) => {
-                    const pnlPct = h.average_price
-                      ? ((h.last_price - h.average_price) / h.average_price) * 100
-                      : 0;
-                    const invested = h.quantity * h.average_price;
-                    return (
-                      <div
-                        key={`${h.exchange}-${h.tradingsymbol}`}
-                        className="dota-panel rounded-xl p-4 hover:border-[#4a5468] transition-colors anim-rise"
-                      >
-                        <div className="flex justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="font-bold text-[var(--dota-head)]">{h.tradingsymbol}</p>
-                            <p className="text-xs text-[var(--dota-dim)] mt-0.5">
-                              {h.quantity} qty · avg ₹{fmt(h.average_price, 2)}
-                            </p>
-                            <p className="text-[10px] text-[var(--dota-dim)] mt-1">
-                              Invested <span className="font-semibold text-[var(--dota-gold)]">₹{fmt(invested)}</span>{" "}
-                              · LTP ₹{fmt(h.last_price, 2)}
-                            </p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <PnlBadge value={h.pnl} unit="inr" />
-                            <p className={`text-[10px] font-semibold mt-1 ${pnlClass(pnlPct)}`}>
-                              {pnlPct >= 0 ? "+" : ""}
-                              {pnlPct.toFixed(2)}%
-                            </p>
-                            <p className="text-[10px] text-[var(--dota-dim)] mt-0.5">
-                              Day {h.day_change_percentage?.toFixed(2) ?? 0}%
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-
-            {tab === "positions" && (
-              <>
-                {positions.length > 0 && (
-                  <div className="mb-4 flex items-center justify-between px-4 py-3 rounded-xl dota-panel">
-                    <span className="cz text-[10px] font-bold !text-[var(--dota-dim)]">Intraday P&L</span>
-                    <span className={`text-sm font-bold tabular-nums ${pnlClass(positionsPnl)}`}>
-                      {positionsPnl >= 0 ? "+" : "−"}₹{fmt(Math.abs(positionsPnl))}
-                    </span>
-                  </div>
-                )}
-                {positions.length === 0 && !kiteError && (
-                  <EmptyState message="No open intraday positions." />
-                )}
-                <div className="space-y-3">
-                  {positions.map((p) => (
-                    <div
-                      key={`${p.exchange}-${p.tradingsymbol}-${p.product}`}
-                      className="dota-panel rounded-xl p-4 anim-rise"
-                    >
-                      <div className="flex justify-between gap-3">
-                        <div>
-                          <p className="font-bold text-[var(--dota-head)]">{p.tradingsymbol}</p>
-                          <p className="text-xs text-[var(--dota-dim)] mt-0.5">
-                            {p.product} · {p.quantity} qty · LTP ₹{fmt(p.last_price, 2)}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <PnlBadge value={p.pnl} unit="inr" />
-                          <p className="text-[10px] text-[var(--dota-dim)] mt-1">M2M ₹{fmt(p.m2m ?? 0)}</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
+              <PortfolioOverview trades={trades} />
             )}
 
             {tab === "trades" && (
               <>
                 {trades.length === 0 && (
                   <EmptyState
-                    message="Optional manual log — most trades come from buying on signals via Kite. Use this only if you want a separate paper trail."
+                    message="Log a buy from a signal. Close it here when you sell."
                     href="/stocks"
                     linkLabel="Go to signals"
                   />

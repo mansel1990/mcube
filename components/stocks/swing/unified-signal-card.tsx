@@ -10,9 +10,6 @@ import { StrategyInfoDrawer, type StrategyKey } from "./strategy-info-drawer";
 import { LogBuySheet } from "../log-buy-sheet";
 import { StrategyBadge, PnlBadge } from "../strategy-badge";
 import { HeroPortrait, HeroBanner } from "../hero-portrait";
-import { KiteTradeActions } from "./kite-trade-actions";
-import type { PlacedOrder } from "../kite-order-toast";
-
 type CurrentPrice = { price: number; change: number; changePct: number } | null;
 
 function fmtDate(d: string | null) {
@@ -30,10 +27,6 @@ interface Props {
   currentPrice?: CurrentPrice;
   logged?: boolean;
   onLogged?: () => void;
-  kiteConnected?: boolean;
-  holdingQty?: number;
-  defaultTradeAmount?: number;
-  onOrderPlaced?: (order: PlacedOrder) => void;
 }
 
 export function UnifiedSignalCard({
@@ -41,10 +34,6 @@ export function UnifiedSignalCard({
   currentPrice,
   logged,
   onLogged,
-  kiteConnected,
-  holdingQty = 0,
-  defaultTradeAmount = 10000,
-  onOrderPlaced,
 }: Props) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
@@ -101,35 +90,6 @@ export function UnifiedSignalCard({
   const hasTargetRow = signal.target != null || signal.stopLoss != null;
 
   const tier = tierOf(signal.signalStrength);
-  // One-position cap: already holding this name → greyed, no re-buy (PRD §4.1)
-  const alreadyHeld = !logged && holdingQty > 0;
-
-  if (alreadyHeld) {
-    return (
-      <div className="rounded-xl overflow-hidden dota-panel flex opacity-60 grayscale-[0.4]">
-        <div className="w-[3px] shrink-0" style={{ backgroundColor: hero.accent }} />
-        <div className="flex-1 p-3">
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <HeroPortrait source={signal.source} size="md" grey />
-              <div className="min-w-0">
-                <span className="text-lg font-bold text-[var(--dota-head)]">{signal.ticker}</span>
-                <p className="text-[11px] text-[var(--dota-dim)]">
-                  {fmtDate(signal.signalDate)} · signal still strong
-                </p>
-              </div>
-            </div>
-            <span className="text-[9.5px] font-bold tracking-[0.12em] uppercase px-2 py-1 rounded border border-[var(--dota-border)] bg-white/5 text-[var(--dota-dim)] shrink-0">
-              Already on the map
-            </span>
-          </div>
-          <p className="text-[10.5px] text-[var(--dota-dim)] mt-2.5">
-            You hold {holdingQty} — one position per hero, no re-buy.
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <>
@@ -273,19 +233,6 @@ export function UnifiedSignalCard({
           )}
 
           <div className="pt-2 border-t border-[#2a3344] space-y-2">
-            {kiteConnected && onOrderPlaced && (
-              <KiteTradeActions
-                ticker={signal.ticker}
-                ltp={live}
-                holdingQty={holdingQty}
-                defaultTradeAmount={defaultTradeAmount}
-                signalRef={signal.id}
-                strategy={signal.source}
-                targetPrice={signal.target}
-                stopLoss={signal.stopLoss}
-                onOrderPlaced={onOrderPlaced}
-              />
-            )}
             {logged ? (
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-[#bcdb3e]">✓ On the map</span>
@@ -293,13 +240,6 @@ export function UnifiedSignalCard({
                   Ranked →
                 </Link>
               </div>
-            ) : kiteConnected ? (
-              <button
-                onClick={() => setLogOpen(true)}
-                className="w-full py-1.5 text-xs font-medium text-[var(--dota-dim)] hover:text-[var(--dota-gold)]"
-              >
-                Scout — log buy manually
-              </button>
             ) : (
               <button
                 onClick={() => setLogOpen(true)}

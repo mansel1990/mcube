@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mansel Live — sample</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0B0C10; --surface:#14151B; --surface2:#1B1D25; --line:#262833; --line2:#30333F;
+  --ink:#F3F4F7; --ink2:#B4B8C5; --ink3:#868B9A;
+  --brand:#F0443A; --brand-ink:#FFFFFF; --brand-soft:rgba(240,68,58,.12);
+  --up:#3CCB7F; --down:#FF6B6B; --warn:#F2B544;
+  --rs:#7A83F5; --ema:#C17F22;
+  --shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 12px 32px rgba(0,0,0,.35);
+}
+[data-theme="light"]{
+  --bg:#F5F6F8; --surface:#FFFFFF; --surface2:#F7F8FA; --line:#E7E8EC; --line2:#DADCE2;
+  --ink:#14151B; --ink2:#4A4E5A; --ink3:#6B7080;
+  --brand:#D92D20; --brand-soft:rgba(217,45,32,.08);
+  --up:#127A43; --down:#C2281C; --warn:#9A6200;
+  --rs:#4F5BD5; --ema:#C77A12;
+  --shadow:0 1px 2px rgba(20,21,27,.04), 0 8px 24px rgba(20,21,27,.06);
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--brand)}
+button{font-family:inherit}
+.n{font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.wrap{max-width:1200px;margin:0 auto;padding:0 24px}
+
+/* top bar */
+.top{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;align-items:center;gap:20px;height:64px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:-.01em;font-size:17px}
+.logo i{width:28px;height:28px;border-radius:8px;background:var(--brand);display:grid;place-items:center}
+.logo i svg{width:16px;height:16px}
+.nav{display:flex;gap:4px;margin-left:12px}
+.nav button{background:none;border:0;color:var(--ink3);font-size:14px;font-weight:600;padding:10px 14px;border-radius:10px;cursor:pointer;min-height:40px}
+.nav button:hover{color:var(--ink);background:var(--surface2)}
+.nav button[aria-current="page"]{color:var(--ink);background:var(--surface)}
+.top .right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.icon-btn{width:40px;height:40px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink2);display:grid;place-items:center;cursor:pointer}
+.icon-btn:hover{color:var(--ink)}
+.avatar{width:36px;height:36px;border-radius:50%;background:var(--surface2);border:1px solid var(--line2);display:grid;place-items:center;font-weight:700;font-size:13px;color:var(--ink2)}
+
+/* status */
+.pills{display:flex;gap:8px;flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 12px;border-radius:999px;background:var(--surface);border:1px solid var(--line);font-size:13px;font-weight:500;color:var(--ink2);white-space:nowrap}
+.pill b{color:var(--ink);font-weight:600}
+.dot{width:8px;height:8px;border-radius:50%}
+.live{background:var(--up);box-shadow:0 0 0 4px color-mix(in srgb,var(--up) 22%,transparent)}
+
+.page{display:none;padding:28px 0 80px}
+.page.on{display:block}
+h1{font-size:28px;letter-spacing:-.02em;margin:0;font-weight:700}
+h2{font-size:17px;margin:0;font-weight:700;letter-spacing:-.01em}
+.sub{color:var(--ink3);font-size:14px;margin:6px 0 0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow)}
+.sec{margin-top:28px}
+.sec-h{display:flex;align-items:end;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.muted{color:var(--ink3)}
+.up{color:var(--up)} .down{color:var(--down)}
+
+/* hero */
+.hero{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;margin-top:20px}
+.hero .main{padding:24px;position:relative;overflow:hidden}
+.big{font-size:44px;font-weight:700;letter-spacing:-.03em;line-height:1.05;margin-top:8px}
+.chg{display:inline-flex;gap:8px;align-items:center;margin-top:10px;font-size:14px;font-weight:600}
+.chg span.badge{padding:3px 8px;border-radius:6px;background:color-mix(in srgb,var(--up) 14%,transparent)}
+.lbl{font-size:12px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;margin:0}
+.spark{position:absolute;right:0;bottom:0;width:58%;height:110px;opacity:.95}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.stat{padding:18px 20px}
+.stat .v{font-size:22px;font-weight:600;margin-top:8px}
+.stat .h{font-size:12px;color:var(--ink3);margin-top:4px}
+.meter{height:6px;border-radius:3px;background:var(--surface2);margin-top:10px;overflow:hidden}
+.meter i{display:block;height:100%;border-radius:3px}
+
+/* action items */
+.actions{margin-top:20px;border-color:color-mix(in srgb,var(--brand) 45%,var(--line));background:linear-gradient(0deg,var(--brand-soft),var(--brand-soft)),var(--surface)}
+.actions .head{display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid color-mix(in srgb,var(--brand) 25%,var(--line))}
+.count{background:var(--brand);color:var(--brand-ink);font-size:12px;font-weight:700;border-radius:999px;min-width:22px;height:22px;display:grid;place-items:center;padding:0 7px}
+.act{display:flex;align-items:center;gap:16px;padding:16px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.act:last-child{border-bottom:0}
+.act .what{flex:1;min-width:260px}
+.act .what b{font-size:15px}
+.act .what div{font-size:13px;color:var(--ink3);margin-top:3px}
+.side-tag{font-size:11px;font-weight:700;letter-spacing:.06em;padding:4px 8px;border-radius:6px}
+.buy{background:color-mix(in srgb,var(--up) 16%,transparent);color:var(--up)}
+.sell{background:color-mix(in srgb,var(--down) 16%,transparent);color:var(--down)}
+.btn{height:44px;padding:0 18px;border-radius:10px;font-weight:600;font-size:14px;cursor:pointer;border:1px solid var(--line2);background:var(--surface);color:var(--ink)}
+.btn:hover{border-color:var(--ink3)}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:var(--brand-ink)}
+.btn.primary:hover{filter:brightness(1.08)}
+.done-msg{font-size:13px;font-weight:600;color:var(--up)}
+
+/* holdings */
+.hold-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px}
+.hold{padding:18px;display:flex;flex-direction:column;gap:14px;transition:border-color .15s}
+.hold:hover{border-color:var(--line2)}
+.hold .t{display:flex;justify-content:space-between;align-items:start;gap:8px}
+.sym{font-weight:700;font-size:16px;letter-spacing:-.01em}
+.strat{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink3);margin-top:4px}
+.strat i{width:8px;height:8px;border-radius:2px}
+.pnl{text-align:right}
+.pnl .v{font-weight:600;font-size:15px}
+.pnl .p{font-size:12px;margin-top:2px}
+.kv{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:12px;color:var(--ink3)}
+.kv b{display:block;color:var(--ink);font-size:14px;font-weight:600;margin-top:3px}
+.range{position:relative;height:30px;margin-top:2px}
+.range .track{position:absolute;left:0;right:0;top:11px;height:6px;border-radius:3px;background:var(--surface2)}
+.range .fill{position:absolute;top:11px;height:6px;border-radius:3px}
+.range .mk{position:absolute;top:5px;width:3px;height:18px;border-radius:2px;background:var(--ink);transform:translateX(-1px)}
+.range .ends{position:absolute;top:20px;left:0;right:0;display:flex;justify-content:space-between;font-size:11px;color:var(--ink3)}
+.state{font-size:12px;font-weight:600;padding:5px 9px;border-radius:7px;align-self:flex-start}
+.s-ok{background:color-mix(in srgb,var(--up) 13%,transparent);color:var(--up)}
+.s-act{background:var(--brand);color:var(--brand-ink)}
+
+/* tables */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{font-size:12px;font-weight:600;color:var(--ink3);text-align:left;padding:12px 16px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:14px 16px;border-bottom:1px solid var(--line);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+.r{text-align:right}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:4px 9px;border-radius:7px;background:var(--surface2);color:var(--ink2)}
+.chip.pick{background:var(--brand);color:var(--brand-ink)}
+.chip.bought{background:color-mix(in srgb,var(--up) 14%,transparent);color:var(--up)}
+
+/* timeline */
+.tl{padding:6px 20px}
+.tl-i{display:grid;grid-template-columns:64px 28px 1fr auto;gap:12px;align-items:center;padding:14px 0;border-bottom:1px solid var(--line)}
+.tl-i:last-child{border-bottom:0}
+.tl-i .d{font-size:12px;color:var(--ink3)}
+.tl-i .ic{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font-size:13px;font-weight:700}
+.tl-i .x b{font-weight:600}
+.tl-i .x div{font-size:12px;color:var(--ink3);margin-top:2px}
+
+.two{display:grid;grid-template-columns:1.25fr 1fr;gap:16px}
+.funnel{display:flex;gap:10px;padding:18px 20px 6px;flex-wrap:wrap}
+.fstep{flex:1;min-width:120px;background:var(--surface2);border-radius:12px;padding:12px 14px}
+.fstep .v{font-size:22px;font-weight:700;margin-top:4px}
+
+/* charts */
+.chart-card{padding:20px}
+.chart{position:relative}
+.chart svg{display:block;width:100%;height:auto;overflow:visible}
+.legend{display:flex;gap:16px;font-size:12px;color:var(--ink2);flex-wrap:wrap}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:14px;height:2px;border-radius:1px}
+.tip{position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--line2);border-radius:10px;padding:8px 10px;font-size:12px;box-shadow:var(--shadow);opacity:0;transition:opacity .1s;white-space:nowrap;z-index:5}
+.tip b{display:block;font-size:13px;margin-top:2px}
+.seg{display:inline-flex;background:var(--surface2);border-radius:10px;padding:3px;gap:2px}
+.seg button{border:0;background:none;color:var(--ink3);font-weight:600;font-size:13px;padding:0 12px;height:34px;border-radius:8px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
+
+/* settings */
+.set-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:0 20px 20px}
+.mode{border:1px solid var(--line);border-radius:12px;padding:14px;cursor:pointer;background:var(--surface);text-align:left;color:var(--ink)}
+.mode b{display:block;font-size:14px}
+.mode span{display:block;font-size:12px;color:var(--ink3);margin-top:4px;line-height:1.4}
+.mode[aria-pressed="true"]{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
+.field{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 20px;border-top:1px solid var(--line)}
+.field label{font-size:14px}
+.field small{display:block;color:var(--ink3);font-size:12px;margin-top:2px}
+.field input{width:120px;height:40px;border-radius:9px;border:1px solid var(--line2);background:var(--surface2);color:var(--ink);padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:14px;text-align:right}
+.tog{width:44px;height:26px;border-radius:13px;background:var(--up);position:relative;border:0;cursor:pointer;flex:none}
+.tog::after{content:"";position:absolute;top:3px;left:21px;width:20px;height:20px;border-radius:50%;background:#fff;transition:left .15s}
+.tog[aria-pressed="false"]{background:var(--line2)}
+.tog[aria-pressed="false"]::after{left:3px}
+.card-h{padding:18px 20px}
+.note{font-size:12px;color:var(--ink3);text-align:center;margin-top:36px}
+
+@media (max-width:900px){
+  .hero,.two,.set-grid{grid-template-columns:1fr}
+  .modes{grid-template-columns:1fr}
+  .nav{display:none}
+  .mnav{display:flex!important}
+  .big{font-size:36px}
+}
+.mnav{display:none;position:fixed;bottom:0;left:0;right:0;z-index:30;background:var(--surface);border-top:1px solid var(--line);justify-content:space-around;padding:6px 0 10px}
+.mnav button{background:none;border:0;color:var(--ink3);font-size:12px;font-weight:600;min-height:44px;padding:0 12px;cursor:pointer}
+.mnav button[aria-current="page"]{color:var(--brand)}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="logo"><i><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg></i>Mansel Live</div>
+    <nav class="nav" aria-label="Main">
+      <button data-go="home" aria-current="page">Home</button>
+      <button data-go="charts">Charts</button>
+      <button data-go="reports">Reports</button>
+      <button data-go="settings">Settings</button>
+    </nav>
+    <div class="right">
+      <button class="icon-btn" aria-label="Alerts, 2 need you" data-go="reports" style="position:relative"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 8a6 6 0 1112 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10 21a2 2 0 004 0"/></svg><span class="count" style="position:absolute;top:-6px;right:-6px;min-width:18px;height:18px;font-size:11px">2</span></button>
+      <button class="icon-btn" id="theme" aria-label="Toggle light or dark theme">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>
+      </button>
+      <div class="avatar" aria-label="Sanjay">SM</div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- ================= HOME ================= -->
+<section class="page on" id="home">
+  <div style="display:flex;justify-content:space-between;align-items:end;gap:16px;flex-wrap:wrap">
+    <div>
+      <p class="lbl">Thursday, 5 Nov · Market closes 15:30</p>
+      <h1 style="margin-top:6px">Good morning, Sanjay</h1>
+    </div>
+    <div class="pills">
+      <span class="pill"><span class="dot live"></span><b>Engine active</b></span>
+      <span class="pill">Mode <b>Approve each</b></span>
+      <span class="pill"><span class="dot" style="background:var(--up)"></span>Kite <b>connected 08:51</b></span>
+      <span class="pill">Breaker <b class="n">2.1% / 25%</b></span>
+    </div>
+  </div>
+
+  <div class="hero">
+    <div class="card main">
+      <p class="lbl">Account value</p>
+      <div class="big n">₹81,210</div>
+      <div class="chg up"><span class="badge n">+₹1,210</span><span class="n">+1.51% since start · 4 Sep</span></div>
+      <svg class="spark" id="spark" viewBox="0 0 400 110" preserveAspectRatio="none" aria-hidden="true"></svg>
+    </div>
+    <div class="stats">
+      <div class="card stat"><p class="lbl">Cash</p><div class="v n">₹11,208</div><div class="h">Available in Kite</div></div>
+      <div class="card stat"><p class="lbl">Invested</p><div class="v n">₹70,002</div><div class="h">4 holdings</div></div>
+      <div class="card stat"><p class="lbl">Trades today</p><div class="v n">0/4 <span class="muted" style="font-size:16px">·</span> 0/4</div><div class="h">buys · sells — 2 waiting for you</div></div>
+      <div class="card stat"><p class="lbl">Fund used</p><div class="v n">87%</div><div class="meter"><i style="width:87%;background:var(--ink2)"></i></div><div class="h n">of ₹80,740 fund</div></div>
+    </div>
+  </div>
+
+  <div class="card actions" id="actions">
+    <div class="head"><h2>Needs you</h2><span class="count" id="act-count">2</span><span class="muted" style="font-size:13px;margin-left:auto">Orders go out at 09:20 once approved</span></div>
+    <div class="act" data-act>
+      <span class="side-tag sell">SELL</span>
+      <div class="what"><b>HAVELLS · 12 shares</b><div>Closed below its trend stop (₹1,518). Limit ₹1,509 · est. −₹443</div></div>
+      <button class="btn">Skip</button><button class="btn primary">Approve</button>
+    </div>
+    <div class="act" data-act>
+      <span class="side-tag buy">BUY</span>
+      <div class="what"><b>LUPIN · 9 shares @ ₹2,065</b><div>RS Resilience · ₹18,585 (23% of fund) · trend stop ₹1,978 set as GTT on fill</div></div>
+      <button class="btn">Skip</button><button class="btn primary">Approve</button>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-h"><div><h2>What we hold</h2><p class="sub">Every holding has a GTT stop in Kite. Sold when the trend breaks on a daily close.</p></div><span class="pill"><span class="dot" style="background:var(--up)"></span>Matches Kite · 09:02</span></div>
+    <div class="hold-grid" id="holds"></div>
+  </div>
+
+  <div class="sec two">
+    <div class="card">
+      <div class="card-h" style="display:flex;justify-content:space-between;align-items:center"><h2>What we bought &amp; sold</h2><a href="#" data-go="reports" style="font-size:13px;font-weight:600;text-decoration:none">All activity →</a></div>
+      <div class="tl" id="tl"></div>
+    </div>
+    <div class="card">
+      <div class="card-h"><h2>Last night's ideas</h2><p class="sub">Which strategy suggested what, and what we picked.</p></div>
+      <div class="funnel">
+        <div class="fstep"><div class="lbl">Ideas</div><div class="v n">9</div></div>
+        <div class="fstep"><div class="lbl">Passed rules</div><div class="v n">2</div></div>
+        <div class="fstep"><div class="lbl">Picked</div><div class="v n" style="color:var(--brand)">1</div></div>
+      </div>
+      <div class="tbl-wrap"><table><thead><tr><th>Stock</th><th>From</th><th>Result</th></tr></thead><tbody id="ideas"></tbody></table></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= CHARTS ================= -->
+<section class="page" id="charts">
+  <div class="sec-h"><div><h1>Charts</h1><p class="sub">Live money only. Paper and backtest results are never mixed in.</p></div>
+    <div class="seg" role="group" aria-label="Range"><button aria-pressed="false">1M</button><button aria-pressed="true">All</button></div></div>
+  <div class="card chart-card">
+    <div style="display:flex;justify-content:space-between;align-items:start;gap:12px;flex-wrap:wrap">
+      <div><h2>Account value</h2><p class="sub">Since going live on 4 Sep</p></div>
+      <div class="legend"><span><i style="background:var(--ink)"></i>Account value</span><span><i style="background:var(--ink3);height:0;border-top:2px dashed var(--ink3)"></i>Peak</span></div>
+    </div>
+    <div class="chart" id="eq" style="margin-top:16px"></div>
+  </div>
+  <div class="two sec">
+    <div class="card chart-card">
+      <h2>Down from peak</h2><p class="sub">The engine pauses itself at 25%.</p>
+      <div class="chart" id="dd" style="margin-top:16px"></div>
+    </div>
+    <div class="card chart-card">
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><h2>Profit by strategy</h2><p class="sub">Realised + open, after charges</p></div>
+      <div class="legend"><span><i style="background:var(--rs);height:8px;width:8px;border-radius:2px"></i>RS Resilience</span><span><i style="background:var(--ema);height:8px;width:8px;border-radius:2px"></i>EMA Pullback</span></div></div>
+      <div class="chart" id="bystrat" style="margin-top:16px"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= REPORTS ================= -->
+<section class="page" id="reports">
+  <div class="sec-h"><div><h1>Reports</h1><p class="sub">The engine's daily ledger — including the days it did nothing, and why.</p></div><button class="btn">Download CSV</button></div>
+  <div class="hero" style="grid-template-columns:repeat(4,1fr);margin-top:0">
+    <div class="card stat"><p class="lbl">Closed trades</p><div class="v n">7</div></div>
+    <div class="card stat"><p class="lbl">Win rate</p><div class="v n">57%</div></div>
+    <div class="card stat"><p class="lbl">Realised P&amp;L</p><div class="v n up">+₹1,742</div></div>
+    <div class="card stat"><p class="lbl">Charges paid</p><div class="v n">₹318</div></div>
+  </div>
+  <div class="card sec">
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Day</th><th>Decision</th><th>Detail</th><th class="r">Value at close</th></tr></thead>
+      <tbody id="ledger"></tbody>
+    </table></div>
+  </div>
+  <div class="card sec">
+    <div class="card-h"><h2>Alerts</h2><p class="sub">Needs you · Problem · Done — kept with whether you've seen them.</p></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Time</th><th>Level</th><th>Message</th><th>Seen</th></tr></thead><tbody>
+      <tr><td class="n">05 Nov 08:58</td><td><span class="chip pick">Needs you</span></td><td>Approve sell HAVELLS and buy LUPIN</td><td class="muted">No</td></tr>
+      <tr><td class="n">28 Oct 09:05</td><td><span class="chip" style="background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)">Problem</span></td><td>Price data for 3 stocks looked wrong — no orders today</td><td class="muted">Yes</td></tr>
+      <tr><td class="n">02 Nov 09:47</td><td><span class="chip bought">Done</span></td><td>TRENT 4 filled @ ₹4,980 · GTT placed at ₹4,770</td><td class="muted">Yes</td></tr>
+    </tbody></table></div>
+  </div>
+  <div class="card sec">
+    <div class="card-h"><h2>Audit log</h2><p class="sub">Every action and decision. Rows are never edited or deleted.</p></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Stock</th><th>Detail</th></tr></thead><tbody>
+      <tr><td class="n">05 Nov 08:58</td><td>engine</td><td>decision.skip</td><td>COFORGE</td><td class="muted">Sector cap: IT already held (PERSISTENT)</td></tr>
+      <tr><td class="n">05 Nov 08:58</td><td>engine</td><td>sizing</td><td>LUPIN</td><td class="muted">risk ₹807 ÷ (2065−1978) = 9 · cap 9 · cash 14 → 9</td></tr>
+      <tr><td class="n">05 Nov 08:57</td><td>engine</td><td>reconcile.ok</td><td>—</td><td class="muted">4 system positions match Kite · NIFTYBEES ignored</td></tr>
+      <tr><td class="n">05 Nov 08:51</td><td>you</td><td>kite.login</td><td>—</td><td class="muted">Session saved</td></tr>
+      <tr><td class="n">02 Nov 10:12</td><td>you</td><td>setting.change</td><td>—</td><td class="muted">max_per_sector 3 → 2</td></tr>
+    </tbody></table></div>
+  </div>
+</section>
+
+<!-- ================= SETTINGS ================= -->
+<section class="page" id="settings">
+  <div class="sec-h"><div><h1>Settings</h1><p class="sub">How the engine runs, your Kite connection, and the rules it can never break.</p></div></div>
+
+  <div class="card">
+    <div class="card-h"><h2>Trading mode</h2><p class="sub">You can switch any time. Paused stops new buys; GTT stops in Kite stay active.</p></div>
+    <div class="modes" id="modes">
+      <button class="mode" aria-pressed="true"><b>Approve each</b><span>Engine proposes; nothing is placed until you tap Approve.</span></button>
+      <button class="mode" aria-pressed="false"><b>Fully automatic</b><span>Orders that pass every rule are placed at 09:20. You get a report.</span></button>
+      <button class="mode" aria-pressed="false"><b>Paused</b><span>No new orders. Same as the circuit breaker tripping.</span></button>
+    </div>
+  </div>
+
+  <div class="set-grid sec">
+    <div class="card">
+      <div class="card-h" style="display:flex;justify-content:space-between;align-items:center"><h2>Kite connection</h2><span class="pill"><span class="dot" style="background:var(--up)"></span>Connected</span></div>
+      <div class="field"><label>Account<small>Zerodha client ID</small></label><span class="n">[CLIENT ID]</span></div>
+      <div class="field"><label>Session<small>Kite tokens expire every morning (SEBI rule)</small></label><span class="n">since 08:51</span></div>
+      <div class="field"><label>Static IP<small>Whitelisted for order placement</small></label><span class="n">139.59.51.34</span></div>
+      <div class="field"><label>Relay<small>relay.mcubetechstudio.com</small></label><span class="up" style="font-weight:600;font-size:13px">Healthy</span></div>
+      <div class="field"><label>Morning login reminder<small>Push at 08:30 on trading days</small></label><button class="tog" aria-pressed="true" aria-label="Morning login reminder"></button></div>
+      <div class="field" style="justify-content:flex-end;gap:10px"><button class="btn">Disconnect</button><button class="btn primary">Reconnect Kite</button></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><h2>Rules</h2><p class="sub">Checked by the engine before every order. The relay double-checks the order size.</p></div>
+      <div class="field"><label>Money put in<small>Fund = this + realised profit (now ₹80,740)</small></label><input value="80000" aria-label="Money put in"></div>
+      <div class="field"><label>Risk per trade<small>% of fund lost if the stop is hit · ₹807 today</small></label><input value="1%" aria-label="Risk per trade"></div>
+      <div class="field"><label>Max per order<small>% of fund · ₹20,185 today</small></label><input value="25%" aria-label="Max per order"></div>
+      <div class="field"><label>Min order<small>Smaller buys are skipped (charges)</small></label><input value="8000" aria-label="Min order"></div>
+      <div class="field"><label>Max buys per day</label><input value="4" aria-label="Max buys per day"></div>
+      <div class="field"><label>Max sells per day<small>Kite GTT stops are never blocked</small></label><input value="4" aria-label="Max sells per day"></div>
+      <div class="field"><label>Max open positions</label><input value="6" aria-label="Max open positions"></div>
+      <div class="field"><label>Max per sector</label><input value="2" aria-label="Max per sector"></div>
+      <div class="field"><label>Exclude list<small>Never bought or sold by the system</small></label><input value="NIFTYBEES, ETFs" aria-label="Exclude list" style="width:170px"></div>
+      <div class="field"><label>Circuit breaker<small>Pause if down this much from peak</small></label><input value="25%" aria-label="Circuit breaker"></div>
+      <div class="field"><label>Delivery only, no margin, no shorting</label><button class="tog" aria-pressed="true" aria-label="Delivery only"></button></div>
+      <div class="field"><label>Limit orders only + GTT stop on every buy</label><button class="tog" aria-pressed="true" aria-label="Limit orders and GTT"></button></div>
+      <div class="field"><label>Bad data or ledger error → do nothing</label><button class="tog" aria-pressed="true" aria-label="Do nothing on bad data"></button></div>
+    </div>
+  </div>
+
+  <div class="set-grid sec">
+    <div class="card">
+      <div class="card-h"><h2>Exit rules</h2></div>
+      <div class="field"><label>Trend stop · RS<small>Highest close − 2.5 × ATR(14) · only moves up</small></label><span class="n">Chandelier 2.5</span></div>
+      <div class="field"><label>Trend stop · EMA<small>Sell on a daily close below the 20-day EMA</small></label><span class="n">EMA 20</span></div>
+      <div class="field"><label>New 52-week high<small>Backtest: tightening didn't help</small></label><span class="n">Off</span></div>
+      <div class="field"><label>GTT gap<small>Hard stop in Kite, below the trend stop</small></label><span class="n">3%</span></div>
+    </div>
+    <div class="card">
+      <div class="card-h"><h2>Strategies</h2><p class="sub">Frozen. Reviewed every 60 days, next on 3 Jan.</p></div>
+      <div class="field"><label><span class="strat" style="margin:0;color:var(--ink);font-size:14px"><i style="background:var(--rs)"></i>RS Resilience</span></label><button class="tog" aria-pressed="true" aria-label="RS Resilience on"></button></div>
+      <div class="field"><label><span class="strat" style="margin:0;color:var(--ink);font-size:14px"><i style="background:var(--ema)"></i>EMA Pullback</span></label><button class="tog" aria-pressed="true" aria-label="EMA Pullback on"></button></div>
+    </div>
+  </div>
+</section>
+
+<p class="note">Sample data for design review · not live</p>
+</main>
+
+<nav class="mnav" aria-label="Main mobile">
+  <button data-go="home" aria-current="page">Home</button>
+  <button data-go="charts">Charts</button>
+  <button data-go="reports">Reports</button>
+  <button data-go="settings">Settings</button>
+</nav>
+
+<script>
+// ---------- sample data ----------
+const holds = [
+  {s:'PERSISTENT', st:'rs', qty:3, avg:5840, ltp:6012.5, stop:5790, hi:6240, since:'29 Oct'},
+  {s:'POLYCAB', st:'rs', qty:2, avg:6770, ltp:7104, stop:6880, hi:7180, since:'27 Oct'},
+  {s:'TRENT', st:'rs', qty:4, avg:4980, ltp:4902, stop:4815, hi:5310, since:'2 Nov'},
+  {s:'HAVELLS', st:'ema', qty:12, avg:1546, ltp:1512.4, stop:1518, hi:1690, since:'30 Oct', act:true},
+];
+const tl = [
+  {d:'4 Nov', side:'none', t:'No action', x:'All holdings above their stops · 6 ideas, none passed'},
+  {d:'2 Nov', side:'buy', t:'Bought TRENT', x:'4 @ ₹4,980 · RS Resilience', v:'₹19,920'},
+  {d:'30 Oct', side:'sell', t:'Sold LT', x:'Trend break · held 9 days', v:'+₹740', up:true},
+  {d:'30 Oct', side:'buy', t:'Bought HAVELLS', x:'12 @ ₹1,546 · EMA Pullback', v:'₹18,552'},
+  {d:'29 Oct', side:'buy', t:'Bought PERSISTENT', x:'3 @ ₹5,840 · RS Resilience', v:'₹17,520'},
+];
+const ideas = [
+  ['LUPIN','rs','pick','Picked'],['CUMMINSIND','ema','','Passed · lower score'],['COFORGE','rs','','Sector already held'],
+  ['DIXON','rs','','1 share > ₹20k cap'],['TRENT','rs','','Already held'],['ICICIGI','ema','','No cash left'],
+  ['IRCTC','ema','','Bad data · skipped'],['BEL','ema','','Opened 3.4% above signal'],['HAVELLS','ema','','Being sold'],
+];
+const ledger = [
+  ['Thu 5 Nov','wait','Waiting for you','Sell HAVELLS, buy LUPIN proposed','—'],
+  ['Wed 4 Nov','none','No action','All 4 holdings inside their stops','₹81,920'],
+  ['Tue 3 Nov','none','No action','2 ideas; both failed the sector rule','₹81,480'],
+  ['Mon 2 Nov','buy','1 buy','TRENT 4 @ ₹4,980','₹80,870'],
+  ['Fri 30 Oct','buy','1 buy · 1 sell','Sold LT +₹740 (trend break); bought HAVELLS','₹81,150'],
+  ['Thu 29 Oct','buy','1 buy','PERSISTENT 3 @ ₹5,840','₹80,410'],
+  ['Wed 28 Oct','none','No action','Price data for 3 stocks looked wrong → did nothing','₹80,220'],
+];
+// equity: 44 trading days
+const eq = [80000,80120,79980,80310,80450,80390,80760,80920,81100,80880,80650,80940,81320,81580,81450,81900,82150,82400,82930,82610,82200,81850,81420,80980,80600,80310,80150,80420,80700,80520,80380,80610,80840,80220,80410,81150,80960,80870,81030,81480,81700,81920,81600,81210];
+const startDate = new Date(2026,8,4);
+function tradingDays(n){const out=[];let d=new Date(startDate);while(out.length<n){if(d.getDay()%6!==0)out.push(new Date(d));d.setDate(d.getDate()+1);}return out}
+const days = tradingDays(eq.length);
+const fmtD = d => d.toLocaleDateString('en-IN',{day:'numeric',month:'short'});
+const inr = v => '₹'+Math.round(v).toLocaleString('en-IN');
+const sgn = v => (v>=0?'+':'−')+'₹'+Math.abs(Math.round(v)).toLocaleString('en-IN');
+const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+
+// ---------- nav ----------
+document.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',e=>{
+  e.preventDefault(); const id=b.dataset.go;
+  document.querySelectorAll('.page').forEach(p=>p.classList.toggle('on',p.id===id));
+  document.querySelectorAll('.nav [data-go], .mnav [data-go]').forEach(x=>{ if(x.dataset.go===id) x.setAttribute('aria-current','page'); else x.removeAttribute('aria-current'); });
+  window.scrollTo({top:0}); if(id==='charts') drawCharts();
+}));
+document.getElementById('theme').addEventListener('click',()=>{
+  const h=document.documentElement; h.dataset.theme = h.dataset.theme==='dark'?'light':'dark'; render();
+});
+
+// ---------- actions ----------
+document.querySelectorAll('[data-act]').forEach(row=>{
+  row.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
+    const ok=b.classList.contains('primary');
+    row.querySelectorAll('button').forEach(x=>x.remove());
+    const m=document.createElement('span'); m.className='done-msg'; m.style.color= ok?'var(--up)':'var(--ink3)';
+    m.textContent = ok?'Approved · goes out at 09:20':'Skipped'; row.appendChild(m);
+    const left=document.querySelectorAll('[data-act] .btn').length/2;
+    document.getElementById('act-count').textContent=left;
+  }));
+});
+
+// ---------- home ----------
+function renderHome(){
+  const H=document.getElementById('holds'); H.innerHTML='';
+  holds.forEach(h=>{
+    const pnl=(h.ltp-h.avg)*h.qty, pct=(h.ltp/h.avg-1)*100;
+    const lo=Math.min(h.stop,h.avg,h.ltp)*0.99, hi=h.hi;
+    const x=v=>Math.max(0,Math.min(100,(v-lo)/(hi-lo)*100));
+    const col= h.st==='rs'?'var(--rs)':'var(--ema)';
+    const el=document.createElement('article'); el.className='card hold';
+    el.innerHTML=`
+      <div class="t"><div><div class="sym">${h.s}</div><div class="strat"><i style="background:${col}"></i>${h.st==='rs'?'RS Resilience':'EMA Pullback'} · since ${h.since}</div></div>
+      <div class="pnl"><div class="v n ${pnl>=0?'up':'down'}">${sgn(pnl)}</div><div class="p n ${pnl>=0?'up':'down'}">${pct>=0?'+':'−'}${Math.abs(pct).toFixed(2)}%</div></div></div>
+      <div class="kv"><div>Qty<b class="n">${h.qty}</b></div><div>Avg<b class="n">${h.avg.toLocaleString('en-IN')}</b></div><div>LTP<b class="n">${h.ltp.toLocaleString('en-IN')}</b></div></div>
+      <div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--ink3)"><span>Trend stop</span><span>52-wk high</span></div>
+        <div class="range" aria-label="Price between trend stop and 52-week high">
+          <div class="track"></div>
+          <div class="fill" style="left:${x(h.stop)}%;width:${Math.max(0,x(h.ltp)-x(h.stop))}%;background:${h.ltp>=h.stop?'var(--up)':'var(--down)'};opacity:.55"></div>
+          <div class="mk" style="left:${x(h.ltp)}%"></div>
+          <div class="ends n"><span>${h.stop.toLocaleString('en-IN')}</span><span>${h.hi.toLocaleString('en-IN')}</span></div>
+        </div>
+      </div>
+      <span class="state ${h.act?'s-act':'s-ok'}">${h.act?'Sell proposed · needs you':(((h.ltp-h.stop)/h.ltp)*100).toFixed(1)+'% above stop · GTT active'}</span>`;
+    H.appendChild(el);
+  });
+  const T=document.getElementById('tl'); T.innerHTML='';
+  tl.forEach(i=>{
+    const ic = i.side==='buy'?['B','buy']:i.side==='sell'?['S','sell']:['–',''];
+    T.insertAdjacentHTML('beforeend',`<div class="tl-i"><span class="d">${i.d}</span><span class="ic ${ic[1]}" style="${ic[1]?'':'background:var(--surface2);color:var(--ink3)'}">${ic[0]}</span><div class="x"><b>${i.t}</b><div>${i.x}</div></div><span class="n ${i.up?'up':''}" style="font-size:13px;font-weight:600">${i.v||''}</span></div>`);
+  });
+  const I=document.getElementById('ideas'); I.innerHTML='';
+  ideas.forEach(([s,st,k,r])=>{
+    I.insertAdjacentHTML('beforeend',`<tr><td><b>${s}</b></td><td><span class="strat" style="margin:0"><i style="background:${st==='rs'?'var(--rs)':'var(--ema)'}"></i>${st==='rs'?'RS':'EMA'}</span></td><td><span class="chip ${k}">${r}</span></td></tr>`);
+  });
+  // sparkline
+  const S=document.getElementById('spark'); const mn=Math.min(...eq),mx=Math.max(...eq);
+  const pts=eq.map((v,i)=>[i/(eq.length-1)*400, 100-(v-mn)/(mx-mn)*84]);
+  const d='M'+pts.map(p=>p.map(n=>n.toFixed(1)).join(',')).join('L');
+  S.innerHTML=`<defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${css('--up')}" stop-opacity=".22"/><stop offset="1" stop-color="${css('--up')}" stop-opacity="0"/></linearGradient></defs>
+  <path d="${d}L400,110L0,110Z" fill="url(#sg)"/><path d="${d}" fill="none" stroke="${css('--up')}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+}
+
+// ---------- reports ----------
+function renderLedger(){
+  const L=document.getElementById('ledger'); L.innerHTML='';
+  ledger.forEach(([d,k,dec,det,v])=>{
+    const cls = k==='wait'?'pick':k==='buy'?'bought':'';
+    L.insertAdjacentHTML('beforeend',`<tr><td><b>${d}</b></td><td><span class="chip ${cls}">${dec}</span></td><td class="muted">${det}</td><td class="r n">${v}</td></tr>`);
+  });
+}
+
+// ---------- charts ----------
+function lineChart(el, data, opts){
+  const W=opts.w||1000,H=opts.h||300,P={l:64,r:16,t:12,b:28};
+  const mn=opts.min??Math.min(...data), mx=opts.max??Math.max(...data);
+  const X=i=>P.l+i/(data.length-1)*(W-P.l-P.r), Y=v=>P.t+(1-(v-mn)/(mx-mn))*(H-P.t-P.b);
+  const ink3=css('--ink3'), line=css('--line'), ink=css('--ink');
+  let g='';
+  opts.ticks.forEach(t=>{g+=`<line x1="${P.l}" x2="${W-P.r}" y1="${Y(t)}" y2="${Y(t)}" stroke="${line}"/><text x="${P.l-10}" y="${Y(t)+4}" text-anchor="end" font-size="12" fill="${ink3}" font-family="JetBrains Mono">${opts.fmt(t)}</text>`});
+  [0,Math.floor(data.length/3),Math.floor(2*data.length/3),data.length-1].forEach(i=>{g+=`<text x="${X(i)}" y="${H-6}" text-anchor="middle" font-size="12" fill="${ink3}">${fmtD(days[i])}</text>`});
+  let extra = opts.extra? opts.extra(X,Y,W,P):'';
+  const d='M'+data.map((v,i)=>X(i).toFixed(1)+','+Y(v).toFixed(1)).join('L');
+  const area = opts.area? `<path d="${d}L${X(data.length-1)},${Y(opts.areaBase)}L${X(0)},${Y(opts.areaBase)}Z" fill="${opts.areaColor}" opacity=".18"/>`:'';
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${opts.label}">${g}${extra}${area}<path d="${d}" fill="none" stroke="${opts.color||ink}" stroke-width="2" stroke-linejoin="round"/>
+    <line id="${el.id}-x" y1="${P.t}" y2="${H-P.b}" stroke="${ink3}" stroke-dasharray="3 3" opacity="0"/><circle id="${el.id}-c" r="5" fill="${opts.color||ink}" stroke="${css('--surface')}" stroke-width="2" opacity="0"/>
+    <rect x="${P.l}" y="0" width="${W-P.l-P.r}" height="${H}" fill="transparent" id="${el.id}-hit"/></svg><div class="tip" id="${el.id}-tip"></div>`;
+  const svg=el.querySelector('svg'), tip=el.querySelector('.tip'), xl=el.querySelector(`#${el.id}-x`), c=el.querySelector(`#${el.id}-c`);
+  svg.addEventListener('mousemove',ev=>{
+    const r=svg.getBoundingClientRect(); const sx=(ev.clientX-r.left)/r.width*W;
+    const i=Math.max(0,Math.min(data.length-1,Math.round((sx-P.l)/(W-P.l-P.r)*(data.length-1))));
+    xl.setAttribute('x1',X(i));xl.setAttribute('x2',X(i));xl.setAttribute('opacity',1);
+    c.setAttribute('cx',X(i));c.setAttribute('cy',Y(data[i]));c.setAttribute('opacity',1);
+    tip.innerHTML=`<span class="muted">${fmtD(days[i])}</span><b class="n">${opts.fmtTip(data[i],i)}</b>`;
+    const px=X(i)/W*r.width; tip.style.left=Math.min(r.width-150,Math.max(0,px+12))+'px'; tip.style.top=(Y(data[i])/H*r.height-20)+'px'; tip.style.opacity=1;
+  });
+  svg.addEventListener('mouseleave',()=>{tip.style.opacity=0;xl.setAttribute('opacity',0);c.setAttribute('opacity',0)});
+}
+function drawCharts(){
+  const peak=[];eq.reduce((m,v,i)=>(peak[i]=Math.max(m,v)),0);
+  lineChart(document.getElementById('eq'), eq, {label:'Account value over time', min:79500,max:83500,ticks:[80000,81000,82000,83000],fmt:v=>(v/1000)+'k',
+    fmtTip:(v,i)=>inr(v)+' <span class="muted" style="font-weight:400">· peak '+inr(peak[i])+'</span>',
+    extra:(X,Y)=>`<path d="M${peak.map((v,i)=>X(i).toFixed(1)+','+Y(v).toFixed(1)).join('L')}" fill="none" stroke="${css('--ink3')}" stroke-width="1.5" stroke-dasharray="5 4"/>`});
+  const dd=eq.map((v,i)=>-(1-v/peak[i])*100);
+  lineChart(document.getElementById('dd'), dd, {label:'Drawdown from peak', w:600, h:300, min:-27,max:0,ticks:[0,-10,-20,-25],fmt:v=>v+'%',color:css('--down'),
+    area:true,areaBase:0,areaColor:css('--down'),fmtTip:v=>v.toFixed(1)+'% from peak',
+    extra:(X,Y,W,P)=>`<line x1="${P.l}" x2="${W-P.r}" y1="${Y(-25)}" y2="${Y(-25)}" stroke="${css('--brand')}" stroke-width="1.5"/><text x="${W-P.r}" y="${Y(-25)-8}" text-anchor="end" font-size="12" fill="${css('--ink2')}">Breaker · engine pauses</text>`});
+  // by strategy bars
+  const B=document.getElementById('bystrat'); const rows=[['RS Resilience','rs',1486],['EMA Pullback','ema',-276]];
+  const W=600,H=220,P={l:120,r:80}; const mn=-1000,mx=2000; const X=v=>P.l+(v-mn)/(mx-mn)*(W-P.l-P.r);
+  let s=`<line x1="${X(0)}" x2="${X(0)}" y1="10" y2="${H-10}" stroke="${css('--line2')}"/>`;
+  rows.forEach(([n,k,v],i)=>{const y=40+i*80, x0=Math.min(X(0),X(v)), w=Math.abs(X(v)-X(0));
+    s+=`<text x="${P.l-14}" y="${y+22}" text-anchor="end" font-size="14" fill="${css('--ink')}">${n}</text>
+    <rect x="${x0}" y="${y}" width="${w}" height="36" rx="4" fill="${css(k==='rs'?'--rs':'--ema')}"><title>${n}: ${sgn(v)}</title></rect>
+    <text x="${v>=0?X(v)+10:X(v)-10}" y="${y+23}" text-anchor="${v>=0?'start':'end'}" font-size="14" font-weight="600" font-family="JetBrains Mono" fill="${css('--ink')}">${sgn(v)}</text>`});
+  B.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Profit by strategy: RS Resilience +₹1,486, EMA Pullback −₹276">${s}</svg>`;
+}
+document.querySelectorAll('#modes .mode').forEach(m=>m.addEventListener('click',()=>{document.querySelectorAll('#modes .mode').forEach(x=>x.setAttribute('aria-pressed',x===m))}));
+document.querySelectorAll('.tog').forEach(t=>t.addEventListener('click',()=>t.setAttribute('aria-pressed',t.getAttribute('aria-pressed')!=='true')));
+document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>b.parentElement.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b))));
+function render(){renderHome();renderLedger();if(document.getElementById('charts').classList.contains('on'))drawCharts();}
+render();
+</script>
+</body>
+</html>

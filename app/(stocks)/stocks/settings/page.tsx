@@ -1,9 +1,8 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { useState } from "react";
 import { AccountSettingsCard } from "@/components/stocks/settings/account-settings-card";
 import { NotificationSettingsCard } from "@/components/stocks/settings/notification-settings-card";
-import { KiteSettingsCard } from "@/components/stocks/settings/kite-settings-card";
 import { TradeSettingsCard } from "@/components/stocks/settings/trade-settings-card";
 import { UsersSettingsCard } from "@/components/stocks/settings/users-settings-card";
 import {
@@ -12,10 +11,6 @@ import {
   SettingsNav,
   type SettingsSection,
 } from "@/components/stocks/settings/settings-nav";
-
-function SectionFallback() {
-  return <div className="h-40 rounded-xl dota-panel animate-pulse" />;
-}
 
 export default function StocksSettingsPage() {
   const [section, setSection] = useState<SettingsSection>("account");
@@ -26,7 +21,7 @@ export default function StocksSettingsPage() {
         <header className="mb-6">
           <h1 className="cz text-2xl font-bold">Options</h1>
           <p className="text-sm text-[var(--dota-dim)] mt-1">
-            Manage your account, broker connection, and preferences.
+            Manage your account and preferences.
           </p>
         </header>
 
@@ -48,12 +43,6 @@ export default function StocksSettingsPage() {
 
             <div className="space-y-4">
               {section === "account" && <AccountSettingsCard />}
-
-              {section === "broker" && (
-                <Suspense fallback={<SectionFallback />}>
-                  <KiteSettingsCard />
-                </Suspense>
-              )}
 
               {section === "trading" && <TradeSettingsCard />}
 

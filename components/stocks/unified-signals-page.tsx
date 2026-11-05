@@ -16,14 +16,10 @@ import {
   exitReasonCopy,
 } from "@/lib/stocks/heroes";
 import { UnifiedSignalCard } from "./swing/unified-signal-card";
-import { KiteTradeActions } from "./swing/kite-trade-actions";
 import { PnlBadge } from "./strategy-badge";
 import { HeroPortrait, HeroFace, HeroChip } from "./hero-portrait";
-import { KiteOrderToast, type PlacedOrder } from "./kite-order-toast";
 
 type CurrentPrices = Record<string, { price: number; change: number; changePct: number } | null>;
-
-type KiteHolding = { tradingsymbol: string; quantity: number };
 
 type ExitSignal = {
   symbol: string;
@@ -85,8 +81,6 @@ function fmtInr(n: number | null | undefined) {
 const SWING_SOURCES = new Set<SignalSource>(SOURCE_PRIORITY.filter((s) => s !== "manish"));
 const ALL_SOURCES: SignalSource[] = SOURCE_PRIORITY;
 
-const FIRST_BLOOD_KEY = "dota-first-blood";
-
 function flattenPayload(payload: Record<SignalSource, { ok: boolean; data?: UnifiedSignal[] }>): UnifiedSignal[] {
   return ALL_SOURCES.flatMap((s) => (payload[s]?.ok ? payload[s].data ?? [] : []));
 }
@@ -106,10 +100,6 @@ export function UnifiedSignalsPage() {
   const [simClosed, setSimClosed] = useState<SimClosedTrade[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [kiteConnected, setKiteConnected] = useState(false);
-  const [kiteHoldings, setKiteHoldings] = useState<Record<string, number>>({});
-  const [defaultTradeAmount, setDefaultTradeAmount] = useState(10000);
-  const [placedOrder, setPlacedOrder] = useState<PlacedOrder | null>(null);
   const [benchOpen, setBenchOpen] = useState(false);
 
   const loggedRefs = useMemo(() => new Set(openTrades.map((t) => t.signalRef)), [openTrades]);
@@ -148,13 +138,11 @@ export function UnifiedSignalsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [sigRes, mlRes, tradesRes, perfRes, kiteStatusRes, settingsRes, exitRes] = await Promise.all([
+      const [sigRes, mlRes, tradesRes, perfRes, exitRes] = await Promise.all([
         fetch("/api/stocks/signals/all"),
         fetch("/api/stocks/ml/signals"),
         fetch("/api/stocks/trades?status=open"),
         fetch("/api/stocks/swing/performance"),
-        fetch("/api/kite/status"),
-        fetch("/api/stocks/settings"),
         fetch("/api/stocks/swing/exit-signals"),
       ]);
       if (!sigRes.ok) throw new Error("Failed to load signals");
@@ -186,34 +174,6 @@ export function UnifiedSignalsPage() {
             isWithinDays(String(t.exit_date), 14)
         );
         setSimClosed(closed);
-      }
-
-      if (settingsRes.ok) {
-        const s = await settingsRes.json();
-        setDefaultTradeAmount(s.defaultTradeAmount ?? 10000);
-      }
-
-      let connected = false;
-      if (kiteStatusRes.ok) {
-        const ks = await kiteStatusRes.json();
-        connected = ks.connected === true;
-        setKiteConnected(connected);
-      } else {
-        setKiteConnected(false);
-      }
-
-      if (connected) {
-        const holdRes = await fetch("/api/kite/holdings");
-        if (holdRes.ok) {
-          const holdings = (await holdRes.json()) as KiteHolding[];
-          const map: Record<string, number> = {};
-          for (const h of holdings) {
-            map[h.tradingsymbol.toUpperCase()] = h.quantity;
-          }
-          setKiteHoldings(map);
-        }
-      } else {
-        setKiteHoldings({});
       }
 
       const openTickers = [...new Set(all.filter((s) => s.status === "open").map((s) => s.ticker))];
@@ -313,12 +273,11 @@ export function UnifiedSignalsPage() {
   const retreatCalls = useMemo(() => {
     return exits.filter((e) => {
       const sym = e.symbol.toUpperCase();
-      if ((kiteHoldings[sym] ?? 0) > 0) return true;
       return openTrades.some(
         (t) => t.ticker.toUpperCase() === sym && (t.source === e.strategy || !e.strategy)
       );
     });
-  }, [exits, kiteHoldings, openTrades]);
+  }, [exits, openTrades]);
 
   const exitedKeys = useMemo(
     () => new Set(retreatCalls.map((e) => e.symbol.toUpperCase())),
@@ -335,32 +294,8 @@ export function UnifiedSignalsPage() {
     });
   }, [openTrades, exitedKeys]);
 
-  const handleOrderPlaced = useCallback((order: PlacedOrder) => {
-    let firstBlood = false;
-    if (order.transactionType === "BUY" && typeof window !== "undefined") {
-      const today = new Date().toISOString().slice(0, 10);
-      if (localStorage.getItem(FIRST_BLOOD_KEY) !== today) {
-        localStorage.setItem(FIRST_BLOOD_KEY, today);
-        firstBlood = true;
-      }
-    }
-    setPlacedOrder({ ...order, firstBlood });
-    setTimeout(() => {
-      fetch("/api/kite/holdings")
-        .then((r) => (r.ok ? r.json() : []))
-        .then((holdings: KiteHolding[]) => {
-          const map: Record<string, number> = {};
-          for (const h of holdings) map[h.tradingsymbol.toUpperCase()] = h.quantity;
-          setKiteHoldings(map);
-        })
-        .catch(() => {});
-    }, 2000);
-  }, []);
-
   return (
     <div className="min-h-full">
-      <KiteOrderToast order={placedOrder} onDismiss={() => setPlacedOrder(null)} />
-
       {/* ── Header ─────────────────────────────────────────────── */}
       <div className="md:sticky md:top-14 md:z-10 bg-[#11161f]/95 backdrop-blur-xl border-b border-[#2a3344]">
         <div className="px-4 md:px-6 py-3 md:py-4">
@@ -532,11 +467,7 @@ export function UnifiedSignalsPage() {
                     <RetreatBanner
                       key={`${e.symbol}-${e.strategy}`}
                       exit={e}
-                      holdingQty={kiteHoldings[e.symbol.toUpperCase()] ?? 0}
                       trade={openTrades.find((t) => t.ticker.toUpperCase() === e.symbol.toUpperCase())}
-                      kiteConnected={kiteConnected}
-                      defaultTradeAmount={defaultTradeAmount}
-                      onOrderPlaced={handleOrderPlaced}
                     />
                   ))}
                 </div>
@@ -591,11 +522,7 @@ export function UnifiedSignalsPage() {
                         list={divinePicks}
                         prices={prices}
                         loggedRefs={loggedRefs}
-                        kiteConnected={kiteConnected}
-                        kiteHoldings={kiteHoldings}
-                        defaultTradeAmount={defaultTradeAmount}
                         onLogged={fetchAll}
-                        onOrderPlaced={handleOrderPlaced}
                       />
                     </div>
                   )}
@@ -606,11 +533,7 @@ export function UnifiedSignalsPage() {
                         list={rarePicks}
                         prices={prices}
                         loggedRefs={loggedRefs}
-                        kiteConnected={kiteConnected}
-                        kiteHoldings={kiteHoldings}
-                        defaultTradeAmount={defaultTradeAmount}
                         onLogged={fetchAll}
-                        onOrderPlaced={handleOrderPlaced}
                       />
                     </div>
                   )}
@@ -621,11 +544,7 @@ export function UnifiedSignalsPage() {
                         list={benchPicks}
                         prices={prices}
                         loggedRefs={loggedRefs}
-                        kiteConnected={kiteConnected}
-                        kiteHoldings={kiteHoldings}
-                        defaultTradeAmount={defaultTradeAmount}
                         onLogged={fetchAll}
-                        onOrderPlaced={handleOrderPlaced}
                       />
                     </div>
                   )}
@@ -677,10 +596,6 @@ export function UnifiedSignalsPage() {
                         currentPrice={prices[item.data.ticker] ?? undefined}
                         logged={loggedRefs.has(item.data.id)}
                         onLogged={fetchAll}
-                        kiteConnected={kiteConnected}
-                        holdingQty={kiteHoldings[item.data.ticker.toUpperCase()] ?? 0}
-                        defaultTradeAmount={defaultTradeAmount}
-                        onOrderPlaced={handleOrderPlaced}
                       />
                     ) : (
                       <SimulatedClosedCard key={`sim-${item.data.id}`} trade={item.data} />
@@ -749,20 +664,12 @@ function PickGrid({
   list,
   prices,
   loggedRefs,
-  kiteConnected,
-  kiteHoldings,
-  defaultTradeAmount,
   onLogged,
-  onOrderPlaced,
 }: {
   list: UnifiedSignal[];
   prices: CurrentPrices;
   loggedRefs: Set<string>;
-  kiteConnected: boolean;
-  kiteHoldings: Record<string, number>;
-  defaultTradeAmount: number;
   onLogged: () => void;
-  onOrderPlaced: (o: PlacedOrder) => void;
 }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -773,10 +680,6 @@ function PickGrid({
           currentPrice={prices[s.ticker] ?? undefined}
           logged={loggedRefs.has(s.id)}
           onLogged={onLogged}
-          kiteConnected={kiteConnected}
-          holdingQty={kiteHoldings[s.ticker.toUpperCase()] ?? 0}
-          defaultTradeAmount={defaultTradeAmount}
-          onOrderPlaced={onOrderPlaced}
         />
       ))}
     </div>
@@ -799,20 +702,11 @@ function SectionHead({ title, tag, color }: { title: string; tag?: string; color
 /* ── Retreat banner (exit signal → GG sell) ─────────────────── */
 function RetreatBanner({
   exit,
-  holdingQty,
   trade,
-  kiteConnected,
-  defaultTradeAmount,
-  onOrderPlaced,
 }: {
   exit: ExitSignal;
-  holdingQty: number;
   trade?: OpenTrade;
-  kiteConnected: boolean;
-  defaultTradeAmount: number;
-  onOrderPlaced: (o: PlacedOrder) => void;
 }) {
-  const [ggOpen, setGgOpen] = useState(false);
   const source = (exit.strategy || trade?.source) as SignalSource | undefined;
   const hero = source && HERO_META[source] ? HERO_META[source] : null;
   const live = trade?.livePrice ?? null;
@@ -856,32 +750,13 @@ function RetreatBanner({
             <p className="text-[9px] tracking-[0.1em] uppercase text-[var(--dota-dim)]">Unrealized gold</p>
           </div>
         )}
-        {kiteConnected && holdingQty > 0 ? (
-          <button onClick={() => setGgOpen((v) => !v)} className="cz btn-gg px-6 py-2.5 rounded-md text-[13px] font-black" style={{ letterSpacing: "0.2em" }}>
-            GG
-          </button>
-        ) : (
-          <Link
-            href="/stocks/portfolio?tab=trades"
-            className="cz px-4 py-2.5 rounded-md text-[10px] font-bold border border-[#76302a] !text-[#ff9d8d] hover:bg-[rgba(212,69,49,0.1)]"
-          >
-            Mark closed →
-          </Link>
-        )}
+        <Link
+          href="/stocks/portfolio?tab=trades"
+          className="cz px-4 py-2.5 rounded-md text-[10px] font-bold border border-[#76302a] !text-[#ff9d8d] hover:bg-[rgba(212,69,49,0.1)]"
+        >
+          Mark closed →
+        </Link>
       </div>
-      {ggOpen && kiteConnected && holdingQty > 0 && (
-        <div className="px-4 pb-4 pt-1 border-t border-[#4e201a] max-w-md">
-          <KiteTradeActions
-            ticker={exit.symbol}
-            ltp={live}
-            holdingQty={holdingQty}
-            defaultTradeAmount={defaultTradeAmount}
-            signalRef={trade?.signalRef ?? `exit-${exit.symbol}`}
-            strategy={exit.strategy}
-            onOrderPlaced={onOrderPlaced}
-          />
-        </div>
-      )}
     </div>
   );
 }

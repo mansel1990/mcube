@@ -96,8 +96,7 @@ Plus `/stocks/settings` (gear icon). Old per-strategy URLs (`/stocks/breakout` e
 - `GET /api/stocks/signals/all` → all 8 sources merged into `UnifiedSignal[]` (`lib/stocks/signal-helpers.ts` + `signal-mappers.ts`). Swing tables are queried for their latest `date` only; Manish has full history.
 - `GET /api/stocks/trades?status=open` → which signals the user has logged buys against (MongoDB).
 - `GET /api/stocks/swing/performance` → simulated closes (last 14 days shown on the Closed view).
-- `GET /api/kite/status` + `GET /api/kite/holdings` → broker connection + real holding quantities.
-- `GET /api/stocks/settings` → default trade amount (₹).
+- `GET /api/stocks/swing/exit-signals` → retreat calls matched to logged open trades.
 - Then `GET /api/stocks/current-price?tickers=…` → live prices from Yahoo (`.NS`), shown with a LIVE badge.
 
 **Filters (URL-driven):** `strategy` (one of the 8 keys or All), `status` (`open` default / `closed`), `fresh=1` (latest scan date only).
@@ -107,8 +106,7 @@ Plus `/stocks/settings` (gear icon). Old per-strategy URLs (`/stocks/breakout` e
 - Entry zone (`entry_min–entry_max`), Target, Stop Loss, CMP-at-scan.
 - Live price + unrealized % vs entry midpoint (computed client-side).
 - R:R ratio, `Vol Nx` pill, `RSI` pill; Manish cards add entry z-score and peer slope.
-- Actions: **Kite Buy** (limit order, qty = default amount ÷ LTP, optional GTT target/SL exit), **Log buy** (manual record in MongoDB), strategy info drawer (static explainer copy).
-- If Kite holding exists for the ticker → **Sell** action appears.
+- Actions: **Log buy** (manual record in MongoDB) and the strategy info drawer. Live orders are not placed from `/stocks`.
 
 **Closed view:** Manish real closes (entry/exit, hold days, realized %) + simulated swing closes from `strategy_performance` (last 14 days), with a banner clarifying sim closes are not real trades.
 
@@ -118,17 +116,17 @@ Reads `swing.strategy_performance` (last 60 days) + Manish history. Strategy tab
 
 ### 3.4 `/stocks/portfolio` — Real money
 
-Tabs: **Overview** (P&L analytics across logged trades + Kite history, tracking starts 2026-06-01), **Logged Trades** (MongoDB `UserTrade` — edit target/SL, close via sheet), **Holdings** (Kite CNC), **Positions** (Kite intraday).
+Tabs: **Overview** and **Logged Trades** (MongoDB `UserTrade` — edit target/SL, close via sheet). Old `?tab=holdings` and `?tab=positions` open Overview. Live holdings live on `/live-trade-mansel`.
 
 ### 3.5 `/stocks/settings`
 
-Account, Kite connect/disconnect (OAuth), default trade amount, push-notification toggle, user management (admin = `sanjay`).
+Account, default paper trade size, push-notification toggle, user management (admin = `sanjay`). Kite login for the live book is on `/live-trade-mansel/settings`.
 
 ### 3.6 Cross-cutting
 
 - **Auth:** better-auth (MongoDB), username login at `/auth/stocks-login`, gate in `app/(stocks)/layout.tsx` (`session.user.section === "stocks"`). 1-year session.
 - **Push:** Web-push (VAPID) via service worker; notification bell + read tracking.
-- **Kite orders:** 5-second cancel-window toast after placing; GTT validation in `lib/kite/gtt-exit.ts`.
+- **Live book:** `/live-trade-mansel` and `engine/`. `/stocks` does not place orders.
 - **Theme:** Light, professional — Tailwind v4, white cards on `#F8FAFC`, slate text, no component library, Recharts for charts.
 
 ---

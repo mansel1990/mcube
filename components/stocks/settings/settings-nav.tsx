@@ -1,12 +1,11 @@
 "use client";
 
-import { Bell, KeyRound, Link2, TrendingUp, Users } from "lucide-react";
+import { Bell, KeyRound, TrendingUp, Users } from "lucide-react";
 
-export type SettingsSection = "account" | "broker" | "trading" | "notifications" | "users";
+export type SettingsSection = "account" | "trading" | "notifications" | "users";
 
 const SECTIONS: { id: SettingsSection; label: string; description: string; icon: typeof KeyRound }[] = [
   { id: "account", label: "Account", description: "Password & security", icon: KeyRound },
-  { id: "broker", label: "Game Coordinator", description: "Kite Connect", icon: Link2 },
   { id: "trading", label: "Gold Per Pick", description: "Default trade size", icon: TrendingUp },
   { id: "notifications", label: "Announcer", description: "Push notifications", icon: Bell },
   { id: "users", label: "Party", description: "Who has access", icon: Users },
@@ -94,8 +93,7 @@ export function getSectionTitle(section: SettingsSection): string {
 export function getSectionDescription(section: SettingsSection): string {
   const descriptions: Record<SettingsSection, string> = {
     account: "Manage your login and password.",
-    broker: "Connect Zerodha Kite for portfolio sync and live prices.",
-    trading: "Set defaults used when placing trades from signals.",
+    trading: "Set the default size used when you log a paper buy.",
     notifications: "Control daily buy alerts and scanner notifications.",
     users: "See who can access the stocks section.",
   };

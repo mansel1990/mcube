@@ -10,7 +10,7 @@ export function proxy(request: NextRequest) {
     request.cookies.get(SECURE_SESSION_COOKIE) ||
     request.cookies.get(SESSION_COOKIE);
 
-  if (pathname.startsWith("/stocks")) {
+  if (pathname.startsWith("/stocks") || pathname.startsWith("/live-trade-mansel")) {
     if (!sessionCookie) {
       const url = request.nextUrl.clone();
       url.pathname = "/auth/stocks-login";
@@ -32,5 +32,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/stocks/:path*", "/admin/:path*"],
+  matcher: ["/stocks/:path*", "/live-trade-mansel", "/live-trade-mansel/:path*", "/admin/:path*"],
 };

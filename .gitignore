@@ -38,4 +38,7 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
+
+# local design drafts
+Claude outputs/
 next-env.d.ts

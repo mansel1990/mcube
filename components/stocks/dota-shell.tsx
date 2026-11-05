@@ -16,7 +16,7 @@ interface NotificationEntry {
   _id: string;
   title: string;
   body: string;
-  event: "open" | "close" | "morning" | "scan" | "kite";
+  event: "open" | "close" | "morning" | "scan";
   tickers: string[];
   sent: number;
   sentAt: string;

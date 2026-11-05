@@ -1,6 +1,6 @@
 # PRD: Kite Integration — Remaining Work
 **Project**: MCube Stocks  
-**Status**: Active — parent PRD partially shipped  
+**Status**: Superseded by Mansel Live (`docs/plans/stocks/mlive-prd.md`). Do not build the remaining Kite UI.  
 **Date**: 2026-05-28  
 **Parent doc**: [kite-integration-prd.md](./kite-integration-prd.md)
 

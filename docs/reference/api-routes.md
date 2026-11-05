@@ -56,6 +56,30 @@ Returns:
 2. Copy the pattern from any existing route, change the table name
 3. No auth check needed in the route — the `(stocks)` layout already authenticated the user before the page fetches the API. The API routes themselves don't re-authenticate (they're called client-side from the already-authenticated session).
 
+## Mansel Live
+
+`/api/mlive/*` is a separate book. Every route checks the stocks admin session (`lib/mlive/auth.ts`). The browser never places an order.
+
+| Route | Purpose |
+|---|---|
+| `GET /api/mlive/home` | Home payload |
+| `GET /api/mlive/charts` | Equity series |
+| `GET /api/mlive/reports/ledger` | Daily reports |
+| `GET /api/mlive/reports/alerts` | Alerts |
+| `GET /api/mlive/reports/audit` | Audit log |
+| `GET /api/mlive/reports/csv` | Ledger CSV |
+| `GET/POST /api/mlive/settings` | Read settings, change an allow-listed key |
+| `POST /api/mlive/approvals` | Approve or skip a proposed decision |
+| `POST /api/mlive/fund` | Deposit or withdrawal. Moves the breaker peak |
+| `POST /api/mlive/state` | Pause, resume, or set mode |
+| `GET /api/mlive/kite/login` | Redirect to Kite |
+| `GET /api/mlive/kite/callback` | Store the encrypted token in `mlive.mlive_kite_sessions` |
+| `POST /api/mlive/kite/disconnect` | Delete this user's session row |
+| `POST /api/mlive/alerts/:id/seen` | Mark an alert seen |
+| `POST /api/mlive/push` | Engine push. Header `x-mlive-secret` |
+
+Orders are placed by `engine/` on the server, not by these routes.
+
 ## Env vars needed
 | Var | Used by |
 |---|---|
@@ -64,3 +88,8 @@ Returns:
 | AUTH_SECRET | `lib/auth.ts` |
 | BETTER_AUTH_URL | `lib/auth.ts` |
 | NEXT_PUBLIC_APP_URL | `lib/auth.ts` |
+| KITE_API_KEY, KITE_API_SECRET | Mansel Live Kite login |
+| MLIVE_TOKEN_KEY | Encrypts the Kite token (web and engine must share it) |
+| MLIVE_USER_ID | Optional pin of the Sanjay Mongo user id |
+| MLIVE_PUSH_SECRET | Engine push header. Falls back to CRON_SECRET |
+| VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY | Web push |

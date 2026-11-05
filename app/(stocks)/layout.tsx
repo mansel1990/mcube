@@ -4,7 +4,6 @@ import { Cinzel } from "next/font/google";
 import { auth } from "@/lib/auth";
 import { DotaShell } from "@/components/stocks/dota-shell";
 import { PushReadListener } from "@/components/stocks/push-read-listener";
-import { KiteStatusBanner } from "@/components/stocks/kite-status-banner";
 
 const cinzel = Cinzel({
   variable: "--font-cinzel",
@@ -30,7 +29,6 @@ export default async function StocksLayout({
     <div className={`theme-dota ${cinzel.variable}`}>
       <DotaShell username={username}>
         <PushReadListener />
-        <KiteStatusBanner />
         {children}
       </DotaShell>
     </div>

@@ -39,11 +39,6 @@ import {
   type TradeForAnalytics,
 } from "@/lib/stocks/portfolio-analytics";
 
-interface KiteHoldingLike {
-  quantity: number;
-  average_price: number;
-  pnl: number;
-}
 
 function fmt(n: number, decimals = 0) {
   return fmtInr(n, decimals);
@@ -74,17 +69,9 @@ function useIsClient() {
 
 interface PortfolioOverviewProps {
   trades: TradeForAnalytics[];
-  kiteClosedTrades?: TradeForAnalytics[];
-  holdings: KiteHoldingLike[];
-  kiteConnected: boolean;
 }
 
-export function PortfolioOverview({
-  trades,
-  kiteClosedTrades = [],
-  holdings,
-  kiteConnected,
-}: PortfolioOverviewProps) {
+export function PortfolioOverview({ trades }: PortfolioOverviewProps) {
   const isClient = useIsClient();
   const [viewMode, setViewMode] = useState<PnlViewMode>("all");
   const [selectedMonth, setSelectedMonth] = useState(PORTFOLIO_TRACKING_START.slice(0, 7));
@@ -99,26 +86,12 @@ export function PortfolioOverview({
   }
 
   const tracked = useMemo(() => filterTradesForTracking(trades), [trades]);
-  const trackedKite = useMemo(
-    () => (kiteConnected ? filterTradesForTracking(kiteClosedTrades) : []),
-    [kiteConnected, kiteClosedTrades]
-  );
-  const realizedTrades = kiteConnected ? trackedKite : tracked;
+  const realizedTrades = tracked;
   const logSummary = useMemo(() => computePortfolioSummary(tracked), [tracked]);
-  const kiteSummary = useMemo(
-    () => (kiteConnected ? computePortfolioSummary(trackedKite) : null),
-    [kiteConnected, trackedKite]
-  );
 
-  const holdingsUnrealized = useMemo(() => holdings.reduce((s, h) => s + (h.pnl ?? 0), 0), [holdings]);
-  const holdingsInvested = useMemo(
-    () => holdings.reduce((s, h) => s + h.quantity * h.average_price, 0),
-    [holdings]
-  );
-
-  const unrealizedPnl = kiteConnected ? holdingsUnrealized : logSummary.unrealizedPnl;
-  const openCount = kiteConnected ? holdings.length : logSummary.openCount;
-  const investedOpen = kiteConnected ? holdingsInvested : logSummary.totalInvestedOpen;
+  const unrealizedPnl = logSummary.unrealizedPnl;
+  const openCount = logSummary.openCount;
+  const investedOpen = logSummary.totalInvestedOpen;
 
   const monthOptions = useMemo(
     () => listAvailableMonthKeys(realizedTrades, isClient),
@@ -132,14 +105,14 @@ export function PortfolioOverview({
   const realizedStats = useMemo(() => {
     if (viewMode === "month") return getRealizedStatsForMonth(realizedTrades, selectedMonth);
     if (viewMode === "year") return getRealizedStatsForYear(realizedTrades, selectedYear);
-    const base = kiteConnected && kiteSummary ? kiteSummary : logSummary;
+    const base = logSummary;
     return {
       realizedPnl: base.realizedPnl,
       closedCount: base.closedCount,
       wins: base.wins,
       losses: base.losses,
     };
-  }, [viewMode, selectedMonth, selectedYear, realizedTrades, logSummary, kiteSummary, kiteConnected]);
+  }, [viewMode, selectedMonth, selectedYear, realizedTrades, logSummary]);
 
   const netPnl = unrealizedPnl + realizedStats.realizedPnl;
 
@@ -155,7 +128,7 @@ export function PortfolioOverview({
         : "All time";
 
   const chartRows = viewMode === "year" ? yearlyRows : monthlyRows;
-  const hasAnyData = holdings.length > 0 || tracked.length > 0 || trackedKite.length > 0;
+  const hasAnyData = tracked.length > 0;
 
   const recentClosed = useMemo(() => {
     const periodKey =
@@ -169,9 +142,7 @@ export function PortfolioOverview({
         <PnlPanel
           title="Unrealized P&L"
           subtitle={
-            kiteConnected
-              ? `${openCount} Kite holding${openCount !== 1 ? "s" : ""} · live`
-              : `${openCount} open logged trade${openCount !== 1 ? "s" : ""}`
+            `${openCount} open logged trade${openCount !== 1 ? "s" : ""}`
           }
           value={unrealizedPnl}
           invested={investedOpen > 0 ? `Invested ₹${fmt(investedOpen)}` : undefined}
@@ -271,11 +242,11 @@ export function PortfolioOverview({
 
         {!hasAnyData ? (
           <p className="text-sm text-[var(--dota-dim)] py-6 text-center">
-            Buy from signals via Kite to see holdings P&L here. Realized history appears when a Kite position is sold (target, stop loss, or manual exit).
+            Log a buy from a signal. Close it here when you sell.
           </p>
         ) : chartRows.length === 0 && viewMode !== "all" ? (
           <p className="text-sm text-[var(--dota-dim)] py-6 text-center">
-            No closed trades in {periodLabel}. Realized P&L updates when a Kite position is sold.
+            No closed trades in {periodLabel}. Realized P&L updates when a logged trade is closed.
           </p>
         ) : (
           <>

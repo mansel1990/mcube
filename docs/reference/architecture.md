@@ -6,6 +6,7 @@ app/
 ├── (admin)/                   # Admin section (route group — no URL segment)
 │   ├── layout.tsx             # Auth gate: section === "admin"
 │   └── admin/...
+├── (mlive)/                   # Mansel Live — /live-trade-mansel
 ├── (stocks)/                  # Stocks section
 │   ├── layout.tsx             # Auth gate: section === "stocks" — SINGLE auth check
 │   ├── loading.tsx            # Skeleton shown during route transitions (instant click feel)
