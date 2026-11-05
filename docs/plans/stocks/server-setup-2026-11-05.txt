@@ -1,0 +1,118 @@
+MCube stocks - server rebuild and live-trading groundwork (5 Nov 2026)
+=====================================================================
+No secrets are stored in this file. Secret values live only in the
+server's env files, in Vercel env vars, and in local .env files.
+
+WHY
+---
+- The old DigitalOcean droplet (167.71.235.230) was powered off by DO
+  staff in July and destroyed by the system in August, after the June
+  and July invoices went unpaid (they were paid on 9 Sep). There were no
+  snapshots or backups.
+- Effects: the evening scanner stopped after 3 Jul, and placing Kite orders
+  (which go through the relay on that IP) has not worked since early July.
+  Kite login, holdings, positions and the order book kept working, because
+  only order calls need the whitelisted static IP.
+- stocks.daily_ohlcv had stopped at 22 May 2026. No repo here writes it;
+  it was fed by daily_suggestor, which isn't on this machine.
+
+1. NEW SERVER (DigitalOcean, team "My Team", account mansel1990)
+----------------------------------------------------------------
+- Droplet: mcube-server (id 616135532), BLR1, Ubuntu 24.04,
+  Basic Regular 1 vCPU / 1 GB / 25 GB, $6/month. Backups OFF.
+- Login: SSH key "mcube-ssh-key", or DO -> Droplets -> mcube-server -> Web Console.
+- Reserved (static) IP: 139.59.51.34. Free while assigned to the droplet,
+  $5/month if left unassigned.
+- Droplet's own public IP: 159.65.159.127 (backup).
+- Startup script did the following:
+  * installed git, curl, python3-venv, ufw, Node 20
+  * added the reserved-ip-route.service systemd unit, which routes
+    outbound traffic via the anchor gateway so it leaves from the
+    Reserved IP (checked: curl icanhazip.com -> 139.59.51.34)
+  * ufw allows 22, 80, 443 only
+- Server timezone set to Asia/Kolkata.
+- Spend alert: "mcube-server monthly cap", $10/month, emails at 50/75/100%.
+
+2. KITE
+-------
+- developers.kite.trade/profile -> IP Whitelist:
+    139.59.51.34      (primary, Reserved IP)
+    159.65.159.127    (secondary, droplet IP)
+  Old 167.71.235.230 removed.
+  Exchange rule: the whitelist can be changed only once per calendar week
+  (Mon-Sun).
+- Plan stays on Kite Connect Personal (free): orders, GTT and portfolio,
+  but no market data.
+
+3. DNS (registrar: Spaceship, nameservers: Vercel)
+--------------------------------------------------
+- Vercel -> Domains -> mcubetechstudio.com -> A record "relay"
+  changed from 167.71.235.230 to 139.59.51.34.
+
+4. KITE RELAY on the server
+---------------------------
+- Code: /opt/mcube-src/mcube/relay (git clone of this repo)
+- Env:  /etc/mcube/relay.env (chmod 600), holds
+        KITE_API_KEY, KITE_RELAY_SECRET, PORT=3100
+- Service: systemd unit mcube-kite-relay
+    systemctl status|restart mcube-kite-relay
+    journalctl -u mcube-kite-relay -f
+- HTTPS: Caddy, /etc/caddy/Caddyfile
+    relay.mcubetechstudio.com { reverse_proxy 127.0.0.1:3100 }
+- Check: curl https://relay.mcubetechstudio.com/health
+         -> {"ok":true,"version":2,"gtt":true}
+- To update the relay code:
+    cd /opt/mcube-src/mcube && git pull && systemctl restart mcube-kite-relay
+
+5. VERCEL
+---------
+- KITE_RELAY_URL = https://relay.mcubetechstudio.com (was http://)
+- KITE_RELAY_SECRET in Vercel must equal the value in /etc/mcube/relay.env.
+
+6. SCANNER (swing-trade repo) on the server
+-------------------------------------------
+- Code: /opt/mcube-scanner/swing-trade, venv at scanner/venv
+- Env:  /opt/mcube-scanner/swing-trade/scanner/.env (DATABASE_URL, chmod 600)
+- Cron: 0 18 * * 1-5 .../scanner/run.sh   (18:00 IST, weekdays)
+- Log:  /var/log/mcube-scanner.log
+- Ran once by hand on 5 Nov. It saved 5 EMA Pullback signals.
+  NOTE: the catch-up run closed the paper positions left open since July
+  as timeouts at 5 Nov prices (some at "day 120"). Treat those
+  strategy_performance rows as invalid in stats.
+- The GitHub workflow "Daily evening scan" in swing-trade still SSHes to
+  the old DO_HOST. Delete it rather than repointing it, otherwise the
+  scanner runs twice at 18:00.
+
+7. DAILY PRICES (free): NSE bhavcopy -> stocks.daily_ohlcv
+----------------------------------------------------------
+- Script:  /opt/mcube-jobs/bhav.py
+  Source: nsearchives.nseindia.com/products/content/sec_bhavdata_full_DDMMYYYY.csv
+  Keeps SERIES=EQ rows and upserts ticker, date, open, high, low, close,
+  volume on (ticker, date).
+  Then recomputes rsi for the new rows.
+- RSI formula: simple 14-day RSI (rolling mean of gains and losses).
+  "bhav.py verify" matched the existing rsi values exactly on 99.7% of
+  rows; Wilder RSI did not match.
+- Wrapper: /opt/mcube-jobs/bhav.sh (uses the scanner's venv and .env,
+  RSI_METHOD=simple)
+- Cron:    30 19 * * 1-5 /opt/mcube-jobs/bhav.sh   (19:30 IST, weekdays)
+- Log:     /var/log/mcube-bhav.log
+- Backfill on 5 Nov: 118 trading days loaded (23 May -> 4 Nov 2026).
+- Manual run from a given date:  /opt/mcube-jobs/bhav.sh 2026-11-01
+- NSE holidays and not-yet-published days are logged as "no file" and skipped.
+
+8. CHECKLIST
+------------
+[x] Droplet + Reserved IP, outbound via Reserved IP
+[x] Kite IP whitelist updated
+[x] relay DNS -> 139.59.51.34, HTTPS via Caddy
+[x] Relay running, /health ok
+[x] Scanner installed, cron 18:00, test run ok
+[x] Bhavcopy job, cron 19:30, backfill done
+[x] Vercel KITE_RELAY_URL -> https
+[x] DO spend alert
+[ ] Vercel redeploy (this commit triggers it)
+[ ] One small test buy on the site: check the order and GTT in Kite
+[ ] Delete .tmp_q.mjs from the local mcube folder
+[ ] Delete the swing-trade GitHub "Daily evening scan" workflow
+[ ] Safety rules -> live.* schema, /live-trade-mansel, order engine
