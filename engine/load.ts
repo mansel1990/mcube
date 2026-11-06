@@ -8,6 +8,10 @@ export type MliveSettings = {
   minOrderInr: number;
   cashReserve: number;
   maxBuys: number;
+  maxNewBuys: number;
+  maxBuysPerStrategy: number;
+  maxOpenPerStrategy: number;
+  maxDailyDeployPct: number;
   maxSells: number;
   maxOpen: number;
   maxPerSector: number;
@@ -53,6 +57,10 @@ export async function loadSettings(): Promise<MliveSettings> {
     minOrderInr: num(map.get("min_order_inr") ?? 8000),
     cashReserve: num(map.get("cash_reserve_inr") ?? 500),
     maxBuys: num(map.get("max_buys_per_day") ?? 4),
+    maxNewBuys: num(map.get("max_new_buys_per_day") ?? 2),
+    maxBuysPerStrategy: num(map.get("max_buys_per_strategy_per_day") ?? 2),
+    maxOpenPerStrategy: num(map.get("max_open_per_strategy") ?? 4),
+    maxDailyDeployPct: num(map.get("max_daily_deploy_pct") ?? 0.5),
     maxSells: num(map.get("max_sells_per_day") ?? 4),
     maxOpen: num(map.get("max_open_positions") ?? 6),
     maxPerSector: num(map.get("max_per_sector") ?? 2),

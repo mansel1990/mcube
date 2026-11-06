@@ -152,9 +152,25 @@ export function spendableCash(system: number, kite: number, reserve = DEFAULT_CA
   return Math.min(system, kite) - reserve;
 }
 
+/** What a new buy may spend right now. Never negative. */
+export function engineSpendable(tradingLimit: number, invested: number, pendingBuys: number, kiteCash: number, reserve: number): number {
+  const room = tradingLimit - invested - pendingBuys;
+  return Math.max(0, Math.min(room, kiteCash) - reserve);
+}
+
 /** Positive when Kite cash is short of the system's own cash. */
 export function kiteCashGap(system: number, kite: number): number {
   return Math.max(0, system - kite);
+}
+
+/** Cash Kite can use for a new equity order. The live balance is the current figure. */
+export function kiteAvailableCash(margins: {
+  equity?: { available?: { live_balance?: number; cash?: number } };
+} | null | undefined): number | null {
+  const available = margins?.equity?.available;
+  const cash = available?.live_balance ?? available?.cash;
+  if (typeof cash !== "number" || !Number.isFinite(cash)) return null;
+  return cash;
 }
 
 export function isExcluded(symbol: string, exclude: readonly string[], isEtf: boolean): boolean {
@@ -607,4 +623,533 @@ export function gttLastPrice(live: number | null | undefined, lastClose: number 
   if (typeof live === "number" && live > 0) return live;
   if (typeof lastClose === "number" && lastClose > 0) return lastClose;
   return avgPrice;
+}
+
+export function kiteCashMessage(args: { dryRun: boolean; system: number; kite: number }): string {
+  const cash = Math.round(args.kite).toLocaleString("en-IN");
+  if (!(args.kite > 0)) return `Cash in Kite is ₹${cash}, so no buys today.`;
+  if (args.kite + 1e-6 < args.system) return "Cash in Kite is below the trading limit, so buys are smaller.";
+  if (args.dryRun) return "Dry run is on. Buys stay simulated.";
+  return "";
+}
+
+export type DecisionSentenceInput = {
+  outcome: string;
+  side?: string | null;
+  reasonCode?: string | null;
+  qty?: number | null;
+  limit?: number | null;
+  stop?: number | null;
+  notional?: number | null;
+  sector?: string | null;
+  sectorCount?: number | null;
+  minOrderInr?: number | null;
+  limitCount?: number | null;
+  strategy?: "rs" | "ema" | null;
+};
+
+function strategyName(strategy: "rs" | "ema" | null | undefined): string {
+  return strategy === "ema" ? "EMA" : strategy === "rs" ? "RS" : "strategy";
+}
+
+function rupees(n: number): string {
+  return `₹${Math.round(n).toLocaleString("en-IN")}`;
+}
+
+function px(n: number): string {
+  return `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/** Plain line for Home and the ledger. The sizing formula stays in the audit. */
+export function decisionSentence(decision: DecisionSentenceInput): string {
+  const qty = decision.qty ?? 0;
+  const limit = decision.limit ?? 0;
+  const stop = decision.stop ?? 0;
+  const side = (decision.side ?? "BUY").toUpperCase();
+  const bought = side === "SELL" ? "Sold" : "Bought";
+  if (decision.reasonCode === "gtt_exit" && (decision.outcome === "filled" || decision.outcome === "sent")) {
+    return decision.outcome === "filled" && qty > 0 && limit > 0 ? `Stop sold ${qty} at ${px(limit)}.` : "Stop order working.";
+  }
+  if (decision.outcome === "filled" || decision.outcome === "sent") {
+    return qty > 0 && limit > 0 ? `${bought} ${qty} at ${px(limit)}.` : `${bought}.`;
+  }
+  if (decision.outcome === "cancelled") return side === "SELL" ? "Sell cancelled." : "Buy cancelled.";
+  if (decision.outcome === "rejected") return side === "SELL" ? "Sell rejected." : "Buy rejected.";
+  if (decision.outcome === "proposed" || decision.outcome === "approved") {
+    if (qty > 0 && limit > 0 && stop > 0) return `Ready: ${qty} shares at ${px(limit)}, stop ${px(stop)}.`;
+    if (qty > 0 && limit > 0) return `Ready: ${qty} shares at ${px(limit)}.`;
+    return "Ready.";
+  }
+  switch (decision.reasonCode) {
+    case "no_funds": {
+      const notional = decision.notional ?? (qty > 0 && limit > 0 ? qty * limit : 0);
+      return qty > 0 && notional > 0
+        ? `Not bought: no cash in Kite. Would be ${qty} shares ≈ ${rupees(notional)}.`
+        : "Not bought: no cash in Kite.";
+    }
+    case "too_small":
+      return `Not bought: under the ${rupees(decision.minOrderInr ?? DEFAULT_MIN_ORDER)} minimum.`;
+    case "too_expensive":
+      return "Not bought: one share is over the order cap.";
+    case "sector_cap":
+      return `Not bought: already ${decision.sectorCount ?? 2} stocks in ${decision.sector ?? "that sector"}.`;
+    case "held":
+      return "Not bought: already held.";
+    case "excluded":
+      return "Not bought: on the exclude list.";
+    case "chasing":
+      return "Not bought: the price has run too far above the signal.";
+    case "entry_below_stop":
+      return "Not bought: the entry is below the stop.";
+    case "bad_data":
+      return "Not bought: the price data is not usable.";
+    case "limit":
+      return "Not bought: the daily buy limit is already full.";
+    case "pacing_day":
+      return `Not bought: already ${decision.limitCount ?? 2} new buys today.`;
+    case "pacing_strategy":
+      return `Not bought: already ${decision.limitCount ?? 2} ${strategyName(decision.strategy)} buys today.`;
+    case "strategy_full":
+      return `Not bought: already ${decision.limitCount ?? 4} ${strategyName(decision.strategy)} positions open.`;
+    case "pacing_cash":
+      return "Not bought: today's buy budget is used.";
+    case "short_history":
+      return "Not bought: not enough price history.";
+    default:
+      return decision.outcome === "skipped" ? "Not bought." : decision.outcome;
+  }
+}
+
+export type LedgerDecision = {
+  symbol: string;
+  outcome: string;
+  side?: string | null;
+  reasonCode?: string | null;
+  sentence: string;
+};
+
+export type LedgerDay = {
+  label: string;
+  tone: "buy" | "sell" | "wait" | "none";
+  detail: string;
+  items: { symbol: string; sentence: string }[];
+};
+
+function skipPhrase(code: string | null | undefined): string {
+  switch (code) {
+    case "no_funds": return "no cash in Kite";
+    case "too_small": return "under the minimum";
+    case "too_expensive": return "over the order cap";
+    case "sector_cap": return "sector already full";
+    case "held": return "already held";
+    case "excluded": return "on the exclude list";
+    case "chasing": return "price ran too far";
+    case "entry_below_stop": return "entry below the stop";
+    case "bad_data": return "price data not usable";
+    case "limit": return "daily buy limit full";
+    case "pacing_day": return "day's new-buy pace";
+    case "pacing_strategy": return "strategy's daily pace";
+    case "strategy_full": return "strategy already full";
+    case "pacing_cash": return "day's buy budget used";
+    case "short_history": return "not enough history";
+    default: return "not bought";
+  }
+}
+
+function countWord(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+function skipSummary(rows: LedgerDecision[]): string {
+  const groups = new Map<string, string[]>();
+  for (const row of rows) {
+    const phrase = skipPhrase(row.reasonCode);
+    groups.set(phrase, [...(groups.get(phrase) ?? []), row.symbol]);
+  }
+  const parts = [...groups.entries()]
+    .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+    .map(([phrase, symbols]) => {
+      if (phrase === "not bought") return countWord(symbols.length, "name not bought", "names not bought");
+      if (symbols.length === 1) return `${symbols[0]} not bought: ${phrase}`;
+      return `${symbols.length} names not bought: ${phrase}`;
+    });
+  if (groups.size === 1) return parts[0];
+  return parts.join(". ");
+}
+
+/** One line for the ledger. Repeated skips stay a count, not a copied sentence. */
+export function ledgerDay(rows: readonly LedgerDecision[]): LedgerDay {
+  const items = rows.map((row) => ({ symbol: row.symbol, sentence: row.sentence }));
+  if (rows.length === 0) return { label: "No action", tone: "none", detail: "Nothing was decided.", items };
+  const sell = (row: LedgerDecision) => (row.side ?? "BUY").toUpperCase() === "SELL";
+  const done = (row: LedgerDecision) => row.outcome === "sent" || row.outcome === "filled";
+  const buys = rows.filter((row) => done(row) && !sell(row));
+  const sells = rows.filter((row) => done(row) && sell(row));
+  const waiting = rows.filter((row) => row.outcome === "proposed" || row.outcome === "approved");
+  const skipped = rows.filter((row) => row.outcome === "skipped");
+  const bits = [
+    buys.length ? countWord(buys.length, "buy", "buys") : "",
+    sells.length ? countWord(sells.length, "sell", "sells") : "",
+  ].filter(Boolean);
+  let label = bits.join(" · ");
+  let tone: LedgerDay["tone"] = sells.length && !buys.length ? "sell" : buys.length ? "buy" : "none";
+  if (!label && waiting.length) {
+    label = "Waiting for you";
+    tone = "wait";
+  }
+  if (!label) label = skipped.length ? "No buys" : "No action";
+  const parts: string[] = [];
+  for (const row of [...buys, ...sells]) parts.push(`${row.symbol}: ${row.sentence.replace(/\.$/, "")}`);
+  if (waiting.length) {
+    const names = waiting.map((row) => row.symbol).join(", ");
+    parts.push(waiting.length === 1 ? `${names} is ready` : `${names} are ready`);
+  }
+  if (skipped.length) parts.push(skipSummary(skipped));
+  return { label, tone, detail: `${parts.join(". ")}.`, items };
+}
+
+export const CASH_RECHECK_CODES = ["no_funds", "too_small", "limit"] as const;
+
+/** A rejected or cancelled buy can free one of these the same day. */
+export const PACING_RECHECK_CODES = ["pacing_day", "pacing_strategy", "pacing_cash"] as const;
+
+export const RECHECK_REASON_CODES = [...CASH_RECHECK_CODES, ...PACING_RECHECK_CODES] as const;
+
+export function recheckEligible(outcome: string | null, reasonCode: string | null): boolean {
+  if (outcome == null) return true;
+  return outcome === "skipped" && reasonCode != null && (RECHECK_REASON_CODES as readonly string[]).includes(reasonCode);
+}
+
+export type PaceIdea = { symbol: string; strategy: "rs" | "ema"; notional: number };
+
+export type PaceBook = {
+  newBuys: number;
+  strategyBuys: { rs: number; ema: number };
+  openInStrategy: { rs: number; ema: number };
+  /** Committed buys plus proposals already accepted in this pass. The cap uses this. */
+  deployed: number;
+  /** Deployed before this pass. The baseline uses this so proposals do not inflate it. */
+  committed?: number;
+  /** Engine can use now, plus what is already deployed. Rises when cash arrives. Never falls. */
+  baseline: number | null;
+};
+
+export type PaceLimits = {
+  maxNewBuysPerDay: number;
+  maxBuysPerDay: number;
+  maxBuysPerStrategyPerDay: number;
+  maxOpenPerStrategy: number;
+  maxDailyDeployPct: number;
+  engineCanUseNow: number;
+};
+
+export type PaceReason = "ok" | "limit" | "pacing_day" | "pacing_strategy" | "strategy_full" | "pacing_cash";
+
+/** The lower of the new-buy pace and the send cap is the one that binds. */
+export function dayBuyCap(maxNewBuysPerDay: number, maxBuysPerDay: number): number {
+  return Math.min(maxNewBuysPerDay, maxBuysPerDay);
+}
+
+/**
+ * Day's deploy base. A saved 0 is unset.
+ * Rises to deployed + what the engine can use now. Never falls, and never becomes 0.
+ */
+export function deployBaseline(saved: number | null | undefined, deployed: number, engineCanUseNow: number): number | null {
+  const kept = saved != null && saved > 0 ? saved : null;
+  if (!(engineCanUseNow > 0)) return kept;
+  const next = Math.max(kept ?? 0, deployed + engineCanUseNow);
+  return next > 0 ? next : null;
+}
+
+/**
+ * Walk today's candidates in order. Locks the cash baseline only when a buy is in hand
+ * and the engine can use cash. Open positions are not increased here: a proposal is not a fill.
+ */
+export function paceBuys(ideas: readonly PaceIdea[], book: PaceBook, limits: PaceLimits): {
+  results: { symbol: string; strategy: "rs" | "ema"; outcome: "proposed" | "skipped"; reason: PaceReason }[];
+  book: PaceBook;
+} {
+  const committed = book.committed ?? book.deployed;
+  const baseline = ideas.length
+    ? deployBaseline(book.baseline, committed, limits.engineCanUseNow)
+    : book.baseline != null && book.baseline > 0
+      ? book.baseline
+      : null;
+  const next: PaceBook = {
+    newBuys: book.newBuys,
+    strategyBuys: { ...book.strategyBuys },
+    openInStrategy: { ...book.openInStrategy },
+    deployed: book.deployed,
+    committed: ideas.length ? committed : book.committed,
+    baseline,
+  };
+  const cap = (baseline ?? 0) * limits.maxDailyDeployPct;
+  const dayCap = dayBuyCap(limits.maxNewBuysPerDay, limits.maxBuysPerDay);
+  const results: { symbol: string; strategy: "rs" | "ema"; outcome: "proposed" | "skipped"; reason: PaceReason }[] = [];
+  for (const idea of ideas) {
+    let reason: PaceReason = "ok";
+    if (next.newBuys >= dayCap) reason = limits.maxNewBuysPerDay <= limits.maxBuysPerDay ? "pacing_day" : "limit";
+    else if (next.strategyBuys[idea.strategy] >= limits.maxBuysPerStrategyPerDay) reason = "pacing_strategy";
+    else if (next.openInStrategy[idea.strategy] >= limits.maxOpenPerStrategy) reason = "strategy_full";
+    else if (next.deployed + idea.notional > cap + 1e-6) reason = "pacing_cash";
+    if (reason === "ok") {
+      next.newBuys += 1;
+      next.strategyBuys[idea.strategy] += 1;
+      next.deployed += idea.notional;
+      results.push({ symbol: idea.symbol, strategy: idea.strategy, outcome: "proposed", reason });
+    } else {
+      results.push({ symbol: idea.symbol, strategy: idea.strategy, outcome: "skipped", reason });
+    }
+  }
+  return { results, book: next };
+}
+
+/** Promote a cash skip only. Held, sector, and the other hard skips stay skipped. */
+export function recheckPlan(input: {
+  outcome: string | null;
+  reasonCode: string | null;
+  sizingReason: string;
+  buysSent: number;
+  maxBuys: number;
+  openPositions: number;
+  maxPositions: number;
+  sectorCount: number;
+  maxPerSector: number;
+}): "propose" | "leave" {
+  if (!recheckEligible(input.outcome, input.reasonCode)) return "leave";
+  if (input.buysSent >= input.maxBuys) return "leave";
+  if (input.openPositions >= input.maxPositions) return "leave";
+  if (input.sectorCount >= input.maxPerSector) return "leave";
+  if (input.sizingReason !== "ok") return "leave";
+  return "propose";
+}
+
+/** 09:15–14:30 IST, every fifth minute, or the next tick after a Home request. */
+export function recheckDue(minute: number, openRequest: boolean): boolean {
+  if (minute < 9 * 60 + 15 || minute > 14 * 60 + 30) return false;
+  return openRequest || minute % 5 === 0;
+}
+
+export function isBoughtOrSold(row: {
+  kind: "decision" | "order" | "gtt_exit";
+  status?: string | null;
+  dryRun: boolean;
+}, includeDry: boolean): boolean {
+  if (row.dryRun && !includeDry) return false;
+  if (row.kind === "decision") return false;
+  if (row.kind === "gtt_exit") return true;
+  const status = (row.status ?? "").toUpperCase();
+  if (status === "DRY") return includeDry;
+  return status === "OPEN" || status === "COMPLETE" || status === "CANCELLED" || status === "REJECTED";
+}
+
+export type AlertRow = { id: number; code: string; message: string; level: string; seen: boolean; symbol?: string | null };
+
+export type AlertGroup<T extends AlertRow> = T & { repeat: number; ids: number[] };
+
+/** Repeated morning checks. Everything else stays per stock. */
+export const MORNING_ALERT_CODES = ["kite_cash_low", "kite_login_needed"] as const;
+
+export function isMorningAlert(code: string): boolean {
+  return (MORNING_ALERT_CODES as readonly string[]).includes(code);
+}
+
+export function alertSymbol(symbol: string | null | undefined): string | null {
+  const text = symbol?.trim() ?? "";
+  return text ? text : null;
+}
+
+/** Marking `target` seen also marks `row` when they share a collapsed group. */
+export function alertClearedWith(
+  target: { id: number; code: string; symbol?: string | null },
+  row: { id: number; code: string; symbol?: string | null },
+): boolean {
+  if (row.code !== target.code) return false;
+  if (isMorningAlert(target.code)) return true;
+  const symbol = alertSymbol(target.symbol);
+  if (!symbol) return row.id === target.id;
+  return alertSymbol(row.symbol) === symbol;
+}
+
+function alertGroupKey(row: { id: number; code: string; symbol?: string | null; seen: boolean }): string {
+  const seen = row.seen ? "seen" : "open";
+  if (isMorningAlert(row.code)) return `${row.code}|${seen}`;
+  const symbol = alertSymbol(row.symbol);
+  if (!symbol) return `${row.code}|id:${row.id}|${seen}`;
+  return `${row.code}|${symbol}|${seen}`;
+}
+
+/** Same morning check, same wording: one row. */
+export function collapseAlerts<T extends AlertRow>(rows: readonly T[]): AlertGroup<T>[] {
+  const out: AlertGroup<T>[] = [];
+  const index = new Map<string, number>();
+  for (const row of rows) {
+    const key = alertGroupKey(row);
+    const at = index.get(key);
+    if (at == null) {
+      index.set(key, out.length);
+      out.push({ ...row, repeat: 1, ids: [row.id] });
+    } else {
+      out[at].repeat += 1;
+      out[at].ids.push(row.id);
+    }
+  }
+  return out;
+}
+
+export function alertLabel(level: string): string {
+  if (level === "needs_you") return "Needs you";
+  if (level === "done") return "Done";
+  return "Problem";
+}
+
+/** The old cash alert was one sentence repeated by every preflight run. */
+export function alertBody(row: { code: string; message: string }): string {
+  if (row.code !== "kite_cash_low" || !/below system cash/i.test(row.message)) return row.message;
+  const amount = row.message.match(/₹\s?([\d,]+)/)?.[1] ?? "";
+  const gap = amount ? `₹${amount}` : "the full book";
+  return `Kite cash is short of the book by ${gap}. Buys wait until Kite shows that cash. Dry run does not send a real order. This check repeats each morning run, so it is shown once.`;
+}
+
+export type AuditView = "all" | "bought" | "sold" | "engine" | "you";
+
+export function auditInView(row: { actor: string; action: string; side: string | null }, view: AuditView): boolean {
+  if (view === "all") return true;
+  const side = (row.side ?? "").toUpperCase();
+  if (view === "bought") {
+    if (side === "SELL") return false;
+    return side === "BUY" || row.action === "order.sent" || row.action === "fill";
+  }
+  if (view === "sold") return side === "SELL" || row.action === "gtt.exit" || row.action === "position.marked_sold";
+  if (view === "you") return row.actor !== "engine" && row.actor !== "kite";
+  const ticket = side === "BUY" || side === "SELL" || row.action === "order.sent" || row.action === "fill" || row.action === "gtt.exit" || row.action === "position.marked_sold";
+  return (row.actor === "engine" || row.actor === "kite") && !ticket;
+}
+
+export function auditLabel(action: string, side: string | null): string {
+  const upper = (side ?? "").toUpperCase();
+  if (action === "order.sent") return upper === "SELL" ? "Sell sent" : upper === "BUY" ? "Buy sent" : "Order sent";
+  if (action === "fill") return upper === "SELL" ? "Sell filled" : upper === "BUY" ? "Buy filled" : "Filled";
+  if (action === "gtt.exit") return "Stop sold";
+  if (action === "position.marked_sold") return "Marked sold";
+  if (action === "approval.approve") return "You approved";
+  if (action === "approval.skip") return "You skipped";
+  if (action === "sizing") return "Sized an order";
+  if (action === "reconcile") return "Checked holdings";
+  if (action === "stop.updated") return "Stop moved";
+  if (action === "alert") return "Raised an alert";
+  if (action === "setting.change") return "Setting changed";
+  if (action === "kite.login") return "Kite connected";
+  if (action === "kite.disconnect") return "Kite disconnected";
+  if (action.startsWith("fund.")) return "Trading limit change";
+  if (action === "run.error") return "Engine error";
+  if (action.startsWith("run.")) return runLabel(action.slice(4));
+  if (action === "decision.skip") return "Skipped a name";
+  if (action === "recheck") return "Re-checked cash";
+  if (action === "recheck.request") return "Asked for a re-check";
+  if (action === "order.cancelled") return "Order cancelled";
+  if (action === "order.cancel_failed") return "Cancel failed";
+  return action;
+}
+
+export type EngineGroupId = "all" | "sizing" | "runs" | "skips" | "stops" | "holdings" | "alerts" | "problems" | "recheck" | "other";
+
+export const ENGINE_GROUPS: { id: EngineGroupId; label: string }[] = [
+  { id: "all", label: "All engine" },
+  { id: "sizing", label: "Sizing" },
+  { id: "runs", label: "Runs" },
+  { id: "skips", label: "Skips" },
+  { id: "stops", label: "Stops" },
+  { id: "holdings", label: "Holdings" },
+  { id: "alerts", label: "Alerts" },
+  { id: "problems", label: "Problems" },
+  { id: "recheck", label: "Re-checks" },
+  { id: "other", label: "Other" },
+];
+
+function runLabel(kind: string): string {
+  const names: Record<string, string> = {
+    preflight: "Morning check",
+    sync: "Synced orders",
+    remind: "Kite reminder",
+    sells: "Checked sells",
+    buys: "Checked buys",
+    "import-ideas": "Imported ideas",
+    approvals: "Approval pass",
+    eod: "End of day",
+    "eod-final": "End of day, final",
+    "eod-stops": "Stop check",
+    cancel: "Cancel pass",
+    refresh: "Refreshed prices",
+  };
+  return names[kind] ?? "Engine run";
+}
+
+const ENGINE_ACTIONS: Record<Exclude<EngineGroupId, "all" | "runs" | "other">, readonly string[]> = {
+  sizing: ["sizing"],
+  skips: ["decision.skip"],
+  stops: ["stop.updated"],
+  holdings: ["reconcile"],
+  alerts: ["alert"],
+  problems: ["run.error", "order.cancel_failed"],
+  recheck: ["recheck"],
+};
+
+export function engineGroup(action: string): EngineGroupId {
+  if (action === "run.error" || action === "order.cancel_failed") return "problems";
+  if (action.startsWith("run.")) return "runs";
+  for (const [id, actions] of Object.entries(ENGINE_ACTIONS) as [Exclude<EngineGroupId, "all" | "runs" | "other">, readonly string[]][]) {
+    if ((actions as readonly string[]).includes(action)) return id;
+  }
+  return "other";
+}
+
+export function knownEngineActions(): string[] {
+  return Object.values(ENGINE_ACTIONS).flat();
+}
+
+export function actionsForEngineGroup(group: EngineGroupId): string[] | null {
+  if (group === "all" || group === "other" || group === "runs") return null;
+  return [...ENGINE_ACTIONS[group]];
+}
+
+export function auditDayKey(ts: string): string {
+  return new Date(ts).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+}
+
+type AuditCollapseRow = {
+  id: number;
+  ts: string;
+  action: string;
+  symbol: string | null;
+  reason: string;
+};
+
+/** Same engine line, same stock, same IST day: one row. Newest id is kept. */
+export function collapseAuditRows<T extends AuditCollapseRow>(rows: readonly T[]): (T & { repeat: number })[] {
+  const out: (T & { repeat: number })[] = [];
+  const index = new Map<string, number>();
+  const ordered = [...rows].sort((a, b) => b.id - a.id);
+  for (const row of ordered) {
+    const key = `${auditDayKey(row.ts)}|${row.action}|${row.symbol ?? ""}|${row.reason}`;
+    const at = index.get(key);
+    if (at == null) {
+      index.set(key, out.length);
+      out.push({ ...row, repeat: 1 });
+    } else {
+      out[at].repeat += 1;
+    }
+  }
+  return out;
+}
+
+export function groupAuditByDay<T extends { ts: string }>(rows: readonly T[]): { day: string; rows: T[] }[] {
+  const out: { day: string; rows: T[] }[] = [];
+  for (const row of rows) {
+    const day = auditDayKey(row.ts);
+    const last = out[out.length - 1];
+    if (!last || last.day !== day) out.push({ day, rows: [row] });
+    else last.rows.push(row);
+  }
+  return out;
 }

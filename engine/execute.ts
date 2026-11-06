@@ -3,18 +3,20 @@ import {
   type GuardContext,
 } from "@/engine/guard";
 import { todayIst } from "@/lib/mlive/calendar";
-import { coversDecision, gttExitPlan, isChasing, isExcluded, limitCrossed, makeTag, roundTick, sizeOrder, spendableCash, systemCash } from "@/lib/mlive/rules";
+import { coversDecision, deployBaseline, engineSpendable, gttExitPlan, isChasing, isExcluded, limitCrossed, makeTag, roundTick, sizeOrder, spendableCash, systemCash } from "@/lib/mlive/rules";
 import { audit } from "./audit";
 import { raiseAlert } from "./alerts";
 import {
   applyFill,
   decisionsFor,
   ensurePositionGtt,
+  buyPace,
   openCost,
   openPositions,
   pendingBuyValue,
   recordExitOrder,
   recordOrder,
+  saveDeployBaseline,
   rejectIsKnown,
   sentCounts,
   shortId,
@@ -45,6 +47,29 @@ export async function sendReady(opts: SendOpts): Promise<Record<string, unknown>
   const positions = await openPositions(settings.dryRun);
   const fund = await fundBalance(settings.dryRun);
   let spendable = await currentSpendable(fund, settings, kite);
+  const pace = await buyPace(day, settings.dryRun);
+  let newBuys = pace.newBuys;
+  const strategyBuys = { ...pace.strategyBuys };
+  const openInStrategy = { ...pace.openInStrategy };
+  let deployed = pace.deployed;
+  let baseline = pace.baseline != null && pace.baseline > 0 ? pace.baseline : null;
+  if (opts.side === "BUY" && decisions.length > 0) {
+    const invested = await openCost(settings.dryRun);
+    const pending = await pendingBuyValue(settings.dryRun);
+    let kiteCash = systemCash(fund, invested, pending);
+    try {
+      kiteCash = await kite.equityCash();
+    } catch {
+      kiteCash = systemCash(fund, invested, pending);
+    }
+    const now = engineSpendable(fund, invested, pending, kiteCash, settings.cashReserve);
+    if (now > 0) {
+      const next = deployBaseline(baseline, deployed, now);
+      if (next != null && next > (baseline ?? 0)) await saveDeployBaseline(day, next);
+      baseline = next;
+    }
+  }
+  const deployCap = (baseline ?? 0) * settings.maxDailyDeployPct;
   const results: string[] = [];
 
   for (const decision of decisions) {
@@ -88,6 +113,7 @@ export async function sendReady(opts: SendOpts): Promise<Record<string, unknown>
     }
     const position = positions.find((row) => row.symbol === decision.symbol);
     const sectorCount = await sectorCountFor(decision.symbol, positions);
+    const strategy = await ideaStrategy(decision.ideaId);
     const ctx: GuardContext = {
       mode: state.mode,
       status: state.status,
@@ -108,6 +134,14 @@ export async function sendReady(opts: SendOpts): Promise<Record<string, unknown>
       isNewSymbol: !position,
       sectorCount,
       maxPerSector: settings.maxPerSector,
+      newBuys,
+      maxNewBuys: settings.maxNewBuys,
+      strategyBuys: strategyBuys[strategy],
+      maxBuysPerStrategy: settings.maxBuysPerStrategy,
+      openInStrategy: openInStrategy[strategy],
+      maxOpenPerStrategy: settings.maxOpenPerStrategy,
+      deployed,
+      deployCap,
     };
     const verdict = guardOrder(
       {
@@ -144,8 +178,12 @@ export async function sendReady(opts: SendOpts): Promise<Record<string, unknown>
         dryRun: placed.dryRun,
         runId: opts.runId,
       });
-      if (decision.side === "BUY") buysSent += 1;
-      else sellsSent += 1;
+      if (decision.side === "BUY") {
+        buysSent += 1;
+        newBuys += 1;
+        strategyBuys[strategy] += 1;
+        deployed += qty * limit;
+      } else sellsSent += 1;
       if (decision.side === "BUY") spendable -= qty * limit;
       results.push(`${decision.symbol} sent ${placed.orderId}`);
     } catch (error) {
@@ -163,6 +201,12 @@ export async function sendReady(opts: SendOpts): Promise<Record<string, unknown>
     }
   }
   return { buysSent, sellsSent, results };
+}
+
+async function ideaStrategy(ideaId: number | null): Promise<"rs" | "ema"> {
+  if (ideaId == null) return "rs";
+  const rows = await q<{ strategy: string | null }>(`SELECT strategy FROM mlive.mlive_ideas WHERE id = $1`, [ideaId]);
+  return rows[0]?.strategy === "ema" ? "ema" : "rs";
 }
 
 async function decisionIsSent(decision: Decision, day: string): Promise<boolean> {

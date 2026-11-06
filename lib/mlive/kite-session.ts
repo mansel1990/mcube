@@ -1,7 +1,8 @@
 import { KiteConnect } from "kiteconnect";
 import { sql } from "@/lib/sql";
 import { todayIst } from "./calendar";
-import { encryptToken } from "./crypto";
+import { encryptToken, decryptToken } from "./crypto";
+import { kiteAvailableCash } from "./rules";
 
 export function kiteLoginUrl(returnOrigin: string): string {
   const apiKey = process.env.KITE_API_KEY;
@@ -29,4 +30,25 @@ export async function saveEncryptedSession(userId: string, requestToken: string)
       connected_at = now(),
       kite_user_id = EXCLUDED.kite_user_id`;
   return session.user_id;
+}
+
+/** Today's Kite equity cash. `connected` is false when the morning login is missing. */
+export async function readKiteFunds(): Promise<{ connected: boolean; cash: number | null }> {
+  const apiKey = process.env.KITE_API_KEY;
+  const tokenKey = process.env.MLIVE_TOKEN_KEY;
+  if (!apiKey || !tokenKey) return { connected: false, cash: null };
+  const rows = await sql`
+    SELECT access_token_enc, token_date::text AS token_date
+      FROM mlive.mlive_kite_sessions
+     ORDER BY connected_at DESC LIMIT 1`;
+  const row = rows[0];
+  if (!row || String(row.token_date).slice(0, 10) !== todayIst()) return { connected: false, cash: null };
+  try {
+    const kite = new KiteConnect({ api_key: apiKey });
+    kite.setAccessToken(decryptToken(String(row.access_token_enc), tokenKey));
+    const margins = await kite.getMargins("equity");
+    return { connected: true, cash: kiteAvailableCash(margins) };
+  } catch {
+    return { connected: true, cash: null };
+  }
 }

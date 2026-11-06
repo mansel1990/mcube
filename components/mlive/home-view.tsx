@@ -10,6 +10,10 @@ type Home = {
   state: { status: string; mode: string; dryRun: boolean; drawdown: number; breakerPct: number };
   kite: { connected: boolean; at: string | null; checkedAt: string | null; matches: boolean };
   fund: number;
+  tradingLimit: number;
+  kiteCash: number | null;
+  engineCanUse: number;
+  cashNote: string;
   cash: number;
   invested: number;
   account: number;
@@ -17,9 +21,10 @@ type Home = {
   change: number;
   trades: { buys: number; sells: number; maxBuys: number; maxSells: number; waiting: number };
   fundUsed: number;
-  needsYou: { id: number; side: string; symbol: string; text: string; sizing: { qty?: number; limit?: number } }[];
+  needsYou: { id: number; side: string; symbol: string; text: string; raw?: string; sizing: { qty?: number; limit?: number } }[];
   holdings: { id: number; symbol: string; strategy: string; qty: number; avg: number; stop: number; high: number; gtt: boolean; sellProposed: boolean; since: string | null; frozen: boolean }[];
-  ideas: { total: number; passed: number; picked: number; rows: { symbol: string; strategy: string; result: string; reason: string }[] };
+  ideas: { total: number; passed: number; picked: number; rows: { symbol: string; strategy: string; result: string; reason: string; raw?: string }[] };
+  cashSkipped: boolean;
   activity: { date: string | null; side: string; symbol: string; outcome: string; detail: string; qty: number; price: number }[];
   spark: { date: string | null; value: number }[];
 };
@@ -36,6 +41,7 @@ export function HomeView() {
   const [data, setData] = useState<Home | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [prices, setPrices] = useState<Record<string, number>>({});
+  const [recheckNote, setRecheckNote] = useState("");
 
   async function load() {
     const res = await fetch("/api/mlive/home");
@@ -82,6 +88,11 @@ export function HomeView() {
     await load();
   }
 
+  async function recheck() {
+    const res = await fetch("/api/mlive/recheck", { method: "POST" });
+    setRecheckNote(res.ok ? "The engine will re-check on its next pass. This page does not send an order." : "Could not ask for a re-check.");
+  }
+
   async function pause() {
     await fetch("/api/mlive/state", {
       method: "POST",
@@ -122,10 +133,10 @@ export function HomeView() {
           <Spark values={data.spark.map((point) => point.value)} up={up} />
         </div>
         <div className="stats">
-          <div className="card stat"><p className="lbl">Cash</p><div className="v n">{inr(data.cash)}</div><div className="h">System cash, before the reserve</div></div>
-          <div className="card stat"><p className="lbl">Invested</p><div className="v n">{inr(data.invested)}</div><div className="h">{data.holdings.length} holdings</div></div>
+          <div className="card stat"><p className="lbl">Cash in Kite</p><div className="v n">{data.kiteCash == null ? "—" : inr(data.kiteCash)}</div><div className="h">{data.cashNote || "Live available equity cash"}</div></div>
+          <div className="card stat"><p className="lbl">Trading limit</p><div className="v n">{inr(data.tradingLimit)}</div><div className="h">Grows with profit. The engine never uses more than this.</div></div>
+          <div className="card stat"><p className="lbl">Engine can use now</p><div className="v n">{inr(data.engineCanUse)}</div><div className="h">{data.holdings.length} holdings · reserve held back</div></div>
           <div className="card stat"><p className="lbl">Trades today</p><div className="v n">{data.trades.buys}/{data.trades.maxBuys} · {data.trades.sells}/{data.trades.maxSells}</div><div className="h">{data.trades.waiting} waiting for you</div></div>
-          <div className="card stat"><p className="lbl">Fund used</p><div className="v n">{data.fundUsed}%</div><div className="meter"><i style={{ width: `${Math.min(100, data.fundUsed)}%` }} /></div><div className="h n">of {inr(data.fund)} fund</div></div>
         </div>
       </div>
 
@@ -141,7 +152,7 @@ export function HomeView() {
               <span className={`side-tag ${row.side === "BUY" ? "buy" : "sell"}`}>{row.side}</span>
               <div className="what">
                 <b>{row.symbol} · {row.sizing.qty ?? "—"} shares{row.sizing.limit ? ` @ ${inr(row.sizing.limit, 2)}` : ""}</b>
-                <div className="muted">{row.text}</div>
+                <div className="muted" title={row.raw || undefined}>{row.text}</div>
                 {data.state.dryRun && <div className="dry-tag">DRY RUN · no real orders</div>}
               </div>
               <button type="button" className="btn" onClick={() => act(row.id, "skip")}>Skip</button>
@@ -222,18 +233,25 @@ export function HomeView() {
             <Link href="/live-trade-mansel/reports">All activity →</Link>
           </div>
           <div style={{ padding: "0 20px 12px" }}>
-            {data.activity.length === 0 && <p className="muted">No decisions yet.</p>}
+            {data.activity.length === 0 && <p className="muted">Nothing bought or sold yet.</p>}
             {data.activity.map((row, i) => (
-              <div key={`${row.symbol}-${i}`} style={{ display: "grid", gridTemplateColumns: "72px 1fr auto", gap: 12, padding: "12px 0", borderTop: "1px solid var(--line)" }}>
+              <div key={`${row.symbol}-${row.date}-${i}`} style={{ display: "grid", gridTemplateColumns: "72px 1fr auto", gap: 12, padding: "12px 0", borderTop: "1px solid var(--line)" }}>
                 <span className="muted">{row.date}</span>
-                <div><b>{row.outcome} {row.side} {row.symbol}</b><div className="muted">{row.detail}</div></div>
+                <div><b>{row.symbol}</b><div className="muted">{row.detail}</div></div>
                 <span className="n">{row.price ? inr(row.price, 2) : ""}</span>
               </div>
             ))}
           </div>
         </div>
         <div className="card">
-          <div className="card-h"><h2>Last night&apos;s ideas</h2><p className="sub">Copied from the paper scan. The engine decides.</p></div>
+          <div className="card-h" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+            <div>
+              <h2>Last night&apos;s ideas</h2>
+              <p className="sub">Copied from the paper scan. The engine decides.</p>
+              {recheckNote && <p className="sub">{recheckNote}</p>}
+            </div>
+            {data.cashSkipped && <button type="button" className="btn" onClick={recheck}>Re-check cash now</button>}
+          </div>
           <div className="funnel">
             <div className="fstep"><div className="lbl">Ideas</div><div className="v n" style={{ fontSize: 22, fontWeight: 700 }}>{data.ideas.total}</div></div>
             <div className="fstep"><div className="lbl">Passed rules</div><div className="v n" style={{ fontSize: 22, fontWeight: 700 }}>{data.ideas.passed}</div></div>
@@ -246,7 +264,10 @@ export function HomeView() {
                 <tr key={`${row.strategy}-${row.symbol}`}>
                   <td><b>{row.symbol}</b></td>
                   <td><span className="strat"><i style={{ background: row.strategy === "ema" ? "var(--ema)" : "var(--rs)" }} />{row.strategy === "ema" ? "EMA" : "RS"}</span></td>
-                  <td><span className={`chip ${row.result === "proposed" || row.result === "sent" ? "pick" : ""}`}>{row.reason || row.result}</span></td>
+                  <td>
+                    <span className={`chip ${row.result === "proposed" || row.result === "sent" ? "pick" : ""}`} title={row.raw || undefined}>{row.reason || row.result}</span>
+                    {row.raw && <details><summary className="muted">Sizing</summary><div className="muted">{row.raw}</div></details>}
+                  </td>
                 </tr>
               ))}
             </tbody>

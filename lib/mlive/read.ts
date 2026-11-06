@@ -1,6 +1,19 @@
 import { sql } from "@/lib/sql";
-import { addDays, nextTradingDay, todayIst } from "./calendar";
-import { EXIT_EMA, EXIT_RS } from "./rules";
+import { readKiteFunds } from "./kite-session";
+import { addDays, nextTradingDay, sessionsBack, todayIst } from "./calendar";
+import {
+  EXIT_EMA,
+  EXIT_RS,
+  actionsForEngineGroup,
+  decisionSentence,
+  engineGroup,
+  ledgerDay,
+  engineSpendable,
+  knownEngineActions,
+  kiteCashMessage,
+  type AuditView,
+  type EngineGroupId,
+} from "./rules";
 
 async function includeDryRows(): Promise<boolean> {
   const settings = await settingsMap();
@@ -45,9 +58,9 @@ export async function homePayload(displayName: string) {
     sql`SELECT status, mode, peak_value, peak_date, last_eod_date, updated_at FROM mlive.mlive_state WHERE id = 1`,
     sql`SELECT COALESCE(SUM(amount), 0) AS total, MIN(ts) AS started FROM mlive.mlive_fund_ledger WHERE (${includeDry}::boolean OR dry_run = false)`,
     sql`SELECT id, symbol, strategy, qty, avg_price, trend_stop, high_52w_flag, frozen, opened_at FROM mlive.mlive_positions WHERE closed_at IS NULL AND (${includeDry}::boolean OR dry_run = false) ORDER BY opened_at`,
-    sql`SELECT id, trade_date, side, symbol, outcome, reason_text, sizing FROM mlive.mlive_decisions WHERE trade_date = ${today}::date AND (${includeDry}::boolean OR dry_run = false) ORDER BY rank NULLS LAST, id`,
-    sql`SELECT id, trade_date, side, symbol, outcome, reason_text, sizing FROM mlive.mlive_decisions WHERE trade_date = ${nextSession}::date AND outcome = 'proposed' AND (${includeDry}::boolean OR dry_run = false) ORDER BY id`,
-    sql`SELECT symbol, strategy, score, signal_close, initial_stop FROM mlive.mlive_ideas WHERE valid_for = ${today}::date ORDER BY score DESC`,
+    sql`SELECT id, trade_date, side, symbol, outcome, reason_code, reason_text, sizing FROM mlive.mlive_decisions WHERE trade_date = ${today}::date AND (${includeDry}::boolean OR dry_run = false) ORDER BY rank NULLS LAST, id`,
+    sql`SELECT id, trade_date, side, symbol, outcome, reason_code, reason_text, sizing FROM mlive.mlive_decisions WHERE trade_date = ${nextSession}::date AND outcome = 'proposed' AND (${includeDry}::boolean OR dry_run = false) ORDER BY id`,
+    sql`SELECT symbol, strategy, sector, score, signal_close, initial_stop FROM mlive.mlive_ideas WHERE valid_for = ${today}::date ORDER BY score DESC`,
     sql`SELECT trade_date, system_value FROM mlive.mlive_equity_daily ORDER BY trade_date`,
     sql`SELECT token_date, connected_at, kite_user_id FROM mlive.mlive_kite_sessions ORDER BY connected_at DESC LIMIT 1`,
     sql`SELECT COUNT(*)::int AS n FROM mlive.mlive_alerts WHERE seen_at IS NULL AND level = 'needs_you'`,
@@ -56,6 +69,7 @@ export async function homePayload(displayName: string) {
   ]);
   const state = stateRows[0];
   const fund = num(fundRows[0]?.total);
+  const picture = await cashPicture();
   const invested = positions.reduce((sum, row) => sum + num(row.qty) * num(row.avg_price), 0);
   const pending = decisions
     .filter((row) => row.side === "BUY" && (row.outcome === "sent" || row.outcome === "approved"))
@@ -93,13 +107,17 @@ export async function homePayload(displayName: string) {
   const highBySymbol = new Map(highRows.map((row) => [String(row.symbol), num(row.high)]));
   const gttIds = new Set(gttRows.map((row) => num(row.position_id)));
   const needsYou = [...decisions.filter((row) => row.outcome === "proposed"), ...upcoming];
-  const passed = decisions.filter((row) => row.outcome === "proposed" || row.outcome === "approved" || row.outcome === "sent").length;
+  const buyDecisions = decisions.filter((row) => row.side === "BUY");
+  const passed = buyDecisions.filter((row) => row.outcome === "proposed" || row.outcome === "approved" || row.outcome === "sent").length;
+  const since = sessionsBack(today, 10, new Set(holidayRows.map((row) => String(row.trade_date).slice(0, 10))));
   const activity = await sql`
-    SELECT d.trade_date, d.side, d.symbol, d.outcome, d.reason_text, o.filled_qty, o.avg_price, o.qty, o.limit_price
-      FROM mlive.mlive_decisions d
-      LEFT JOIN mlive.mlive_orders o ON o.decision_id = d.id
-     WHERE (${includeDry}::boolean OR d.dry_run = false)
-     ORDER BY d.id DESC LIMIT 8`;
+    SELECT placed_at, side, symbol, status, kind, filled_qty, avg_price, qty, limit_price, dry_run
+      FROM mlive.mlive_orders
+     WHERE placed_at::date >= ${since}::date
+       AND (${includeDry}::boolean OR dry_run = false)
+       AND (kind = 'gtt_exit' OR status IN ('OPEN', 'COMPLETE', 'CANCELLED', 'REJECTED', 'DRY'))
+     ORDER BY placed_at DESC NULLS LAST, id DESC
+     LIMIT 30`;
   return {
     today,
     displayName,
@@ -121,6 +139,10 @@ export async function homePayload(displayName: string) {
     },
     engine: runs[0] ? { kind: String(runs[0].kind), status: String(runs[0].status), at: runs[0].finished_at } : null,
     fund,
+    tradingLimit: picture.tradingLimit,
+    kiteCash: picture.kiteFunds.cash,
+    engineCanUse: picture.engineCanUse,
+    cashNote: picture.note,
     cash,
     invested,
     account,
@@ -128,13 +150,17 @@ export async function homePayload(displayName: string) {
     change: account - fund,
     trades: { buys, sells, maxBuys, maxSells, waiting: needsYou.length },
     fundUsed: fund > 0 ? Math.round((invested / fund) * 100) : 0,
-    needsYou: needsYou.map((row) => ({
-      id: num(row.id),
-      side: String(row.side),
-      symbol: String(row.symbol),
-      text: String(row.reason_text ?? ""),
-      sizing: json<{ qty?: number; limit?: number }>(row.sizing, {}),
-    })),
+    needsYou: needsYou.map((row) => {
+      const sizing = json<SizingBits>(row.sizing, {});
+      return {
+        id: num(row.id),
+        side: String(row.side),
+        symbol: String(row.symbol),
+        text: sentenceFor(row, sizing, settings),
+        raw: sizing.text ?? "",
+        sizing,
+      };
+    }),
     holdings: positions.map((row) => ({
       id: num(row.id),
       symbol: String(row.symbol),
@@ -150,28 +176,46 @@ export async function homePayload(displayName: string) {
       flagged: row.high_52w_flag === true,
     })),
     ideas: {
-      total: ideas.length,
+      total: buyDecisions.length,
       passed,
-      picked: needsYou.filter((row) => row.side === "BUY").length,
+      picked: buyDecisions.filter((row) => row.outcome === "sent").length,
       rows: ideas.map((row) => {
-        const decision = decisions.find((item) => item.symbol === row.symbol);
+        const decision = decisions.find((item) => item.symbol === row.symbol && item.side === "BUY");
+        const sizing = json<SizingBits>(decision?.sizing, {});
         return {
           symbol: String(row.symbol),
           strategy: String(row.strategy),
           result: decision ? String(decision.outcome) : "logged",
-          reason: decision ? String(decision.reason_text ?? "") : "",
+          reason: decision
+            ? sentenceFor({ ...decision, sector: row.sector }, sizing, settings)
+            : "Logged. The engine has not decided yet.",
+          raw: sizing.text || (String(decision?.reason_text ?? "").includes("÷") ? String(decision?.reason_text) : ""),
         };
       }),
     },
-    activity: activity.map((row) => ({
-      date: day(row.trade_date),
-      side: String(row.side),
-      symbol: String(row.symbol),
-      outcome: String(row.outcome),
-      detail: String(row.reason_text ?? ""),
-      qty: num(row.filled_qty || row.qty),
-      price: num(row.avg_price || row.limit_price),
-    })),
+    cashSkipped: buyDecisions.some((row) => row.outcome === "skipped" && row.reason_code === "no_funds"),
+    activity: activity.map((row) => {
+      const status = String(row.status ?? "").toUpperCase();
+      const filled = status === "COMPLETE" || num(row.filled_qty) > 0;
+      const outcome = status === "CANCELLED" ? "cancelled" : status === "REJECTED" ? "rejected" : filled ? "filled" : "sent";
+      const price = num(row.avg_price || row.limit_price);
+      const qty = num(row.filled_qty || row.qty);
+      return {
+        date: day(row.placed_at),
+        side: String(row.kind) === "gtt_exit" ? "SELL" : String(row.side),
+        symbol: String(row.symbol),
+        outcome,
+        detail: decisionSentence({
+          outcome,
+          side: String(row.kind) === "gtt_exit" ? "SELL" : String(row.side),
+          reasonCode: String(row.kind) === "gtt_exit" ? "gtt_exit" : null,
+          qty,
+          limit: price,
+        }),
+        qty,
+        price,
+      };
+    }),
     spark: equity.map((row) => ({ date: day(row.trade_date), value: num(row.system_value) })),
     unseen: num(alerts[0]?.n),
     instrumentCount: instruments.length,
@@ -202,6 +246,7 @@ export async function chartsPayload(range: string) {
 
 export async function ledgerPayload() {
   const includeDry = await includeDryRows();
+  const settings = await settingsMap();
   const rows = await sql`
     SELECT r.trade_date, r.text, r.decision_summary, e.system_value
       FROM mlive.mlive_daily_reports r
@@ -213,6 +258,12 @@ export async function ledgerPayload() {
            COALESCE(SUM(realised_pnl), 0) AS pnl,
            COALESCE(SUM(charges), 0) AS charges
       FROM mlive.mlive_positions WHERE closed_at IS NOT NULL AND (${includeDry}::boolean OR dry_run = false)`;
+  const decided = await sql`
+    SELECT d.trade_date, d.side, d.symbol, d.outcome, d.reason_code, d.reason_text, d.sizing, i.sector
+      FROM mlive.mlive_decisions d
+      LEFT JOIN mlive.mlive_ideas i ON i.id = d.idea_id
+     WHERE (${includeDry}::boolean OR d.dry_run = false)
+     ORDER BY d.id`;
   const summary = closed[0];
   const n = num(summary?.n);
   const wins = num(summary?.wins);
@@ -223,12 +274,27 @@ export async function ledgerPayload() {
       realised: num(summary?.pnl),
       charges: num(summary?.charges),
     },
-    rows: rows.map((row) => ({
-      date: day(row.trade_date),
-      text: String(row.text ?? "No action"),
-      summary: row.decision_summary,
-      value: row.system_value == null ? null : num(row.system_value),
-    })),
+    rows: rows.map((row) => {
+      const date = day(row.trade_date);
+      const dayDecisions = decided.filter((item) => day(item.trade_date) === date);
+      const stored = String(row.text ?? "").trim();
+      const summary = ledgerDay(dayDecisions.map((item) => ({
+        symbol: String(item.symbol ?? ""),
+        outcome: String(item.outcome ?? ""),
+        side: item.side == null ? null : String(item.side),
+        reasonCode: item.reason_code == null ? null : String(item.reason_code),
+        sentence: sentenceFor(item, json<SizingBits>(item.sizing, {}), settings),
+      })));
+      const detail = dayDecisions.length || !stored || stored === "Morning draft" ? summary.detail : stored;
+      return {
+        date,
+        label: summary.label,
+        tone: summary.tone,
+        text: detail,
+        items: summary.items,
+        value: row.system_value == null ? null : num(row.system_value),
+      };
+    }),
   };
 }
 
@@ -249,25 +315,201 @@ export async function alertsPayload(page: number) {
   }));
 }
 
-export async function auditPayload(page: number, actor: string | null) {
-  const size = 40;
-  const offset = page * size;
-  const rows = actor
-    ? await sql`
-        SELECT id, ts, actor, action, symbol, reason
-          FROM mlive.mlive_audit_log WHERE actor = ${actor}
-         ORDER BY id DESC LIMIT ${size} OFFSET ${offset}`
-    : await sql`
-        SELECT id, ts, actor, action, symbol, reason
-          FROM mlive.mlive_audit_log ORDER BY id DESC LIMIT ${size} OFFSET ${offset}`;
-  return rows.map((row) => ({
+const AUDIT_PAGE = 25;
+const AUDIT_VIEWS: readonly AuditView[] = ["all", "bought", "sold", "engine", "you"];
+
+export async function auditPayload(input: { page: number; view: string; group: string; symbol: string | null }) {
+  const view = AUDIT_VIEWS.includes(input.view as AuditView) ? (input.view as AuditView) : "all";
+  const group = (["all", "sizing", "runs", "skips", "stops", "holdings", "alerts", "problems", "recheck", "other"] as const).includes(input.group as EngineGroupId)
+    ? (input.group as EngineGroupId)
+    : "all";
+  const page = Number.isFinite(input.page) && input.page > 0 ? Math.floor(input.page) : 0;
+  const symbol = input.symbol?.trim() || null;
+  const offset = page * AUDIT_PAGE;
+  const where = auditWhere(view, view === "engine" ? group : "all");
+  const params = [symbol, where.actions, !where.runsOnly, !where.onlyOther, knownEngineActions(), AUDIT_PAGE, offset];
+  const rows = await sql.query(
+    view === "engine"
+      ? `SELECT max(id) AS id, max(ts) AS ts,
+                (array_agg(actor ORDER BY id DESC))[1] AS actor,
+                action, symbol, coalesce(reason, '') AS reason,
+                (array_agg(after ORDER BY id DESC))[1] AS after,
+                count(*)::int AS repeat
+           FROM mlive.mlive_audit_log
+          WHERE ${where.sql}
+          GROUP BY (timezone('Asia/Kolkata', ts))::date, action, symbol, coalesce(reason, '')
+          ORDER BY max(id) DESC
+          LIMIT $6 OFFSET $7`
+      : `SELECT id, ts, actor, action, symbol, coalesce(reason, '') AS reason, after, 1::int AS repeat
+           FROM mlive.mlive_audit_log
+          WHERE ${where.sql}
+          ORDER BY id DESC
+          LIMIT $6 OFFSET $7`,
+    params
+  );
+  const totalRows = view === "engine"
+    ? await engineGroupCounts(symbol)
+    : await sql.query(
+        `SELECT count(*)::int AS n FROM mlive.mlive_audit_log WHERE ${where.sql}`,
+        [symbol, where.actions, !where.runsOnly, !where.onlyOther, knownEngineActions()]
+      );
+  const groups = view === "engine" ? (totalRows as { id: EngineGroupId; count: number }[]) : [];
+  const total = view === "engine"
+    ? groups.find((item) => item.id === group)?.count ?? 0
+    : num((totalRows as { n?: unknown }[])[0]?.n);
+  return {
+    rows: (rows as Record<string, unknown>[]).map(auditRow),
+    page,
+    pageSize: AUDIT_PAGE,
+    total,
+    groups,
+  };
+}
+
+function auditWhere(view: AuditView, group: EngineGroupId): { sql: string; actions: string[] | null; runsOnly: boolean; onlyOther: boolean } {
+  const symbol = `($1::text IS NULL OR symbol = $1)`;
+  const action = `(
+    ($2::text[] IS NULL OR action = ANY($2))
+    AND ($3::boolean OR (action LIKE 'run.%' AND action <> 'run.error'))
+    AND ($4::boolean OR (action NOT LIKE 'run.%' AND action <> ALL($5::text[])))
+  )`;
+  const runsOnly = group === "runs";
+  const onlyOther = group === "other";
+  const actions = actionsForEngineGroup(group);
+  if (view === "you") return { sql: `actor NOT IN ('engine', 'kite') AND ${symbol} AND ${action}`, actions, runsOnly, onlyOther };
+  if (view === "bought") {
+    return {
+      sql: `upper(coalesce(after->>'side','')) <> 'SELL' AND (upper(coalesce(after->>'side','')) = 'BUY' OR action IN ('order.sent', 'fill')) AND ${symbol} AND ${action}`,
+      actions,
+      runsOnly,
+      onlyOther,
+    };
+  }
+  if (view === "sold") {
+    return {
+      sql: `(upper(coalesce(after->>'side','')) = 'SELL' OR action IN ('gtt.exit', 'position.marked_sold')) AND ${symbol} AND ${action}`,
+      actions,
+      runsOnly,
+      onlyOther,
+    };
+  }
+  if (view === "engine") {
+    return {
+      sql: `actor IN ('engine', 'kite') AND upper(coalesce(after->>'side','')) NOT IN ('BUY', 'SELL') AND action NOT IN ('order.sent', 'fill', 'gtt.exit', 'position.marked_sold') AND ${symbol} AND ${action}`,
+      actions,
+      runsOnly,
+      onlyOther,
+    };
+  }
+  return { sql: `${symbol} AND ${action}`, actions, runsOnly, onlyOther };
+}
+
+const ENGINE_GROUP_IDS: EngineGroupId[] = ["all", "sizing", "runs", "skips", "stops", "holdings", "alerts", "problems", "recheck", "other"];
+
+async function engineGroupCounts(symbol: string | null): Promise<{ id: EngineGroupId; count: number }[]> {
+  const rows = await sql.query(
+    `SELECT action, count(*)::int AS n FROM (
+       SELECT action
+         FROM mlive.mlive_audit_log
+        WHERE actor IN ('engine', 'kite')
+          AND upper(coalesce(after->>'side','')) NOT IN ('BUY', 'SELL')
+          AND action NOT IN ('order.sent', 'fill', 'gtt.exit', 'position.marked_sold')
+          AND ($1::text IS NULL OR symbol = $1)
+        GROUP BY (timezone('Asia/Kolkata', ts))::date, action, symbol, coalesce(reason, '')
+     ) grouped
+     GROUP BY action`,
+    [symbol]
+  );
+  const counts = new Map<EngineGroupId, number>();
+  for (const item of ENGINE_GROUP_IDS) counts.set(item, 0);
+  let all = 0;
+  for (const row of rows as { action?: unknown; n?: unknown }[]) {
+    const id = engineGroup(String(row.action ?? ""));
+    const n = num(row.n);
+    counts.set(id, (counts.get(id) ?? 0) + n);
+    all += n;
+  }
+  counts.set("all", all);
+  return ENGINE_GROUP_IDS.map((id) => ({ id, count: counts.get(id) ?? 0 }));
+}
+
+function auditRow(row: Record<string, unknown>) {
+  return {
     id: num(row.id),
     ts: String(row.ts),
     actor: String(row.actor),
     action: String(row.action),
     symbol: row.symbol ? String(row.symbol) : null,
+    side: auditSide(row.after),
     reason: row.reason ? String(row.reason) : "",
-  }));
+    repeat: num(row.repeat) || 1,
+  };
+}
+
+function auditSide(value: unknown): "BUY" | "SELL" | null {
+  if (typeof value === "string") {
+    try {
+      return auditSide(JSON.parse(value));
+    } catch {
+      return null;
+    }
+  }
+  if (!value || typeof value !== "object") return null;
+  const side = (value as { side?: unknown }).side;
+  if (side === "BUY" || side === "SELL") return side;
+  if (typeof side === "string" && side.toUpperCase() === "BUY") return "BUY";
+  if (typeof side === "string" && side.toUpperCase() === "SELL") return "SELL";
+  return null;
+}
+
+type SizingBits = { qty?: number; limit?: number; stop?: number; notional?: number; text?: string };
+
+function sentenceFor(row: Record<string, unknown>, sizing: SizingBits, settings: Record<string, unknown>): string {
+  const qty = num(sizing.qty);
+  const limit = num(sizing.limit);
+  return decisionSentence({
+    outcome: String(row.outcome ?? ""),
+    side: String(row.side ?? "BUY"),
+    reasonCode: row.reason_code == null ? null : String(row.reason_code),
+    qty,
+    limit,
+    stop: num(sizing.stop),
+    notional: num(sizing.notional) || qty * limit,
+    sector: row.sector == null ? null : String(row.sector),
+    sectorCount: num(settings.max_per_sector ?? 2),
+    minOrderInr: num(settings.min_order_inr ?? 8000),
+    strategy: row.strategy === "ema" || row.strategy === "rs" ? row.strategy : null,
+    limitCount: row.reason_code === "pacing_day"
+      ? num(settings.max_new_buys_per_day ?? 2)
+      : row.reason_code === "pacing_strategy"
+        ? num(settings.max_buys_per_strategy_per_day ?? 2)
+        : row.reason_code === "strategy_full"
+          ? num(settings.max_open_per_strategy ?? 4)
+          : null,
+  });
+}
+
+export async function cashPicture() {
+  const includeDry = await includeDryRows();
+  const settings = await settingsMap();
+  const [fundRows, positionRows, pendingRows, kiteFunds] = await Promise.all([
+    sql`SELECT COALESCE(SUM(amount), 0) AS total FROM mlive.mlive_fund_ledger WHERE (${includeDry}::boolean OR dry_run = false)`,
+    sql`SELECT COALESCE(SUM(qty * avg_price), 0) AS invested FROM mlive.mlive_positions WHERE closed_at IS NULL AND (${includeDry}::boolean OR dry_run = false)`,
+    sql`SELECT COALESCE(SUM((qty - filled_qty) * limit_price), 0) AS pending FROM mlive.mlive_orders WHERE side = 'BUY' AND status NOT IN ('CANCELLED', 'REJECTED', 'COMPLETE') AND (${includeDry}::boolean OR dry_run = false)`,
+    readKiteFunds(),
+  ]);
+  const tradingLimit = num(fundRows[0]?.total);
+  const kite = kiteFunds.cash ?? 0;
+  const reserve = num(settings.cash_reserve_inr ?? 500);
+  const unread = kiteFunds.connected && kiteFunds.cash == null;
+  return {
+    kiteFunds,
+    tradingLimit,
+    engineCanUse: engineSpendable(tradingLimit, num(positionRows[0]?.invested), num(pendingRows[0]?.pending), kite, reserve),
+    note: unread
+      ? "Kite is connected, but the cash could not be read."
+      : kiteCashMessage({ dryRun: settings.dry_run !== false, system: tradingLimit, kite }),
+  };
 }
 
 export function reviewDate(anchor: string, days: number): string {

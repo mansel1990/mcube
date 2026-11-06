@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { subscribeAlertCount } from "./alert-count";
+import { collapseAlerts } from "@/lib/mlive/rules";
 
 const LINKS = [
   { href: "/live-trade-mansel", label: "Home" },
@@ -33,16 +35,23 @@ export function MliveFrame({ name, dryRun, children }: { name: string; dryRun: b
   const [unseen, setUnseen] = useState(0);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void fetch("/api/mlive/reports/alerts")
+    let cancelled = false;
+    function load() {
+      void fetch("/api/mlive/reports/alerts", { cache: "no-store" })
         .then(async (res) => {
-          if (!res.ok) return;
-          const rows = (await res.json()) as { seen: boolean }[];
-          setUnseen(rows.filter((row) => !row.seen).length);
+          if (!res.ok || cancelled) return;
+          const rows = (await res.json()) as { id: number; code: string; message: string; level: string; symbol?: string | null; seen: boolean }[];
+          setUnseen(collapseAlerts(rows.filter((row) => !row.seen)).length);
         })
         .catch(() => undefined);
-    }, 0);
-    return () => window.clearTimeout(timer);
+    }
+    const timer = window.setTimeout(load, 0);
+    const unsubscribe = subscribeAlertCount(load);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      unsubscribe();
+    };
   }, [pathname]);
 
   function toggleTheme() {
@@ -70,7 +79,10 @@ export function MliveFrame({ name, dryRun, children }: { name: string; dryRun: b
           </nav>
           <div className="right">
             <Link className="icon-btn" href="/live-trade-mansel/reports" aria-label={unseen ? `Alerts, ${unseen} unseen` : "Alerts"}>
-              <span aria-hidden="true">🔔</span>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <path d="M6 8a6 6 0 1112 0c0 7 3 8 3 8H3s3-1 3-8" />
+                <path d="M10 21a2 2 0 004 0" />
+              </svg>
               {unseen > 0 && <span className="count badge-count">{unseen}</span>}
             </Link>
             <button type="button" className="icon-btn" onClick={toggleTheme} aria-label="Toggle light or dark theme">

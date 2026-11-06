@@ -33,6 +33,13 @@ export function previousTradingDay(iso: string, holidays: ReadonlySet<string>): 
   return cursor;
 }
 
+/** First session of a window of `sessions` trading days ending on `day`. */
+export function sessionsBack(day: string, sessions: number, holidays: ReadonlySet<string>): string {
+  let cursor = isTradingDay(day, holidays) ? day : previousTradingDay(day, holidays);
+  for (let i = 1; i < Math.max(1, sessions); i++) cursor = previousTradingDay(cursor, holidays);
+  return cursor;
+}
+
 export function todayIst(now = new Date()): string {
   return now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 }

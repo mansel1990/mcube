@@ -3,7 +3,7 @@ import { estimateCharges, withDp } from "@/lib/mlive/charges";
 import { clampSellQty, fillDeltaPrice, gttLastPrice, gttPrices, gttQtyAction, makeTag, rejectIsKnown, type ExitParams, type Side } from "@/lib/mlive/rules";
 import { audit } from "./audit";
 import { raiseAlert } from "./alerts";
-import { num, q } from "./db";
+import { jsonValue, num, q } from "./db";
 import { MliveKite } from "./kite";
 import { livePrice, previousClose } from "./market";
 import type { MliveSettings } from "./load";
@@ -78,6 +78,99 @@ export async function decisionsFor(day: string, side?: Side): Promise<Decision[]
   }));
 }
 
+export type BuyPace = {
+  newBuys: number;
+  strategyBuys: { rs: number; ema: number };
+  openInStrategy: { rs: number; ema: number };
+  deployed: number;
+  baseline: number | null;
+};
+
+/** Buys that still count today. Rejected and cancelled orders do not. */
+export async function buyPace(
+  day: string,
+  includeDry = false,
+  count: { proposed?: boolean; approved?: boolean } = {}
+): Promise<BuyPace> {
+  const orders = await q<{ strategy: string | null; n: unknown; notional: unknown }>(
+    `SELECT i.strategy, COUNT(*)::int AS n, COALESCE(SUM(o.qty * o.limit_price), 0) AS notional
+       FROM mlive.mlive_orders o
+       JOIN mlive.mlive_decisions d ON d.id = o.decision_id
+       LEFT JOIN mlive.mlive_ideas i ON i.id = d.idea_id
+      WHERE d.trade_date = $1::date
+        AND o.side = 'BUY'
+        AND o.status NOT IN ('CANCELLED', 'REJECTED')
+        AND ($2::boolean OR o.dry_run = false)
+      GROUP BY i.strategy`,
+    [day, includeDry]
+  );
+  const outcomes = [count.proposed ? "proposed" : "", count.approved ? "approved" : ""].filter(Boolean);
+  if (outcomes.length) {
+    const waiting = await q<{ strategy: string | null; n: unknown; notional: unknown }>(
+      `SELECT i.strategy, COUNT(*)::int AS n,
+              COALESCE(SUM((d.sizing->>'qty')::numeric * (d.sizing->>'limit')::numeric), 0) AS notional
+         FROM mlive.mlive_decisions d
+         LEFT JOIN mlive.mlive_ideas i ON i.id = d.idea_id
+        WHERE d.trade_date = $1::date
+          AND d.side = 'BUY'
+          AND d.outcome = ANY($3::text[])
+          AND ($2::boolean OR d.dry_run = false)
+          AND NOT EXISTS (
+            SELECT 1 FROM mlive.mlive_orders o
+             WHERE o.decision_id = d.id AND o.side = 'BUY' AND o.status NOT IN ('CANCELLED', 'REJECTED')
+          )
+        GROUP BY i.strategy`,
+      [day, includeDry, outcomes]
+    );
+    orders.push(...waiting);
+  }
+  const open = await q<{ strategy: string | null; n: unknown }>(
+    `SELECT strategy, COUNT(*)::int AS n
+       FROM mlive.mlive_positions
+      WHERE closed_at IS NULL AND ($1::boolean OR dry_run = false)
+      GROUP BY strategy`,
+    [includeDry]
+  );
+  const report = await q<{ decision_summary: unknown }>(
+    `SELECT decision_summary FROM mlive.mlive_daily_reports WHERE trade_date = $1::date`,
+    [day]
+  );
+  const summary = jsonValue(report[0]?.decision_summary);
+  const baselineRaw = summary && typeof summary === "object" ? (summary as { deployBaseline?: unknown }).deployBaseline : null;
+  const strategyBuys = { rs: 0, ema: 0 };
+  let deployed = 0;
+  let newBuys = 0;
+  for (const row of orders) {
+    const n = num(row.n);
+    newBuys += n;
+    deployed += num(row.notional);
+    if (row.strategy === "rs" || row.strategy === "ema") strategyBuys[row.strategy] += n;
+  }
+  const openInStrategy = { rs: 0, ema: 0 };
+  for (const row of open) {
+    if (row.strategy === "rs" || row.strategy === "ema") openInStrategy[row.strategy] = num(row.n);
+  }
+  return {
+    newBuys,
+    strategyBuys,
+    openInStrategy,
+    deployed,
+    baseline: baselineRaw == null || baselineRaw === "" || !(num(baselineRaw) > 0) ? null : num(baselineRaw),
+  };
+}
+
+export async function saveDeployBaseline(day: string, baseline: number): Promise<void> {
+  if (!(baseline > 0)) return;
+  await q(
+    `INSERT INTO mlive.mlive_daily_reports (trade_date, decision_summary, text)
+     VALUES ($1::date, jsonb_build_object('deployBaseline', $2::numeric), 'Morning draft')
+     ON CONFLICT (trade_date) DO UPDATE
+       SET decision_summary = COALESCE(mlive.mlive_daily_reports.decision_summary, '{}'::jsonb)
+         || jsonb_build_object('deployBaseline', $2::numeric)`,
+    [day, baseline]
+  );
+}
+
 export async function sentCounts(day: string): Promise<{ buys: number; sells: number }> {
   const rows = await q<{ side: string; n: unknown }>(
     `SELECT o.side, COUNT(*)::int AS n
@@ -149,7 +242,7 @@ export async function recordOrder(args: {
     actor: "engine",
     action: "order.sent",
     symbol: args.symbol,
-    after: { tag: args.tag, qty: args.qty, limit: args.limit, dryRun: args.dryRun, kiteOrderId: args.kiteOrderId },
+    after: { side: args.side, tag: args.tag, qty: args.qty, limit: args.limit, dryRun: args.dryRun, kiteOrderId: args.kiteOrderId },
     runId: args.runId,
   });
   return num(rows[0].id);
@@ -176,7 +269,7 @@ export async function recordExitOrder(args: {
     actor: "kite",
     action: "gtt.exit",
     symbol: args.symbol,
-    after: { kiteOrderId: args.kiteOrderId, qty: args.qty, limit: args.limit, dryRun: args.dryRun },
+    after: { side: "SELL", kiteOrderId: args.kiteOrderId, qty: args.qty, limit: args.limit, dryRun: args.dryRun },
     runId: args.runId,
   });
   return num(rows[0].id);
@@ -239,7 +332,7 @@ export async function applyFill(args: {
     actor: "kite",
     action: "fill",
     symbol: args.symbol,
-    after: { qty: delta, price, charges },
+    after: { side: args.side, qty: delta, price, charges },
     runId: args.runId,
   });
   await raiseAlert({

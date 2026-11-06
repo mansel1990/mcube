@@ -1,13 +1,17 @@
 import { istMinutes, previousTradingDay, todayIst } from "@/lib/mlive/calendar";
 import {
+  decisionSentence,
+  engineSpendable,
   entryBelowEma,
   haltReasons,
   heldOutsideSystem,
   ideaRejectReason,
   isExcluded,
   kiteCashGap,
+  kiteCashMessage,
   limitPrice,
   preflightSessionPlan,
+  paceBuys,
   priceSkip,
   rankIdeas,
   reconcile,
@@ -18,8 +22,8 @@ import {
 } from "@/lib/mlive/rules";
 import { audit } from "../audit";
 import { raiseAlert } from "../alerts";
-import { openCost, openPositions, pendingBuyValue } from "../book";
-import { num, q } from "../db";
+import { buyPace, openCost, openPositions, pendingBuyValue, saveDeployBaseline } from "../book";
+import { jsonValue, num, q } from "../db";
 import { MliveKite } from "../kite";
 import { fundBalance, holidaySet, loadSettings, loadState, setState } from "../load";
 import { bhavcopyPresent, loadBars, previousClose, yahooPreviousClose } from "../market";
@@ -150,7 +154,19 @@ export async function preflight(): Promise<void> {
     const spendable = spendableCash(system, kiteCash, settings.cashReserve);
     const gap = kiteCashGap(system, kiteCash);
     if (gap > 0) {
-      await raiseAlert({ level: "problem", code: "kite_cash_low", message: `Kite cash is below system cash by ₹${Math.round(gap)}`, runId });
+      const already = await q(
+        `SELECT id FROM mlive.mlive_alerts
+          WHERE code = 'kite_cash_low' AND (ts AT TIME ZONE 'Asia/Kolkata')::date = $1::date`,
+        [today]
+      );
+      if (!already[0]) {
+        await raiseAlert({
+          level: "problem",
+          code: "kite_cash_low",
+          message: kiteCashMessage({ dryRun: settings.dryRun, system, kite: kiteCash }),
+          runId,
+        });
+      }
     }
 
     const ideas = await q(
@@ -222,10 +238,19 @@ export async function preflight(): Promise<void> {
     }
     let cash = spendable;
     let planned = 0;
+    const pace = await buyPace(today, settings.dryRun, { approved: true });
+    let paceBook = {
+      newBuys: pace.newBuys,
+      strategyBuys: pace.strategyBuys,
+      openInStrategy: pace.openInStrategy,
+      deployed: pace.deployed,
+      baseline: pace.baseline,
+    };
+    const engineNow = engineSpendable(fund, invested, await pendingBuyValue(settings.dryRun), kiteCash, settings.cashReserve);
     for (const [index, idea] of ranked.entries()) {
       const source = ideas.find((row) => String(row.symbol) === idea.symbol && row.strategy === idea.strategy);
       if (!source) continue;
-      if (planned >= settings.maxBuys || positions.length + planned >= settings.maxOpen) {
+      if (positions.length + planned >= settings.maxOpen) {
         await proposeSkip(runId, today, num(source.id), idea.symbol, "limit", "daily or position limit", settings.dryRun);
         continue;
       }
@@ -242,7 +267,38 @@ export async function preflight(): Promise<void> {
       });
       await audit({ actor: "engine", action: "sizing", symbol: idea.symbol, reason: sized.text, runId });
       if (sized.reason !== "ok") {
-        await proposeSkip(runId, today, num(source.id), idea.symbol, sized.reason, sized.text, settings.dryRun);
+        const would = Math.min(sized.qtyRisk, sized.qtyCap);
+        await upsertBuy(runId, today, num(source.id), idea.symbol, "skipped", sized.reason, sized.text, {
+          qty: would,
+          limit: entry,
+          stop,
+          notional: would * entry,
+          text: sized.text,
+        }, null, settings.dryRun);
+        continue;
+      }
+      const paced = paceBuys(
+        [{ symbol: idea.symbol, strategy: idea.strategy, notional: sized.notional }],
+        paceBook,
+        {
+          maxNewBuysPerDay: settings.maxNewBuys,
+          maxBuysPerDay: settings.maxBuys,
+          maxBuysPerStrategyPerDay: settings.maxBuysPerStrategy,
+          maxOpenPerStrategy: settings.maxOpenPerStrategy,
+          maxDailyDeployPct: settings.maxDailyDeployPct,
+          engineCanUseNow: engineNow,
+        }
+      );
+      paceBook = paced.book;
+      const paceReason = paced.results[0]?.reason ?? "ok";
+      if (paceReason !== "ok") {
+        const text = decisionSentence({
+          outcome: "skipped",
+          reasonCode: paceReason,
+          strategy: idea.strategy,
+          limitCount: paceReason === "strategy_full" ? settings.maxOpenPerStrategy : paceReason === "pacing_strategy" ? settings.maxBuysPerStrategy : settings.maxNewBuys,
+        });
+        await proposeSkip(runId, today, num(source.id), idea.symbol, paceReason, text, settings.dryRun);
         continue;
       }
       await upsertBuy(runId, today, num(source.id), idea.symbol, "proposed", "ranked", sized.text, {
@@ -264,7 +320,8 @@ export async function preflight(): Promise<void> {
       `SELECT COUNT(*)::int AS n FROM mlive.mlive_decisions WHERE trade_date = $1::date AND side = 'SELL' AND outcome = 'proposed'`,
       [today]
     ))[0];
-    await writeDraft(today, { buys: planned, sells: num(sellCount?.n), ideas: ideas.length });
+    if (paceBook.baseline != null && paceBook.baseline > 0) await saveDeployBaseline(today, paceBook.baseline);
+    await writeDraft(today, { buys: planned, sells: num(sellCount?.n), ideas: ideas.length, deployBaseline: paceBook.baseline });
     return { buys: planned, ideas: ideas.length, spendable };
   });
 }
@@ -304,11 +361,24 @@ async function upsertBuy(
   );
 }
 
-async function writeDraft(day: string, summary: unknown): Promise<void> {
+async function writeDraft(day: string, summary: Record<string, unknown>): Promise<void> {
+  const existing = await q<{ decision_summary: unknown }>(
+    `SELECT decision_summary FROM mlive.mlive_daily_reports WHERE trade_date = $1::date`,
+    [day]
+  );
+  const prev = jsonValue(existing[0]?.decision_summary);
+  const prior = prev && typeof prev === "object" ? (prev as Record<string, unknown>) : {};
+  const merged = { ...prior, ...summary };
+  const nextBaseline = Number(merged.deployBaseline);
+  const priorBaseline = Number(prior.deployBaseline);
+  if (!(nextBaseline > 0)) {
+    if (priorBaseline > 0) merged.deployBaseline = prior.deployBaseline;
+    else delete merged.deployBaseline;
+  }
   await q(
     `INSERT INTO mlive.mlive_daily_reports (trade_date, decision_summary, text)
      VALUES ($1::date, $2::jsonb, 'Morning draft')
      ON CONFLICT (trade_date) DO UPDATE SET decision_summary = EXCLUDED.decision_summary`,
-    [day, JSON.stringify(summary)]
+    [day, JSON.stringify(merged)]
   );
 }

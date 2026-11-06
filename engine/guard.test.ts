@@ -64,6 +64,15 @@ describe("order guard", () => {
     expect(guardOrder(intent({ side: "SELL", tag: "mliveS7F3K2", qty: 10 }), ctx({ systemQty: 10 })).ok).toBe(true);
   });
 
+  it("paces new buys without hiding the send cap", () => {
+    expect(guardOrder(intent(), ctx({ buysSent: 0, newBuys: 2, maxNewBuys: 2 })).reason).toBe("pacing_day");
+    expect(guardOrder(intent(), ctx({ buysSent: 4, newBuys: 2, maxNewBuys: 2 })).reason).toBe("buy_limit");
+    expect(guardOrder(intent(), ctx({ strategyBuys: 2, maxBuysPerStrategy: 2 })).reason).toBe("pacing_strategy");
+    expect(guardOrder(intent(), ctx({ openInStrategy: 4, maxOpenPerStrategy: 4 })).reason).toBe("strategy_full");
+    expect(guardOrder(intent(), ctx({ deployed: 40_000, deployCap: 50_000 })).reason).toBe("pacing_cash");
+    expect(guardOrder(intent(), ctx({ openInStrategy: 4, maxOpenPerStrategy: 4, isNewSymbol: false })).ok).toBe(true);
+  });
+
   it("enforces the 25% cap and spendable cash", () => {
     expect(guardOrder(intent({ qty: 10, limitPrice: 2065 }), ctx()).reason).toBe("order_cap");
     expect(guardOrder(intent({ qty: 9, limitPrice: 2065 }), ctx({ spendable: 10_000 })).reason).toBe("spendable");

@@ -260,6 +260,10 @@ INSERT INTO mlive.mlive_settings (key, value) VALUES
   ('min_order_inr', '8000'),
   ('cash_reserve_inr', '500'),
   ('max_buys_per_day', '4'),
+  ('max_new_buys_per_day', '2'),
+  ('max_buys_per_strategy_per_day', '2'),
+  ('max_open_per_strategy', '4'),
+  ('max_daily_deploy_pct', '0.5'),
   ('max_sells_per_day', '4'),
   ('max_open_positions', '6'),
   ('max_per_sector', '2'),
@@ -855,3 +859,15 @@ ON CONFLICT (symbol) DO UPDATE SET
   is_etf = EXCLUDED.is_etf,
   excluded = EXCLUDED.excluded,
   updated_at = now();
+
+CREATE TABLE IF NOT EXISTS mlive.mlive_requests (
+  id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  kind          text NOT NULL CHECK (kind IN ('recheck')),
+  requested_at  timestamptz NOT NULL DEFAULT now(),
+  by_user       text NOT NULL,
+  done_at       timestamptz
+);
+
+CREATE INDEX IF NOT EXISTS mlive_requests_open_idx
+  ON mlive.mlive_requests (kind, requested_at)
+  WHERE done_at IS NULL;

@@ -39,6 +39,16 @@ export type GuardContext = {
   isNewSymbol: boolean;
   sectorCount: number;
   maxPerSector: number;
+  /** New buys already committed today, excluding rejected and cancelled orders. */
+  newBuys?: number;
+  maxNewBuys?: number;
+  strategyBuys?: number;
+  maxBuysPerStrategy?: number;
+  openInStrategy?: number;
+  maxOpenPerStrategy?: number;
+  deployed?: number;
+  /** 50% of Engine can use now, locked at the first buy step. */
+  deployCap?: number;
 };
 
 export type GuardVerdict = { ok: true; reason: "ok" } | { ok: false; reason: string };
@@ -75,6 +85,10 @@ export function guardOrder(intent: GuardIntent, ctx: GuardContext): GuardVerdict
     if (ctx.isNewSymbol && ctx.openPositions >= ctx.maxOpenPositions) return fail("max_positions");
     if (ctx.sectorCount >= ctx.maxPerSector) return fail("sector_cap");
     if (ctx.buysSent >= ctx.maxBuys) return fail("buy_limit");
+    if (ctx.maxNewBuys != null && (ctx.newBuys ?? 0) >= ctx.maxNewBuys) return fail("pacing_day");
+    if (ctx.maxBuysPerStrategy != null && (ctx.strategyBuys ?? 0) >= ctx.maxBuysPerStrategy) return fail("pacing_strategy");
+    if (ctx.maxOpenPerStrategy != null && ctx.isNewSymbol && (ctx.openInStrategy ?? 0) >= ctx.maxOpenPerStrategy) return fail("strategy_full");
+    if (ctx.deployCap != null && (ctx.deployed ?? 0) + notional > ctx.deployCap + 1e-6) return fail("pacing_cash");
     return { ok: true, reason: "ok" };
   }
 

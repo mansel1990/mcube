@@ -1,5 +1,6 @@
 import { KiteConnect, type Connect, type GTTParams } from "kiteconnect";
 import { decryptToken } from "@/lib/mlive/crypto";
+import { kiteAvailableCash } from "@/lib/mlive/rules";
 import { todayIst } from "@/lib/mlive/calendar";
 import { asDate, q } from "./db";
 
@@ -70,7 +71,7 @@ export class MliveKite {
   async equityCash(): Promise<number> {
     const kc = await this.client();
     const margins = await readRetry("margins", () => kc.getMargins("equity"));
-    return margins.equity?.available.live_balance ?? margins.equity?.available.cash ?? 0;
+    return kiteAvailableCash(margins) ?? 0;
   }
 
   async orders(): Promise<KiteOrder[]> {

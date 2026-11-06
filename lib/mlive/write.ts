@@ -27,6 +27,10 @@ const EDITABLE = new Set([
   "min_order_inr",
   "cash_reserve_inr",
   "max_buys_per_day",
+  "max_new_buys_per_day",
+  "max_buys_per_strategy_per_day",
+  "max_open_per_strategy",
+  "max_daily_deploy_pct",
   "max_sells_per_day",
   "max_open_positions",
   "max_per_sector",
@@ -61,7 +65,7 @@ export async function recordFund(kind: "deposit" | "withdrawal", amount: number,
   const fundRows = await sql`SELECT COALESCE(SUM(amount), 0) AS total FROM mlive.mlive_fund_ledger WHERE dry_run = false`;
   const fund = Number(fundRows[0]?.total ?? 0);
   if (kind === "withdrawal" && Math.abs(signed) > fund) {
-    throw new Error("Withdrawal is larger than the fund");
+    throw new Error("That is more than the trading limit");
   }
   await sql`
     INSERT INTO mlive.mlive_fund_ledger (kind, amount, note) VALUES (${kind}, ${signed}, ${note})`;

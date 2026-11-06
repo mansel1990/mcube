@@ -107,8 +107,10 @@
 .mlive .side-tag { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; padding: 4px 8px; border-radius: 6px; }
 .mlive .buy { background: color-mix(in srgb, var(--up) 16%, transparent); color: var(--up); }
 .mlive .sell { background: color-mix(in srgb, var(--down) 16%, transparent); color: var(--down); }
-.mlive .btn { height: 44px; padding: 0 18px; border-radius: 10px; font-weight: 600; font-size: 14px; cursor: pointer; border: 1px solid var(--line2); background: var(--surface); color: var(--ink); }
+.mlive .btn { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; height: 44px; padding: 0 18px; border-radius: 10px; font-weight: 600; font-size: 14px; line-height: 1; text-decoration: none; cursor: pointer; border: 1px solid var(--line2); background: var(--surface); color: var(--ink); }
 .mlive .btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+.mlive .btn.warn { background: var(--warn); border-color: var(--warn); color: #1a1408; }
+.mlive[data-theme="light"] .btn.warn { color: #fff; }
 .mlive .btn:focus-visible, .mlive .nav a:focus-visible, .mlive .icon-btn:focus-visible, .mlive .mode:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .mlive .hold-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
 .mlive .hold { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
@@ -125,7 +127,8 @@
 .mlive td { padding: 14px 16px; border-bottom: 1px solid var(--line); }
 .mlive tr:last-child td { border-bottom: 0; }
 .mlive .r { text-align: right; }
-.mlive .chip { display: inline-flex; font-size: 12px; font-weight: 600; padding: 4px 9px; border-radius: 7px; background: var(--surface2); color: var(--ink2); }
+.mlive .chip { display: inline-flex; align-items: center; font-size: 12px; font-weight: 600; padding: 4px 9px; border-radius: 7px; background: var(--surface2); color: var(--ink2); }
+.mlive button.chip { border: 0; cursor: pointer; font-family: inherit; }
 .mlive .chip.pick { background: var(--brand); color: #fff; }
 .mlive .chip.bought { background: color-mix(in srgb, var(--up) 14%, transparent); color: var(--up); }
 .mlive .two { display: grid; grid-template-columns: 1.25fr 1fr; gap: 16px; }
@@ -133,12 +136,32 @@
 .mlive .fstep { flex: 1; min-width: 90px; background: var(--surface2); border-radius: 12px; padding: 12px 14px; }
 .mlive .card-h { padding: 18px 20px; }
 .mlive .set-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.mlive .cash-strip { grid-template-columns: repeat(3, 1fr); margin-top: 20px; }
+.mlive .span-2 { grid-column: 1 / -1; }
+.mlive .stack { display: flex; flex-direction: column; gap: 16px; }
 .mlive .modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 0 20px 20px; }
 .mlive .mode { border: 1px solid var(--line); border-radius: 12px; padding: 14px; cursor: pointer; background: var(--surface); text-align: left; color: var(--ink); }
-.mlive .mode[aria-pressed="true"] { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+.mlive .mode[data-mode="approve"][aria-pressed="true"] { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 10%, var(--surface)); box-shadow: 0 0 0 3px var(--brand-soft); }
+.mlive .mode[data-mode="auto"][aria-pressed="true"] { border-color: var(--up); background: color-mix(in srgb, var(--up) 12%, var(--surface)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--up) 22%, transparent); }
+.mlive .mode[data-mode="paused"][aria-pressed="true"] { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, var(--surface)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 24%, transparent); }
+.mlive .pill.on { color: var(--up); border-color: color-mix(in srgb, var(--up) 45%, var(--line)); background: color-mix(in srgb, var(--up) 12%, var(--surface)); }
+.mlive .pill.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); background: color-mix(in srgb, var(--warn) 14%, var(--surface)); }
+.mlive .pill.off { color: var(--ink3); }
+.mlive .switch { display: inline-flex; align-items: center; gap: 10px; border: 0; background: none; cursor: pointer; padding: 0; color: inherit; }
+.mlive .switch .word { font-size: 13px; font-weight: 700; min-width: 28px; text-align: right; }
+.mlive .switch[aria-pressed="true"] .word { color: var(--up); }
+.mlive .switch[aria-pressed="false"] .word { color: var(--down); }
+.mlive .switch .knob { width: 44px; height: 26px; border-radius: 13px; background: var(--up); position: relative; flex: none; }
+.mlive .switch[aria-pressed="false"] .knob { background: var(--down); }
+.mlive .switch .knob::after { content: ""; position: absolute; top: 3px; left: 21px; width: 20px; height: 20px; border-radius: 50%; background: #fff; }
+.mlive .switch[aria-pressed="false"] .knob::after { left: 3px; }
 .mlive .mode span, .mlive .field small { display: block; color: var(--ink3); font-size: 12px; margin-top: 4px; }
 .mlive .field { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 20px; border-top: 1px solid var(--line); }
 .mlive .field input { width: 140px; height: 40px; border-radius: 9px; border: 1px solid var(--line2); background: var(--surface2); color: var(--ink); padding: 0 12px; font-family: var(--font-mlive-mono), monospace; text-align: right; }
+.mlive .tabs { display: flex; gap: 4px; margin-top: 18px; border-bottom: 1px solid var(--line); }
+.mlive .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--ink3); font-weight: 600; font-size: 14px; padding: 10px 14px; margin-bottom: -1px; cursor: pointer; }
+.mlive .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--brand); }
+.mlive .filters { display: flex; gap: 8px; flex-wrap: wrap; padding: 16px 20px 0; }
 .mlive .seg { display: inline-flex; background: var(--surface2); border-radius: 10px; padding: 3px; }
 .mlive .seg button { border: 0; background: none; color: var(--ink3); font-weight: 600; height: 34px; padding: 0 12px; border-radius: 8px; cursor: pointer; }
 .mlive .seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); }
@@ -148,7 +171,7 @@
 .mlive .chart-card { padding: 20px; }
 .mlive .note { font-size: 12px; color: var(--ink3); margin-top: 18px; }
 @media (max-width: 900px) {
-  .mlive .hero, .mlive .two, .mlive .set-grid, .mlive .modes { grid-template-columns: 1fr; }
+  .mlive .hero, .mlive .two, .mlive .set-grid, .mlive .modes, .mlive .cash-strip { grid-template-columns: 1fr; }
   .mlive .nav { display: none; }
   .mlive .mnav { display: flex; }
   .mlive .big { font-size: 36px; }
