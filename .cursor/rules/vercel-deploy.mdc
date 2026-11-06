@@ -13,6 +13,7 @@ npm run build
 ```
 
 - `npm run build` is the Vercel build. A type error, a bad import, or two pages resolving to the same URL fails the deployment.
+- A green local build does not prove the Vercel build. This app loads fonts with `next/font/google`. Google sometimes returns `fonts.gstatic.com/l/font?kit=…&skey=…` with no `.woff2`. Next.js 16.1.6 then fails on Vercel with `next/font/google queries have exactly one entry` and `Can't resolve '@vercel/turbopack-next/internal/font/google/font'`, traced to a layout such as `app/(studio)/layout.tsx`. Redeploying the same commit does not fix it. Before pushing, `next` and `eslint-config-next` must be at least `16.4.3` (the release that parses those URLs). If they are older, bump both, then run the build again.
 - Do not add a second `app/page.tsx` next to `app/(studio)/page.tsx`. Both would claim `/`.
 - Keep studio styles under `.studio`. Do not change the global tokens in `app/globals.css` or `tailwind.config.ts` for marketing work.
 - Every image path used by the site must exist under `public/`. Do not commit `public/case-studies/unused/` or the base64 prototype HTML.
