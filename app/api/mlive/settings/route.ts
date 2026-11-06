@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { sql } from "@/lib/sql";
 import { requireMliveSession } from "@/lib/mlive/auth";
+import { kiteSessionStatus } from "@/lib/mlive/kite-session";
 import { cashPicture, reviewDate, settingsMap } from "@/lib/mlive/read";
 import { changeSetting, settingAllowed } from "@/lib/mlive/write";
 
@@ -10,9 +11,9 @@ export async function GET() {
   const settings = await settingsMap();
   const anchor = String(settings.review_anchor_date ?? "2026-11-05").replace(/"/g, "");
   const days = Number(settings.review_every_days ?? 60);
-  const [stateRows, kiteRows, runs, cash] = await Promise.all([
+  const [stateRows, kite, runs, cash] = await Promise.all([
     sql`SELECT status, mode FROM mlive.mlive_state WHERE id = 1`,
-    sql`SELECT token_date, connected_at, kite_user_id FROM mlive.mlive_kite_sessions ORDER BY connected_at DESC LIMIT 1`,
+    kiteSessionStatus(),
     sql`SELECT kind, status, finished_at FROM mlive.mlive_runs ORDER BY id DESC LIMIT 1`,
     cashPicture(),
   ]);
@@ -20,7 +21,7 @@ export async function GET() {
     settings,
     nextReview: reviewDate(anchor, days),
     state: stateRows[0] ?? null,
-    kite: kiteRows[0] ?? null,
+    kite,
     kiteFunds: cash.kiteFunds,
     tradingLimit: cash.tradingLimit,
     engineCanUse: cash.engineCanUse,

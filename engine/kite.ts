@@ -44,7 +44,7 @@ export class MliveKite {
     if (!apiKey) throw new Error("KITE_API_KEY is not set");
     if (!tokenKey) throw new Error("MLIVE_TOKEN_KEY is not set");
     const rows = await q<{ access_token_enc: string; token_date: unknown }>(
-      `SELECT access_token_enc, token_date FROM mlive.mlive_kite_sessions ORDER BY connected_at DESC LIMIT 1`
+      `SELECT access_token_enc, token_date::text AS token_date FROM mlive.mlive_kite_sessions ORDER BY connected_at DESC LIMIT 1`
     );
     const row = rows[0];
     if (!row || asDate(row.token_date) !== todayIst()) throw new Error("no Kite session for today");
@@ -71,7 +71,9 @@ export class MliveKite {
   async equityCash(): Promise<number> {
     const kc = await this.client();
     const margins = await readRetry("margins", () => kc.getMargins("equity"));
-    return kiteAvailableCash(margins) ?? 0;
+    const cash = kiteAvailableCash(margins);
+    if (cash == null) throw new Error("Kite margins: cash missing in response");
+    return cash;
   }
 
   async orders(): Promise<KiteOrder[]> {

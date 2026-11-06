@@ -9,8 +9,8 @@ type Payload = {
   settings: Settings;
   nextReview: string;
   state: { status?: string; mode?: string } | null;
-  kite: { connected_at?: string; kite_user_id?: string } | null;
-  kiteFunds: { connected: boolean; cash: number | null };
+  kite: { connected: boolean; connectedAt: string | null; kiteUserId: string | null } | null;
+  kiteFunds: { connected: boolean; cash: number | null; error?: string | null };
   tradingLimit: number;
   engineCanUse: number;
   cashNote: string;
@@ -143,7 +143,7 @@ export function SettingsView() {
           <div className={`v n ${payload.kiteFunds.cash != null && payload.kiteFunds.cash <= 0 ? "down" : payload.kiteFunds.cash != null ? "up" : ""}`}>
             {payload.kiteFunds.cash == null ? "—" : inr(payload.kiteFunds.cash, 2)}
           </div>
-          <div className="h">{payload.kiteFunds.connected ? payload.cashNote || "Live available equity cash." : "Connect Kite to see the cash in the account."}</div>
+          <div className="h">{payload.kiteFunds.error ? payload.kiteFunds.error : payload.kiteFunds.connected ? payload.cashNote || "Live available equity cash." : "Connect Kite to see the cash in the account."}</div>
         </div>
         <div className="card stat">
           <p className="lbl">Trading limit</p>
@@ -182,11 +182,11 @@ export function SettingsView() {
           </div>
           <div className="field">
             <div><b>Account</b><small>Zerodha client ID</small></div>
-            <span className="n">{payload.kite?.kite_user_id || "—"}</span>
+            <span className="n">{payload.kite?.kiteUserId || "—"}</span>
           </div>
           <div className="field">
             <div><b>Session</b><small>Kite tokens expire every morning</small></div>
-            <span className={`pill ${payload.kite?.connected_at ? "on" : "off"}`}>{payload.kite?.connected_at ? `Connected ${new Date(String(payload.kite.connected_at)).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}` : "Not connected"}</span>
+            <span className={`pill ${payload.kite?.connected ? "on" : "off"}`}>{payload.kite?.connected ? `Connected ${payload.kite.connectedAt ? new Date(payload.kite.connectedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" }) : ""}` : "Not connected"}</span>
           </div>
           <div className="field">
             <div><b>Static IP</b><small>Whitelisted for order placement</small></div>

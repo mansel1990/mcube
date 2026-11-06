@@ -163,14 +163,22 @@ export function kiteCashGap(system: number, kite: number): number {
   return Math.max(0, system - kite);
 }
 
+function finiteCash(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 /** Cash Kite can use for a new equity order. The live balance is the current figure. */
-export function kiteAvailableCash(margins: {
-  equity?: { available?: { live_balance?: number; cash?: number } };
-} | null | undefined): number | null {
-  const available = margins?.equity?.available;
-  const cash = available?.live_balance ?? available?.cash;
-  if (typeof cash !== "number" || !Number.isFinite(cash)) return null;
-  return cash;
+export function kiteAvailableCash(margins: unknown): number | null {
+  if (!margins || typeof margins !== "object") return null;
+  const record = margins as {
+    available?: { live_balance?: unknown; cash?: unknown };
+    equity?: { available?: { live_balance?: unknown; cash?: unknown } };
+  };
+  const available = record.available ?? record.equity?.available;
+  if (!available) return null;
+  const live = finiteCash(available.live_balance);
+  if (live != null) return live;
+  return finiteCash(available.cash);
 }
 
 export function isExcluded(symbol: string, exclude: readonly string[], isEtf: boolean): boolean {

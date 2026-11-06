@@ -1,0 +1,23 @@
+{
+  "enabled": true,
+  "net": 80500,
+  "available": {
+    "adhoc_margin": 0,
+    "cash": 80000,
+    "opening_balance": 80000,
+    "live_balance": 80500,
+    "collateral": 0,
+    "intraday_payin": 500
+  },
+  "utilised": {
+    "debits": 0,
+    "exposure": 0,
+    "m2m_realised": 0,
+    "m2m_unrealised": 0,
+    "option_premium": 0,
+    "payout": 0,
+    "span": 0,
+    "holding_sales": 0,
+    "turnover": 0
+  }
+}

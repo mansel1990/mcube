@@ -1,9 +1,15 @@
 import { istMinutes, todayIst } from "@/lib/mlive/calendar";
 import { recheckDue } from "@/lib/mlive/rules";
+import { audit } from "../audit";
+import { raiseAlert } from "../alerts";
 import { q } from "../db";
 import { sendReady } from "../execute";
 import { runJob } from "../run";
 import { recheckBuys } from "./recheck";
+
+function failureText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export async function approvals(): Promise<void> {
   const minute = istMinutes();
@@ -16,15 +22,35 @@ export async function approvals(): Promise<void> {
       `SELECT id FROM mlive.mlive_requests WHERE kind = 'recheck' AND done_at IS NULL ORDER BY id LIMIT 1`
     );
     let rechecked = 0;
+    let closeRequest = false;
     if (recheckDue(minute, Boolean(open[0]))) {
-      rechecked = await recheckBuys(runId);
-      if (open[0]) {
-        await q(`UPDATE mlive.mlive_requests SET done_at = now() WHERE kind = 'recheck' AND done_at IS NULL`);
+      try {
+        rechecked = await recheckBuys(runId);
+        closeRequest = Boolean(open[0]);
+      } catch (error) {
+        const message = `Re-check skipped: ${failureText(error)}`;
+        await audit({ actor: "engine", action: "recheck.skipped", reason: message, runId });
+        await raiseAlert({ level: "problem", code: "engine_error", message, runId });
       }
     }
-    if (minute < 9 * 60 + 46) return { rechecked, skipped: "before send window" };
+    const close = async () => {
+      if (!closeRequest) return;
+      await q(`UPDATE mlive.mlive_requests SET done_at = now() WHERE kind = 'recheck' AND done_at IS NULL`);
+    };
+    if (minute < 9 * 60 + 46) {
+      await close();
+      return { rechecked, skipped: "before send window" };
+    }
     const sells = await sendReady({ side: "SELL", chase: false, runId });
-    const buys = await sendReady({ side: "BUY", chase: true, runId });
+    let buys: Record<string, unknown>;
+    try {
+      buys = await sendReady({ side: "BUY", chase: true, runId });
+    } catch (error) {
+      const message = `Buys skipped: ${failureText(error)}`;
+      await audit({ actor: "engine", action: "buys.skipped", reason: message, runId });
+      await raiseAlert({ level: "problem", code: "engine_error", message, runId });
+      buys = { skipped: failureText(error) };
+    }
     if (minute >= 14 * 60 + 30) {
       const expired = await q(
         `UPDATE mlive.mlive_decisions SET outcome = 'expired'
@@ -32,8 +58,10 @@ export async function approvals(): Promise<void> {
           RETURNING id`,
         [todayIst()]
       );
+      await close();
       return { sells, buys, expired: expired.length, rechecked };
     }
+    await close();
     return { sells, buys, rechecked };
   });
 }

@@ -518,9 +518,16 @@ describe("alerts and audit views", () => {
   });
 
   it("reads the live Kite balance, then the cash balance", () => {
+    expect(kiteAvailableCash({ available: { live_balance: 80500, cash: 80000 } })).toBe(80500);
+    expect(kiteAvailableCash({ available: { cash: 80000 } })).toBe(80000);
+    expect(kiteAvailableCash({ equity: { available: { live_balance: 1 } } })).toBe(1);
     expect(kiteAvailableCash({ equity: { available: { live_balance: 81234.5, cash: 100 } } })).toBe(81234.5);
-    expect(kiteAvailableCash({ equity: { available: { cash: 80000 } } })).toBe(80000);
+    expect(kiteAvailableCash({ available: { live_balance: 0, cash: 80000 } })).toBe(0);
     expect(kiteAvailableCash(null)).toBeNull();
+    expect(kiteAvailableCash({})).toBeNull();
+    expect(kiteAvailableCash({ available: {} })).toBeNull();
+    expect(kiteAvailableCash({ available: { live_balance: "80500" } })).toBeNull();
+    expect(kiteAvailableCash({ available: { live_balance: Number.NaN } })).toBeNull();
   });
 
   it("names Kite cash and the trading limit", () => {

@@ -9,7 +9,7 @@ export async function remind(): Promise<void> {
     const settings = await loadSettings();
     if (!settings.loginReminder) return { skipped: "reminder off" };
     const rows = await q<{ token_date: unknown }>(
-      `SELECT token_date FROM mlive.mlive_kite_sessions ORDER BY connected_at DESC LIMIT 1`
+      `SELECT token_date::text AS token_date FROM mlive.mlive_kite_sessions ORDER BY connected_at DESC LIMIT 1`
     );
     if (asDate(rows[0]?.token_date) === todayIst()) return { session: true };
     await raiseAlert({

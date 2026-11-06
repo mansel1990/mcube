@@ -42,13 +42,7 @@ export async function recheckBuys(runId: number): Promise<number> {
   const today = todayIst();
   const kite = new MliveKite(settings.dryRun);
   let kiteCash = 0;
-  if (await kite.sessionOk()) {
-    try {
-      kiteCash = await kite.equityCash();
-    } catch {
-      kiteCash = 0;
-    }
-  }
+  if (await kite.sessionOk()) kiteCash = await kite.equityCash();
   const fund = await fundBalance(settings.dryRun);
   const positions = await openPositions(settings.dryRun);
   let spendable = engineSpendable(

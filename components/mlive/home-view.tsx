@@ -25,6 +25,7 @@ type Home = {
   holdings: { id: number; symbol: string; strategy: string; qty: number; avg: number; stop: number; high: number; gtt: boolean; sellProposed: boolean; since: string | null; frozen: boolean }[];
   ideas: { total: number; passed: number; picked: number; rows: { symbol: string; strategy: string; result: string; reason: string; raw?: string }[] };
   cashSkipped: boolean;
+  kiteCashUnknown: boolean;
   activity: { date: string | null; side: string; symbol: string; outcome: string; detail: string; qty: number; price: number }[];
   spark: { date: string | null; value: number }[];
 };
@@ -42,6 +43,7 @@ export function HomeView() {
   const [error, setError] = useState<string | null>(null);
   const [prices, setPrices] = useState<Record<string, number>>({});
   const [recheckNote, setRecheckNote] = useState("");
+  const [recheckBusy, setRecheckBusy] = useState(false);
 
   async function load() {
     const res = await fetch("/api/mlive/home");
@@ -89,8 +91,32 @@ export function HomeView() {
   }
 
   async function recheck() {
+    setRecheckBusy(true);
+    setRecheckNote("Asked the engine. It picks this up within a minute.");
     const res = await fetch("/api/mlive/recheck", { method: "POST" });
-    setRecheckNote(res.ok ? "The engine will re-check on its next pass. This page does not send an order." : "Could not ask for a re-check.");
+    const body = (await res.json().catch(() => null)) as { id?: number } | null;
+    if (!res.ok || body?.id == null) {
+      setRecheckNote("Could not ask for a re-check.");
+      setRecheckBusy(false);
+      return;
+    }
+    const started = Date.now();
+    while (Date.now() - started < 3 * 60 * 1000) {
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      const poll = await fetch(`/api/mlive/recheck?id=${body.id}`);
+      const status = (await poll.json().catch(() => null)) as { done?: boolean; doneAt?: string | null; rechecked?: number } | null;
+      if (status?.done) {
+        const at = status.doneAt
+          ? new Date(status.doneAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "Asia/Kolkata" })
+          : "";
+        await load();
+        setRecheckNote(`Re-checked at ${at}. ${status.rechecked ?? 0} ideas revived.`);
+        setRecheckBusy(false);
+        return;
+      }
+    }
+    setRecheckNote("The engine hasn't picked it up yet. Check Reports → Audit.");
+    setRecheckBusy(false);
   }
 
   async function pause() {
@@ -248,9 +274,14 @@ export function HomeView() {
             <div>
               <h2>Last night&apos;s ideas</h2>
               <p className="sub">Copied from the paper scan. The engine decides.</p>
-              {recheckNote && <p className="sub">{recheckNote}</p>}
+              <p className="sub" role="status">{recheckNote}</p>
             </div>
-            {data.cashSkipped && <button type="button" className="btn" onClick={recheck}>Re-check cash now</button>}
+            {(data.cashSkipped || data.kiteCashUnknown) && (
+              <button type="button" className="btn" onClick={recheck} disabled={recheckBusy} aria-busy={recheckBusy}>
+                {recheckBusy && <span className="spin" aria-hidden="true" />}
+                {recheckBusy ? "Re-checking…" : "Re-check cash now"}
+              </button>
+            )}
           </div>
           <div className="funnel">
             <div className="fstep"><div className="lbl">Ideas</div><div className="v n" style={{ fontSize: 22, fontWeight: 700 }}>{data.ideas.total}</div></div>

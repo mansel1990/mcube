@@ -46,7 +46,9 @@ export async function sendReady(opts: SendOpts): Promise<Record<string, unknown>
   const max = opts.side === "BUY" ? settings.maxBuys : settings.maxSells;
   const positions = await openPositions(settings.dryRun);
   const fund = await fundBalance(settings.dryRun);
-  let spendable = await currentSpendable(fund, settings, kite);
+  // A sell does not spend cash. Reading Kite cash here would block the sell when the figure is missing.
+  let spendable = 0;
+  if (opts.side === "BUY") spendable = await currentSpendable(fund, settings, kite);
   const pace = await buyPace(day, settings.dryRun);
   let newBuys = pace.newBuys;
   const strategyBuys = { ...pace.strategyBuys };
@@ -56,12 +58,7 @@ export async function sendReady(opts: SendOpts): Promise<Record<string, unknown>
   if (opts.side === "BUY" && decisions.length > 0) {
     const invested = await openCost(settings.dryRun);
     const pending = await pendingBuyValue(settings.dryRun);
-    let kiteCash = systemCash(fund, invested, pending);
-    try {
-      kiteCash = await kite.equityCash();
-    } catch {
-      kiteCash = systemCash(fund, invested, pending);
-    }
+    const kiteCash = await kite.equityCash();
     const now = engineSpendable(fund, invested, pending, kiteCash, settings.cashReserve);
     if (now > 0) {
       const next = deployBaseline(baseline, deployed, now);
@@ -224,14 +221,6 @@ async function decisionIsSent(decision: Decision, day: string): Promise<boolean>
 
 async function currentSpendable(fund: number, settings: MliveSettings, kite: MliveKite): Promise<number> {
   const system = systemCash(fund, await openCost(settings.dryRun), await pendingBuyValue(settings.dryRun));
-  if (settings.dryRun) {
-    try {
-      const kiteCash = await kite.equityCash();
-      return spendableCash(system, kiteCash, settings.cashReserve);
-    } catch {
-      return spendableCash(system, system, settings.cashReserve);
-    }
-  }
   const kiteCash = await kite.equityCash();
   return spendableCash(system, kiteCash, settings.cashReserve);
 }

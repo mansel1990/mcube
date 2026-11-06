@@ -1,5 +1,5 @@
 import { sql } from "@/lib/sql";
-import { readKiteFunds } from "./kite-session";
+import { kiteSessionStatus, kiteTokenDay, readKiteFunds } from "./kite-session";
 import { addDays, nextTradingDay, sessionsBack, todayIst } from "./calendar";
 import {
   EXIT_EMA,
@@ -26,9 +26,7 @@ function num(value: unknown): number {
 }
 
 function day(value: unknown): string | null {
-  if (!value) return null;
-  const match = String(value).match(/^(\d{4}-\d{2}-\d{2})/);
-  return match ? match[1] : null;
+  return kiteTokenDay(value);
 }
 
 function json<T>(value: unknown, fallback: T): T {
@@ -54,15 +52,15 @@ export async function homePayload(displayName: string) {
   const holidayRows = await sql`SELECT trade_date::text AS trade_date FROM mlive.mlive_holidays`;
   const nextSession = nextTradingDay(today, new Set(holidayRows.map((row) => String(row.trade_date).slice(0, 10))));
   const includeDry = await includeDryRows();
-  const [stateRows, fundRows, positions, decisions, upcoming, ideas, equity, kiteRows, alerts, runs, instruments] = await Promise.all([
-    sql`SELECT status, mode, peak_value, peak_date, last_eod_date, updated_at FROM mlive.mlive_state WHERE id = 1`,
+  const [stateRows, fundRows, positions, decisions, upcoming, ideas, equity, kiteStatus, alerts, runs, instruments] = await Promise.all([
+    sql`SELECT status, mode, peak_value, peak_date::text AS peak_date, last_eod_date::text AS last_eod_date, updated_at FROM mlive.mlive_state WHERE id = 1`,
     sql`SELECT COALESCE(SUM(amount), 0) AS total, MIN(ts) AS started FROM mlive.mlive_fund_ledger WHERE (${includeDry}::boolean OR dry_run = false)`,
     sql`SELECT id, symbol, strategy, qty, avg_price, trend_stop, high_52w_flag, frozen, opened_at FROM mlive.mlive_positions WHERE closed_at IS NULL AND (${includeDry}::boolean OR dry_run = false) ORDER BY opened_at`,
-    sql`SELECT id, trade_date, side, symbol, outcome, reason_code, reason_text, sizing FROM mlive.mlive_decisions WHERE trade_date = ${today}::date AND (${includeDry}::boolean OR dry_run = false) ORDER BY rank NULLS LAST, id`,
-    sql`SELECT id, trade_date, side, symbol, outcome, reason_code, reason_text, sizing FROM mlive.mlive_decisions WHERE trade_date = ${nextSession}::date AND outcome = 'proposed' AND (${includeDry}::boolean OR dry_run = false) ORDER BY id`,
+    sql`SELECT id, trade_date::text AS trade_date, side, symbol, outcome, reason_code, reason_text, sizing FROM mlive.mlive_decisions WHERE trade_date = ${today}::date AND (${includeDry}::boolean OR dry_run = false) ORDER BY rank NULLS LAST, id`,
+    sql`SELECT id, trade_date::text AS trade_date, side, symbol, outcome, reason_code, reason_text, sizing FROM mlive.mlive_decisions WHERE trade_date = ${nextSession}::date AND outcome = 'proposed' AND (${includeDry}::boolean OR dry_run = false) ORDER BY id`,
     sql`SELECT symbol, strategy, sector, score, signal_close, initial_stop FROM mlive.mlive_ideas WHERE valid_for = ${today}::date ORDER BY score DESC`,
-    sql`SELECT trade_date, system_value FROM mlive.mlive_equity_daily ORDER BY trade_date`,
-    sql`SELECT token_date, connected_at, kite_user_id FROM mlive.mlive_kite_sessions ORDER BY connected_at DESC LIMIT 1`,
+    sql`SELECT trade_date::text AS trade_date, system_value FROM mlive.mlive_equity_daily ORDER BY trade_date`,
+    kiteSessionStatus(today),
     sql`SELECT COUNT(*)::int AS n FROM mlive.mlive_alerts WHERE seen_at IS NULL AND level = 'needs_you'`,
     sql`SELECT kind, status, finished_at FROM mlive.mlive_runs ORDER BY id DESC LIMIT 1`,
     sql`SELECT symbol, is_etf FROM mlive.mlive_instruments`,
@@ -89,8 +87,7 @@ export async function homePayload(displayName: string) {
       AND (${includeDry}::boolean OR o.dry_run = false)`;
   const buys = orderRows.filter((row) => row.side === "BUY").length;
   const sells = orderRows.filter((row) => row.side === "SELL").length;
-  const kite = kiteRows[0];
-  const connected = day(kite?.token_date) === today;
+  const connected = kiteStatus.connected;
   const peak = num(state?.peak_value ?? fund);
   const drawdown = peak > 0 ? Math.max(0, (1 - account / peak) * 100) : 0;
   const [highRows, gttRows, checkRows] = await Promise.all([
@@ -130,8 +127,10 @@ export async function homePayload(displayName: string) {
     },
     kite: {
       connected,
-      at: kite?.connected_at ? new Date(String(kite.connected_at)).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" }) : null,
-      clientId: kite?.kite_user_id ? String(kite.kite_user_id) : null,
+      at: kiteStatus.connectedAt
+        ? new Date(kiteStatus.connectedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })
+        : null,
+      clientId: kiteStatus.kiteUserId,
       checkedAt: checkRows[0]?.finished_at
         ? new Date(String(checkRows[0].finished_at)).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })
         : null,
@@ -193,7 +192,8 @@ export async function homePayload(displayName: string) {
         };
       }),
     },
-    cashSkipped: buyDecisions.some((row) => row.outcome === "skipped" && row.reason_code === "no_funds"),
+    cashSkipped: buyDecisions.some((row) => row.outcome === "skipped" && ["no_funds", "too_small", "limit", "pacing_day", "pacing_strategy", "pacing_cash"].includes(String(row.reason_code))),
+    kiteCashUnknown: connected && picture.kiteFunds.cash == null,
     activity: activity.map((row) => {
       const status = String(row.status ?? "").toUpperCase();
       const filled = status === "COMPLETE" || num(row.filled_qty) > 0;
@@ -225,7 +225,7 @@ export async function homePayload(displayName: string) {
 export async function chartsPayload(range: string) {
   const includeDry = await includeDryRows();
   const rows = await sql`
-    SELECT trade_date, system_value, peak, drawdown_pct
+    SELECT trade_date::text AS trade_date, system_value, peak, drawdown_pct
       FROM mlive.mlive_equity_daily ORDER BY trade_date`;
   const all = rows.map((row) => ({
     date: day(row.trade_date) ?? "",
@@ -248,7 +248,7 @@ export async function ledgerPayload() {
   const includeDry = await includeDryRows();
   const settings = await settingsMap();
   const rows = await sql`
-    SELECT r.trade_date, r.text, r.decision_summary, e.system_value
+    SELECT r.trade_date::text AS trade_date, r.text, r.decision_summary, e.system_value
       FROM mlive.mlive_daily_reports r
       LEFT JOIN mlive.mlive_equity_daily e ON e.trade_date = r.trade_date
      ORDER BY r.trade_date DESC LIMIT 60`;
@@ -259,7 +259,7 @@ export async function ledgerPayload() {
            COALESCE(SUM(charges), 0) AS charges
       FROM mlive.mlive_positions WHERE closed_at IS NOT NULL AND (${includeDry}::boolean OR dry_run = false)`;
   const decided = await sql`
-    SELECT d.trade_date, d.side, d.symbol, d.outcome, d.reason_code, d.reason_text, d.sizing, i.sector
+    SELECT d.trade_date::text AS trade_date, d.side, d.symbol, d.outcome, d.reason_code, d.reason_text, d.sizing, i.sector
       FROM mlive.mlive_decisions d
       LEFT JOIN mlive.mlive_ideas i ON i.id = d.idea_id
      WHERE (${includeDry}::boolean OR d.dry_run = false)
@@ -499,15 +499,16 @@ export async function cashPicture() {
     readKiteFunds(),
   ]);
   const tradingLimit = num(fundRows[0]?.total);
-  const kite = kiteFunds.cash ?? 0;
+  const knownCash = kiteFunds.cash;
+  const kite = knownCash ?? 0;
   const reserve = num(settings.cash_reserve_inr ?? 500);
-  const unread = kiteFunds.connected && kiteFunds.cash == null;
+  const unread = kiteFunds.connected && knownCash == null;
   return {
     kiteFunds,
     tradingLimit,
-    engineCanUse: engineSpendable(tradingLimit, num(positionRows[0]?.invested), num(pendingRows[0]?.pending), kite, reserve),
+    engineCanUse: unread ? 0 : engineSpendable(tradingLimit, num(positionRows[0]?.invested), num(pendingRows[0]?.pending), kite, reserve),
     note: unread
-      ? "Kite is connected, but the cash could not be read."
+      ? kiteFunds.error || "Kite is connected, but the cash could not be read."
       : kiteCashMessage({ dryRun: settings.dry_run !== false, system: tradingLimit, kite }),
   };
 }

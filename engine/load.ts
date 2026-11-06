@@ -80,7 +80,7 @@ export async function loadSettings(): Promise<MliveSettings> {
 }
 
 export async function loadState(): Promise<MliveState> {
-  const rows = await q(`SELECT status, mode, peak_value, peak_date, last_eod_date, updated_at, halt_reason FROM mlive.mlive_state WHERE id = 1`);
+  const rows = await q(`SELECT status, mode, peak_value, peak_date::text AS peak_date, last_eod_date::text AS last_eod_date, updated_at, halt_reason FROM mlive.mlive_state WHERE id = 1`);
   const row = rows[0];
   if (!row) throw new Error("mlive_state is missing");
   return {
@@ -103,7 +103,7 @@ export async function fundBalance(includeDry = false): Promise<number> {
 }
 
 export async function holidaySet(): Promise<Set<string>> {
-  const rows = await q<{ trade_date: unknown }>(`SELECT trade_date FROM mlive.mlive_holidays`);
+  const rows = await q<{ trade_date: unknown }>(`SELECT trade_date::text AS trade_date FROM mlive.mlive_holidays`);
   return new Set(rows.map((row) => asDate(row.trade_date)).filter((d): d is string => !!d));
 }
 
