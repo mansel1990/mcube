@@ -1,5 +1,5 @@
 import { istMinutes, todayIst } from "@/lib/mlive/calendar";
-import { recheckDue } from "@/lib/mlive/rules";
+import { kiteErrorMessage, recheckDue } from "@/lib/mlive/rules";
 import { audit } from "../audit";
 import { raiseAlert } from "../alerts";
 import { q } from "../db";
@@ -8,7 +8,7 @@ import { runJob } from "../run";
 import { recheckBuys } from "./recheck";
 
 function failureText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return kiteErrorMessage(error);
 }
 
 export async function approvals(): Promise<void> {

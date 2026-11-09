@@ -2,8 +2,9 @@ import { readFileSync } from "fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { todayIst } from "@/lib/mlive/calendar";
 
-const { getMargins, q, audit, raiseAlert } = vi.hoisted(() => ({
+const { getMargins, getInstruments, q, audit, raiseAlert } = vi.hoisted(() => ({
   getMargins: vi.fn(),
+  getInstruments: vi.fn(),
   q: vi.fn(),
   audit: vi.fn(),
   raiseAlert: vi.fn(),
@@ -13,6 +14,7 @@ vi.mock("kiteconnect", () => ({
   KiteConnect: vi.fn().mockImplementation(() => ({
     setAccessToken: vi.fn(),
     getMargins,
+    getInstruments,
   })),
 }));
 
@@ -54,6 +56,7 @@ describe("Kite equity cash", () => {
     process.env.KITE_API_KEY = "test-key";
     process.env.MLIVE_TOKEN_KEY = "test-token-key";
     getMargins.mockReset();
+    getInstruments.mockReset();
     q.mockReset();
     q.mockResolvedValue([{ access_token_enc: "enc", token_date: todayIst() }]);
   });
@@ -63,6 +66,21 @@ describe("Kite equity cash", () => {
     getMargins.mockResolvedValue(margins);
     await expect(new MliveKite(true).equityCash()).resolves.toBe(margins.available.live_balance);
     expect(getMargins).toHaveBeenCalledWith("equity");
+  });
+
+  it("reads the NSE equity tick and sends nothing when the tick is missing", async () => {
+    const { MliveKite, clearTickCache } = await import("./kite");
+    clearTickCache();
+    getInstruments.mockResolvedValueOnce([
+      { tradingsymbol: "INFY", exchange: "NSE", instrument_type: "EQ", tick_size: 0.05 },
+      { tradingsymbol: "NIFTY", exchange: "NSE", instrument_type: "FUT", tick_size: 0.1 },
+    ]);
+    const kite = new MliveKite(false);
+    await expect(kite.tickSize("infy")).resolves.toBe(0.05);
+    await expect(kite.tickSize("NIFTY")).resolves.toBeNull();
+    clearTickCache();
+    getInstruments.mockRejectedValueOnce({ message: "Invalid session", error_type: "TokenException" });
+    await expect(new MliveKite(false).tickSize("INFY")).resolves.toBeNull();
   });
 
   it("throws when the cash fields are missing and does not return 0", async () => {

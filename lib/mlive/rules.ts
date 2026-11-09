@@ -91,6 +91,31 @@ export function roundTick(price: number, tick = DEFAULT_TICK): number {
   return Math.round(steps * tick * 100) / 100;
 }
 
+/** Round a price down to the exchange tick. A missing or unusable tick sends nothing. */
+export function floorToTick(price: number, tick: number): number | null {
+  if (!(price > 0) || !(tick > 0) || !Number.isFinite(price) || !Number.isFinite(tick)) return null;
+  const tickPaise = Math.round(tick * 100);
+  const pricePaise = Math.round(price * 100);
+  if (tickPaise < 1 || pricePaise < 1) return null;
+  const floored = Math.floor(pricePaise / tickPaise) * tickPaise;
+  return floored >= tickPaise ? floored / 100 : null;
+}
+
+/** Kite rejects with `{ message, error_type }`, not an Error. Alerts need that message. */
+export function kiteErrorMessage(error: unknown): string {
+  if (typeof error === "string" && error.trim()) return error.trim();
+  if (error instanceof Error && error.message.trim()) return error.message.trim();
+  if (error && typeof error === "object") {
+    const record = error as { message?: unknown; data?: unknown };
+    const message = typeof record.message === "string" ? record.message.trim() : "";
+    const detail = typeof record.data === "string" ? record.data.trim() : "";
+    if (message && detail && !message.includes(detail)) return `${message} ${detail}`;
+    if (message) return message;
+    if (detail) return detail;
+  }
+  return "Kite did not say why the order failed.";
+}
+
 export function limitPrice(signalClose: number, offset = DEFAULT_LIMIT_OFFSET, tick = DEFAULT_TICK): number {
   return roundTick(signalClose * (1 + offset), tick);
 }
@@ -435,6 +460,12 @@ export function entryBelowEma(entry: number, emaStop: number): boolean {
   return entry + 1e-9 < emaStop;
 }
 
+/** Live price is on the stop, under it, or no more than 1% above it. */
+export function buyTooCloseToStop(live: number, stop: number): boolean {
+  if (!(live > 0) || !(stop > 0) || !Number.isFinite(live) || !Number.isFinite(stop)) return false;
+  return live <= stop * 1.01 + 1e-6;
+}
+
 export type StopUpdate = {
   stop: number;
   made52w: boolean;
@@ -478,9 +509,39 @@ export function nextTrendStop(args: {
   return { stop, made52w, closeBelow: last.close < stop - 1e-9 };
 }
 
+/** What Home should say about a holding. There is no fixed profit target. */
+export function holdingExit(args: {
+  stop: number;
+  last: number | null;
+  high52: number;
+  gttGap?: number;
+}): { sellWhen: string; hardStop: string; target: string; underStop: boolean } {
+  if (!(args.stop > 0)) {
+    return {
+      sellWhen: "No trend stop yet.",
+      hardStop: "",
+      target: "No fixed target.",
+      underStop: false,
+    };
+  }
+  const underStop = args.last != null && args.last < args.stop - 1e-9;
+  const stop = px(args.stop);
+  const hard = gttPrices(args.stop, args.gttGap ?? 0.03);
+  const high = args.high52 > 0 ? ` The 52-week high is ${px(args.high52)}, and that is not a sell price.` : "";
+  return {
+    underStop,
+    sellWhen: underStop
+      ? `Price is under ${stop}. A close here sells it the next morning.`
+      : `Sell if the daily close finishes below ${stop}. The order goes out the next morning.`,
+    hardStop: `Kite sells during the day if price hits ${px(hard.trigger)}.`,
+    target: `No fixed target. It stays while the close holds above the stop.${high}`,
+  };
+}
+
 export function gttPrices(stop: number, gapPct: number, tick = DEFAULT_TICK): { trigger: number; limit: number } {
-  const trigger = roundTick(stop * (1 - gapPct), tick);
-  const limit = roundTick(trigger * (1 - GTT_LIMIT_GAP), tick);
+  const trigger = floorToTick(stop * (1 - gapPct), tick);
+  const limit = trigger == null ? null : floorToTick(trigger * (1 - GTT_LIMIT_GAP), tick);
+  if (trigger == null || limit == null) throw new Error("tick must be positive");
   return { trigger, limit };
 }
 
@@ -654,7 +715,84 @@ export type DecisionSentenceInput = {
   minOrderInr?: number | null;
   limitCount?: number | null;
   strategy?: "rs" | "ema" | null;
+  /** Exchange status when this sentence is about an order, not a decision. */
+  status?: string | null;
+  orderedQty?: number | null;
+  filledQty?: number | null;
+  average?: number | null;
 };
+
+export type OrderProgress = {
+  side?: string | null;
+  status?: string | null;
+  ordered: number;
+  filled: number;
+  limit: number;
+  average?: number | null;
+  reasonCode?: string | null;
+};
+
+function orderStatus(status: string | null | undefined): string {
+  return (status ?? "").trim().toUpperCase();
+}
+
+/** A position is shown under What we hold only after at least one share has filled. */
+export function showsHolding(filledQty: number): boolean {
+  return filledQty > 0;
+}
+
+/** Home label. Open and partly filled orders stay “working” until they finish or die. */
+export function orderLabel(status: string | null | undefined, ordered: number, filled: number): "working" | "filled" | "cancelled" | "rejected" {
+  const upper = orderStatus(status);
+  if (upper === "REJECTED") return "rejected";
+  if (upper === "CANCELLED") return "cancelled";
+  if (upper === "COMPLETE" || (ordered > 0 && filled >= ordered)) return "filled";
+  return "working";
+}
+
+/** One sentence for a live order. Filled wording uses the average fill, not the limit. */
+export function orderSentence(order: OrderProgress): string {
+  const side = (order.side ?? "BUY").toUpperCase() === "SELL" ? "SELL" : "BUY";
+  const verb = side === "SELL" ? "sell" : "buy";
+  const done = side === "SELL" ? "Sold" : "Bought";
+  const status = orderStatus(order.status);
+  const ordered = Math.max(0, Math.floor(order.ordered));
+  const filled = Math.max(0, Math.floor(order.filled));
+  const limit = order.limit ?? 0;
+  const average = order.average != null && order.average > 0 ? order.average : limit;
+  const label = orderLabel(status, ordered, filled);
+  if (order.reasonCode === "gtt_exit" && label === "filled" && filled > 0 && average > 0) {
+    return `Stop sold ${filled} at ${px(average)}.`;
+  }
+  if (label === "cancelled" || label === "rejected") {
+    if (filled > 0 && ordered > filled) {
+      const rest = ordered - filled;
+      const end = label === "rejected" ? "rejected" : "cancelled";
+      return `${done} ${filled} of ${ordered}. The other ${rest} ${rest === 1 ? "was" : "were"} ${end}.`;
+    }
+    if (filled > 0 && average > 0) return `${done} ${filled} at ${px(average)}.`;
+    return label === "rejected" ? (side === "SELL" ? "Sell rejected." : "Buy rejected.") : side === "SELL" ? "Sell cancelled." : "Buy cancelled.";
+  }
+  if (label === "working" && filled > 0 && ordered > filled) {
+    return `${done} ${filled} of ${ordered} … ${ordered - filled} still waiting.`;
+  }
+  if (label === "filled" && filled > 0 && average > 0) return `${done} ${filled} at ${px(average)}.`;
+  if (ordered > 0 && limit > 0) return `Order placed: ${verb} ${ordered} at ${px(limit)}. Waiting to fill.`;
+  return "Order placed. Waiting to fill.";
+}
+
+/** Ledger counts a buy or sell only after a fill. A sent order with no fill stays working. */
+export function ledgerOutcome(
+  decisionOutcome: string,
+  order?: { status?: string | null; ordered?: number | null; filled?: number | null } | null
+): string {
+  if (!order?.status) return decisionOutcome === "sent" ? "working" : decisionOutcome;
+  const filled = order.filled ?? 0;
+  const label = orderLabel(order.status, order.ordered ?? 0, filled);
+  if (filled > 0 || label === "filled") return "filled";
+  if (label === "working") return "working";
+  return label;
+}
 
 function strategyName(strategy: "rs" | "ema" | null | undefined): string {
   return strategy === "ema" ? "EMA" : strategy === "rs" ? "RS" : "strategy";
@@ -675,17 +813,33 @@ export function decisionSentence(decision: DecisionSentenceInput): string {
   const stop = decision.stop ?? 0;
   const side = (decision.side ?? "BUY").toUpperCase();
   const bought = side === "SELL" ? "Sold" : "Bought";
-  if (decision.reasonCode === "gtt_exit" && (decision.outcome === "filled" || decision.outcome === "sent")) {
-    return decision.outcome === "filled" && qty > 0 && limit > 0 ? `Stop sold ${qty} at ${px(limit)}.` : "Stop order working.";
+  if (decision.status != null || decision.filledQty != null || decision.orderedQty != null) {
+    return orderSentence({
+      side,
+      status: decision.status,
+      ordered: decision.orderedQty ?? qty,
+      filled: decision.filledQty ?? (decision.outcome === "filled" ? qty : 0),
+      limit,
+      average: decision.average,
+      reasonCode: decision.reasonCode,
+    });
   }
-  if (decision.outcome === "filled" || decision.outcome === "sent") {
+  if (decision.reasonCode === "gtt_exit" && decision.outcome === "filled") {
+    return qty > 0 && limit > 0 ? `Stop sold ${qty} at ${px(limit)}.` : "Stop order working.";
+  }
+  if (decision.outcome === "filled") {
     return qty > 0 && limit > 0 ? `${bought} ${qty} at ${px(limit)}.` : `${bought}.`;
+  }
+  if (decision.outcome === "sent" || decision.outcome === "working") {
+    const verb = side === "SELL" ? "sell" : "buy";
+    return qty > 0 && limit > 0 ? `Order placed: ${verb} ${qty} at ${px(limit)}. Waiting to fill.` : "Order placed. Waiting to fill.";
   }
   if (decision.outcome === "cancelled") return side === "SELL" ? "Sell cancelled." : "Buy cancelled.";
   if (decision.outcome === "rejected") return side === "SELL" ? "Sell rejected." : "Buy rejected.";
   if (decision.outcome === "proposed" || decision.outcome === "approved") {
-    if (qty > 0 && limit > 0 && stop > 0) return `Ready: ${qty} shares at ${px(limit)}, stop ${px(stop)}.`;
-    if (qty > 0 && limit > 0) return `Ready: ${qty} shares at ${px(limit)}.`;
+    const total = decision.notional && decision.notional > 0 ? decision.notional : qty * limit;
+    if (qty > 0 && limit > 0 && stop > 0) return `Ready: ${qty} shares at ${px(limit)}, total ${px(total)}, stop ${px(stop)}.`;
+    if (qty > 0 && limit > 0) return `Ready: ${qty} shares at ${px(limit)}, total ${px(total)}.`;
     return "Ready.";
   }
   switch (decision.reasonCode) {
@@ -709,6 +863,10 @@ export function decisionSentence(decision: DecisionSentenceInput): string {
       return "Not bought: the price has run too far above the signal.";
     case "entry_below_stop":
       return "Not bought: the entry is below the stop.";
+    case "too_close_to_stop":
+      return "Not bought: the live price is at or within 1% of the stop.";
+    case "tick_unknown":
+      return "Not sent: Kite did not give a tick size for this stock.";
     case "bad_data":
       return "Not bought: the price data is not usable.";
     case "limit":
@@ -753,6 +911,8 @@ function skipPhrase(code: string | null | undefined): string {
     case "excluded": return "on the exclude list";
     case "chasing": return "price ran too far";
     case "entry_below_stop": return "entry below the stop";
+    case "too_close_to_stop": return "price too close to the stop";
+    case "tick_unknown": return "tick size missing";
     case "bad_data": return "price data not usable";
     case "limit": return "daily buy limit full";
     case "pacing_day": return "day's new-buy pace";
@@ -790,9 +950,10 @@ export function ledgerDay(rows: readonly LedgerDecision[]): LedgerDay {
   const items = rows.map((row) => ({ symbol: row.symbol, sentence: row.sentence }));
   if (rows.length === 0) return { label: "No action", tone: "none", detail: "Nothing was decided.", items };
   const sell = (row: LedgerDecision) => (row.side ?? "BUY").toUpperCase() === "SELL";
-  const done = (row: LedgerDecision) => row.outcome === "sent" || row.outcome === "filled";
+  const done = (row: LedgerDecision) => row.outcome === "filled";
   const buys = rows.filter((row) => done(row) && !sell(row));
   const sells = rows.filter((row) => done(row) && sell(row));
+  const working = rows.filter((row) => row.outcome === "working" || row.outcome === "sent");
   const waiting = rows.filter((row) => row.outcome === "proposed" || row.outcome === "approved");
   const skipped = rows.filter((row) => row.outcome === "skipped");
   const bits = [
@@ -801,13 +962,17 @@ export function ledgerDay(rows: readonly LedgerDecision[]): LedgerDay {
   ].filter(Boolean);
   let label = bits.join(" · ");
   let tone: LedgerDay["tone"] = sells.length && !buys.length ? "sell" : buys.length ? "buy" : "none";
+  if (!label && working.length) {
+    label = "Working";
+    tone = "wait";
+  }
   if (!label && waiting.length) {
     label = "Waiting for you";
     tone = "wait";
   }
   if (!label) label = skipped.length ? "No buys" : "No action";
   const parts: string[] = [];
-  for (const row of [...buys, ...sells]) parts.push(`${row.symbol}: ${row.sentence.replace(/\.$/, "")}`);
+  for (const row of [...buys, ...sells, ...working]) parts.push(`${row.symbol}: ${row.sentence.replace(/\.$/, "")}`);
   if (waiting.length) {
     const names = waiting.map((row) => row.symbol).join(", ");
     parts.push(waiting.length === 1 ? `${names} is ready` : `${names} are ready`);
@@ -821,7 +986,10 @@ export const CASH_RECHECK_CODES = ["no_funds", "too_small", "limit"] as const;
 /** A rejected or cancelled buy can free one of these the same day. */
 export const PACING_RECHECK_CODES = ["pacing_day", "pacing_strategy", "pacing_cash"] as const;
 
-export const RECHECK_REASON_CODES = [...CASH_RECHECK_CODES, ...PACING_RECHECK_CODES] as const;
+/** The live price can move away from the stop later the same day. */
+export const PRICE_RECHECK_CODES = ["too_close_to_stop"] as const;
+
+export const RECHECK_REASON_CODES = [...CASH_RECHECK_CODES, ...PACING_RECHECK_CODES, ...PRICE_RECHECK_CODES] as const;
 
 export function recheckEligible(outcome: string | null, reasonCode: string | null): boolean {
   if (outcome == null) return true;
@@ -941,14 +1109,14 @@ export function recheckDue(minute: number, openRequest: boolean): boolean {
 export function isBoughtOrSold(row: {
   kind: "decision" | "order" | "gtt_exit";
   status?: string | null;
+  filled?: number | null;
   dryRun: boolean;
 }, includeDry: boolean): boolean {
   if (row.dryRun && !includeDry) return false;
   if (row.kind === "decision") return false;
-  if (row.kind === "gtt_exit") return true;
   const status = (row.status ?? "").toUpperCase();
-  if (status === "DRY") return includeDry;
-  return status === "OPEN" || status === "COMPLETE" || status === "CANCELLED" || status === "REJECTED";
+  const filled = row.filled ?? (status === "COMPLETE" ? 1 : 0);
+  return filled > 0 || status === "COMPLETE";
 }
 
 export type AlertRow = { id: number; code: string; message: string; level: string; seen: boolean; symbol?: string | null };
@@ -969,21 +1137,24 @@ export function alertSymbol(symbol: string | null | undefined): string | null {
 
 /** Marking `target` seen also marks `row` when they share a collapsed group. */
 export function alertClearedWith(
-  target: { id: number; code: string; symbol?: string | null },
-  row: { id: number; code: string; symbol?: string | null },
+  target: { id: number; code: string; symbol?: string | null; message?: string },
+  row: { id: number; code: string; symbol?: string | null; message?: string },
 ): boolean {
   if (row.code !== target.code) return false;
   if (isMorningAlert(target.code)) return true;
   const symbol = alertSymbol(target.symbol);
-  if (!symbol) return row.id === target.id;
+  if (!symbol) {
+    if (target.message == null || row.message == null) return row.id === target.id;
+    return row.message === target.message;
+  }
   return alertSymbol(row.symbol) === symbol;
 }
 
-function alertGroupKey(row: { id: number; code: string; symbol?: string | null; seen: boolean }): string {
+function alertGroupKey(row: { id: number; code: string; message: string; symbol?: string | null; seen: boolean }): string {
   const seen = row.seen ? "seen" : "open";
   if (isMorningAlert(row.code)) return `${row.code}|${seen}`;
   const symbol = alertSymbol(row.symbol);
-  if (!symbol) return `${row.code}|id:${row.id}|${seen}`;
+  if (!symbol) return `${row.code}|${row.message}|${seen}`;
   return `${row.code}|${symbol}|${seen}`;
 }
 
@@ -1019,18 +1190,16 @@ export function alertBody(row: { code: string; message: string }): string {
   return `Kite cash is short of the book by ${gap}. Buys wait until Kite shows that cash. Dry run does not send a real order. This check repeats each morning run, so it is shown once.`;
 }
 
-export type AuditView = "all" | "bought" | "sold" | "engine" | "you";
+export type AuditView = "all" | "working" | "bought" | "sold" | "engine" | "you";
 
 export function auditInView(row: { actor: string; action: string; side: string | null }, view: AuditView): boolean {
   if (view === "all") return true;
   const side = (row.side ?? "").toUpperCase();
-  if (view === "bought") {
-    if (side === "SELL") return false;
-    return side === "BUY" || row.action === "order.sent" || row.action === "fill";
-  }
-  if (view === "sold") return side === "SELL" || row.action === "gtt.exit" || row.action === "position.marked_sold";
+  if (view === "working") return row.action === "order.sent" || row.action === "gtt.exit";
+  if (view === "bought") return row.action === "fill" && side !== "SELL";
+  if (view === "sold") return (row.action === "fill" && side === "SELL") || row.action === "position.marked_sold";
   if (view === "you") return row.actor !== "engine" && row.actor !== "kite";
-  const ticket = side === "BUY" || side === "SELL" || row.action === "order.sent" || row.action === "fill" || row.action === "gtt.exit" || row.action === "position.marked_sold";
+  const ticket = row.action === "order.sent" || row.action === "fill" || row.action === "gtt.exit" || row.action === "position.marked_sold";
   return (row.actor === "engine" || row.actor === "kite") && !ticket;
 }
 

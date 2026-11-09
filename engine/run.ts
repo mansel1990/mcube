@@ -1,4 +1,5 @@
 import { isTradingDay, todayIst } from "@/lib/mlive/calendar";
+import { kiteErrorMessage } from "@/lib/mlive/rules";
 import { audit } from "./audit";
 import { raiseAlert } from "./alerts";
 import { q } from "./db";
@@ -29,7 +30,7 @@ export async function runJob(kind: string, fn: (runId: number) => Promise<Record
       await audit({ actor: "engine", action: `run.${kind}`, after: summary, runId });
       console.log(`${kind} ok`, JSON.stringify(summary));
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = kiteErrorMessage(error);
       await q(
         `UPDATE mlive.mlive_runs SET status = 'error', finished_at = now(), summary = $2::jsonb WHERE id = $1`,
         [runId, JSON.stringify({ error: message })]
@@ -40,7 +41,7 @@ export async function runJob(kind: string, fn: (runId: number) => Promise<Record
     }
   });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = kiteErrorMessage(error);
     if (message.includes("already running")) {
       await raiseAlert({ level: "problem", code: "engine_lock", message: `${kind} waited 4 minutes and the previous job was still running` });
     }

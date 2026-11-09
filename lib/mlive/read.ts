@@ -8,6 +8,10 @@ import {
   decisionSentence,
   engineGroup,
   ledgerDay,
+  ledgerOutcome,
+  orderLabel,
+  orderSentence,
+  showsHolding,
   engineSpendable,
   knownEngineActions,
   kiteCashMessage,
@@ -55,8 +59,19 @@ export async function homePayload(displayName: string) {
   const [stateRows, fundRows, positions, decisions, upcoming, ideas, equity, kiteStatus, alerts, runs, instruments] = await Promise.all([
     sql`SELECT status, mode, peak_value, peak_date::text AS peak_date, last_eod_date::text AS last_eod_date, updated_at FROM mlive.mlive_state WHERE id = 1`,
     sql`SELECT COALESCE(SUM(amount), 0) AS total, MIN(ts) AS started FROM mlive.mlive_fund_ledger WHERE (${includeDry}::boolean OR dry_run = false)`,
-    sql`SELECT id, symbol, strategy, qty, avg_price, trend_stop, high_52w_flag, frozen, opened_at FROM mlive.mlive_positions WHERE closed_at IS NULL AND (${includeDry}::boolean OR dry_run = false) ORDER BY opened_at`,
-    sql`SELECT id, trade_date::text AS trade_date, side, symbol, outcome, reason_code, reason_text, sizing FROM mlive.mlive_decisions WHERE trade_date = ${today}::date AND (${includeDry}::boolean OR dry_run = false) ORDER BY rank NULLS LAST, id`,
+    sql`SELECT id, symbol, strategy, qty, avg_price, trend_stop, high_52w_flag, frozen, opened_at FROM mlive.mlive_positions WHERE closed_at IS NULL AND qty > 0 AND (${includeDry}::boolean OR dry_run = false) ORDER BY opened_at`,
+    sql`SELECT d.id, d.trade_date::text AS trade_date, d.side, d.symbol, d.outcome, d.reason_code, d.reason_text, d.sizing,
+               o.status AS order_status, o.qty AS order_qty, o.filled_qty, o.avg_price AS fill_price, o.limit_price AS order_limit, o.kind AS order_kind
+          FROM mlive.mlive_decisions d
+          LEFT JOIN LATERAL (
+            SELECT status, qty, filled_qty, avg_price, limit_price, kind
+              FROM mlive.mlive_orders
+             WHERE decision_id = d.id
+             ORDER BY id DESC
+             LIMIT 1
+          ) o ON true
+         WHERE d.trade_date = ${today}::date AND (${includeDry}::boolean OR d.dry_run = false)
+         ORDER BY d.rank NULLS LAST, d.id`,
     sql`SELECT id, trade_date::text AS trade_date, side, symbol, outcome, reason_code, reason_text, sizing FROM mlive.mlive_decisions WHERE trade_date = ${nextSession}::date AND outcome = 'proposed' AND (${includeDry}::boolean OR dry_run = false) ORDER BY id`,
     sql`SELECT symbol, strategy, sector, score, signal_close, initial_stop FROM mlive.mlive_ideas WHERE valid_for = ${today}::date ORDER BY score DESC`,
     sql`SELECT trade_date::text AS trade_date, system_value FROM mlive.mlive_equity_daily ORDER BY trade_date`,
@@ -90,19 +105,30 @@ export async function homePayload(displayName: string) {
   const connected = kiteStatus.connected;
   const peak = num(state?.peak_value ?? fund);
   const drawdown = peak > 0 ? Math.max(0, (1 - account / peak) * 100) : 0;
-  const [highRows, gttRows, checkRows] = await Promise.all([
+  const heldSymbols = positions.map((row) => String(row.symbol));
+  const [highRows, gttRows, checkRows, stopReasonRows] = await Promise.all([
     positions.length
       ? sql`SELECT UPPER(ticker) AS symbol, MAX(high) AS high
               FROM stocks.daily_ohlcv
              WHERE date >= CURRENT_DATE - INTERVAL '370 days'
-               AND UPPER(ticker) = ANY(${positions.map((row) => String(row.symbol))}::text[])
+               AND UPPER(ticker) = ANY(${heldSymbols}::text[])
              GROUP BY 1`
       : Promise.resolve([]),
     sql`SELECT position_id, status FROM mlive.mlive_gtts WHERE status IN ('active', 'DRY') AND (${includeDry}::boolean OR dry_run = false)`,
     sql`SELECT finished_at FROM mlive.mlive_runs WHERE kind = 'preflight' AND status = 'ok' ORDER BY id DESC LIMIT 1`,
+    positions.length
+      ? sql`SELECT DISTINCT ON (UPPER(symbol)) UPPER(symbol) AS symbol, message
+              FROM mlive.mlive_alerts
+             WHERE code = 'gtt_failed'
+               AND UPPER(symbol) = ANY(${heldSymbols}::text[])
+             ORDER BY UPPER(symbol), id DESC`
+      : Promise.resolve([]),
   ]);
   const highBySymbol = new Map(highRows.map((row) => [String(row.symbol), num(row.high)]));
   const gttIds = new Set(gttRows.map((row) => num(row.position_id)));
+  const stopReasonBySymbol = new Map(
+    stopReasonRows.map((row) => [String(row.symbol), String(row.message ?? "").trim()])
+  );
   const needsYou = [...decisions.filter((row) => row.outcome === "proposed"), ...upcoming];
   const buyDecisions = decisions.filter((row) => row.side === "BUY");
   const passed = buyDecisions.filter((row) => row.outcome === "proposed" || row.outcome === "approved" || row.outcome === "sent").length;
@@ -112,7 +138,7 @@ export async function homePayload(displayName: string) {
       FROM mlive.mlive_orders
      WHERE placed_at::date >= ${since}::date
        AND (${includeDry}::boolean OR dry_run = false)
-       AND (kind = 'gtt_exit' OR status IN ('OPEN', 'COMPLETE', 'CANCELLED', 'REJECTED', 'DRY'))
+       AND (kind = 'gtt_exit' OR status IN ('OPEN', 'COMPLETE', 'CANCELLED', 'REJECTED', 'DRY', 'TRIGGER PENDING', 'PUT ORDER REQ RECEIVED'))
      ORDER BY placed_at DESC NULLS LAST, id DESC
      LIMIT 30`;
   return {
@@ -160,7 +186,7 @@ export async function homePayload(displayName: string) {
         sizing,
       };
     }),
-    holdings: positions.map((row) => ({
+    holdings: positions.filter((row) => showsHolding(num(row.qty))).map((row) => ({
       id: num(row.id),
       symbol: String(row.symbol),
       strategy: String(row.strategy ?? "rs"),
@@ -169,6 +195,7 @@ export async function homePayload(displayName: string) {
       stop: num(row.trend_stop),
       high: highBySymbol.get(String(row.symbol)) ?? 0,
       gtt: gttIds.has(num(row.id)),
+      stopReason: gttIds.has(num(row.id)) ? null : stopReasonBySymbol.get(String(row.symbol).toUpperCase()) || null,
       sellProposed: needsYou.some((item) => item.side === "SELL" && item.symbol === row.symbol),
       since: day(row.opened_at),
       frozen: row.frozen === true,
@@ -195,25 +222,28 @@ export async function homePayload(displayName: string) {
     cashSkipped: buyDecisions.some((row) => row.outcome === "skipped" && ["no_funds", "too_small", "limit", "pacing_day", "pacing_strategy", "pacing_cash"].includes(String(row.reason_code))),
     kiteCashUnknown: connected && picture.kiteFunds.cash == null,
     activity: activity.map((row) => {
-      const status = String(row.status ?? "").toUpperCase();
-      const filled = status === "COMPLETE" || num(row.filled_qty) > 0;
-      const outcome = status === "CANCELLED" ? "cancelled" : status === "REJECTED" ? "rejected" : filled ? "filled" : "sent";
-      const price = num(row.avg_price || row.limit_price);
-      const qty = num(row.filled_qty || row.qty);
+      const status = String(row.status ?? "");
+      const ordered = num(row.qty);
+      const filled = num(row.filled_qty);
+      const average = num(row.avg_price);
+      const limit = num(row.limit_price);
+      const side = String(row.kind) === "gtt_exit" ? "SELL" : String(row.side);
       return {
         date: day(row.placed_at),
-        side: String(row.kind) === "gtt_exit" ? "SELL" : String(row.side),
+        side,
         symbol: String(row.symbol),
-        outcome,
-        detail: decisionSentence({
-          outcome,
-          side: String(row.kind) === "gtt_exit" ? "SELL" : String(row.side),
+        outcome: orderLabel(status, ordered, filled),
+        detail: orderSentence({
+          side,
+          status,
+          ordered,
+          filled,
+          limit,
+          average,
           reasonCode: String(row.kind) === "gtt_exit" ? "gtt_exit" : null,
-          qty,
-          limit: price,
         }),
-        qty,
-        price,
+        qty: filled > 0 ? filled : ordered,
+        price: average > 0 ? average : limit,
       };
     }),
     spark: equity.map((row) => ({ date: day(row.trade_date), value: num(row.system_value) })),
@@ -259,9 +289,17 @@ export async function ledgerPayload() {
            COALESCE(SUM(charges), 0) AS charges
       FROM mlive.mlive_positions WHERE closed_at IS NOT NULL AND (${includeDry}::boolean OR dry_run = false)`;
   const decided = await sql`
-    SELECT d.trade_date::text AS trade_date, d.side, d.symbol, d.outcome, d.reason_code, d.reason_text, d.sizing, i.sector
+    SELECT d.trade_date::text AS trade_date, d.side, d.symbol, d.outcome, d.reason_code, d.reason_text, d.sizing, i.sector,
+           o.status AS order_status, o.qty AS order_qty, o.filled_qty, o.avg_price AS fill_price, o.limit_price AS order_limit, o.kind AS order_kind
       FROM mlive.mlive_decisions d
       LEFT JOIN mlive.mlive_ideas i ON i.id = d.idea_id
+      LEFT JOIN LATERAL (
+        SELECT status, qty, filled_qty, avg_price, limit_price, kind
+          FROM mlive.mlive_orders
+         WHERE decision_id = d.id
+         ORDER BY id DESC
+         LIMIT 1
+      ) o ON true
      WHERE (${includeDry}::boolean OR d.dry_run = false)
      ORDER BY d.id`;
   const summary = closed[0];
@@ -280,7 +318,11 @@ export async function ledgerPayload() {
       const stored = String(row.text ?? "").trim();
       const summary = ledgerDay(dayDecisions.map((item) => ({
         symbol: String(item.symbol ?? ""),
-        outcome: String(item.outcome ?? ""),
+        outcome: ledgerOutcome(String(item.outcome ?? ""), {
+          status: item.order_status == null ? null : String(item.order_status),
+          ordered: num(item.order_qty),
+          filled: num(item.filled_qty),
+        }),
         side: item.side == null ? null : String(item.side),
         reasonCode: item.reason_code == null ? null : String(item.reason_code),
         sentence: sentenceFor(item, json<SizingBits>(item.sizing, {}), settings),
@@ -298,12 +340,16 @@ export async function ledgerPayload() {
   };
 }
 
-export async function alertsPayload(page: number) {
+export async function alertsPayload(page: number, openOnly = false) {
   const size = 30;
   const offset = page * size;
-  const rows = await sql`
-    SELECT id, ts, level, code, message, symbol, seen_at
-      FROM mlive.mlive_alerts ORDER BY id DESC LIMIT ${size} OFFSET ${offset}`;
+  const rows = openOnly
+    ? await sql`
+        SELECT id, ts, level, code, message, symbol, seen_at
+          FROM mlive.mlive_alerts WHERE seen_at IS NULL ORDER BY id DESC`
+    : await sql`
+        SELECT id, ts, level, code, message, symbol, seen_at
+          FROM mlive.mlive_alerts ORDER BY id DESC LIMIT ${size} OFFSET ${offset}`;
   return rows.map((row) => ({
     id: num(row.id),
     ts: String(row.ts),
@@ -316,7 +362,7 @@ export async function alertsPayload(page: number) {
 }
 
 const AUDIT_PAGE = 25;
-const AUDIT_VIEWS: readonly AuditView[] = ["all", "bought", "sold", "engine", "you"];
+const AUDIT_VIEWS: readonly AuditView[] = ["all", "working", "bought", "sold", "engine", "you"];
 
 export async function auditPayload(input: { page: number; view: string; group: string; symbol: string | null }) {
   const view = AUDIT_VIEWS.includes(input.view as AuditView) ? (input.view as AuditView) : "all";
@@ -377,9 +423,12 @@ function auditWhere(view: AuditView, group: EngineGroupId): { sql: string; actio
   const onlyOther = group === "other";
   const actions = actionsForEngineGroup(group);
   if (view === "you") return { sql: `actor NOT IN ('engine', 'kite') AND ${symbol} AND ${action}`, actions, runsOnly, onlyOther };
+  if (view === "working") {
+    return { sql: `action IN ('order.sent', 'gtt.exit') AND ${symbol} AND ${action}`, actions, runsOnly, onlyOther };
+  }
   if (view === "bought") {
     return {
-      sql: `upper(coalesce(after->>'side','')) <> 'SELL' AND (upper(coalesce(after->>'side','')) = 'BUY' OR action IN ('order.sent', 'fill')) AND ${symbol} AND ${action}`,
+      sql: `action = 'fill' AND upper(coalesce(after->>'side','')) <> 'SELL' AND ${symbol} AND ${action}`,
       actions,
       runsOnly,
       onlyOther,
@@ -387,7 +436,7 @@ function auditWhere(view: AuditView, group: EngineGroupId): { sql: string; actio
   }
   if (view === "sold") {
     return {
-      sql: `(upper(coalesce(after->>'side','')) = 'SELL' OR action IN ('gtt.exit', 'position.marked_sold')) AND ${symbol} AND ${action}`,
+      sql: `((action = 'fill' AND upper(coalesce(after->>'side','')) = 'SELL') OR action = 'position.marked_sold') AND ${symbol} AND ${action}`,
       actions,
       runsOnly,
       onlyOther,
@@ -467,6 +516,17 @@ type SizingBits = { qty?: number; limit?: number; stop?: number; notional?: numb
 function sentenceFor(row: Record<string, unknown>, sizing: SizingBits, settings: Record<string, unknown>): string {
   const qty = num(sizing.qty);
   const limit = num(sizing.limit);
+  if (row.order_status != null) {
+    return orderSentence({
+      side: String(row.order_kind) === "gtt_exit" ? "SELL" : String(row.side ?? "BUY"),
+      status: String(row.order_status),
+      ordered: num(row.order_qty) || qty,
+      filled: num(row.filled_qty),
+      limit: num(row.order_limit) || limit,
+      average: num(row.fill_price),
+      reasonCode: String(row.order_kind) === "gtt_exit" ? "gtt_exit" : row.reason_code == null ? null : String(row.reason_code),
+    });
+  }
   return decisionSentence({
     outcome: String(row.outcome ?? ""),
     side: String(row.side ?? "BUY"),

@@ -19,11 +19,14 @@ import {
   collapseAlerts,
   coversDecision,
   emaLast,
+  buyTooCloseToStop,
   entryBelowEma,
+  floorToTick,
   fillDeltaPrice,
   gttExitPlan,
   gttLastPrice,
   gttPrices,
+  holdingExit,
   gttQtyAction,
   haltReasons,
   heldOutsideSystem,
@@ -34,6 +37,10 @@ import {
   actionsForEngineGroup,
   collapseAuditRows,
   decisionSentence,
+  ledgerOutcome,
+  orderLabel,
+  orderSentence,
+  showsHolding,
   deployBaseline,
   engineGroup,
   engineSpendable,
@@ -41,6 +48,7 @@ import {
   ledgerDay,
   isBoughtOrSold,
   kiteAvailableCash,
+  kiteErrorMessage,
   kiteCashGap,
   kiteCashMessage,
   limitCrossed,
@@ -325,6 +333,26 @@ describe("exits", () => {
 
   it("places the GTT 3% under the stop and the limit 0.5% under the trigger", () => {
     expect(gttPrices(1978, 0.03)).toEqual({ trigger: 1918.65, limit: 1909.05 });
+    expect(gttPrices(100.03, 0, 0.05)).toEqual({ trigger: 100, limit: 99.5 });
+    expect(floorToTick(100.03, 0.05)).toBe(100);
+    expect(floorToTick(100.07, 0.05)).toBe(100.05);
+    expect(floorToTick(100, 0)).toBeNull();
+    expect(buyTooCloseToStop(100, 100)).toBe(true);
+    expect(buyTooCloseToStop(99, 100)).toBe(true);
+    expect(buyTooCloseToStop(101, 100)).toBe(true);
+    expect(buyTooCloseToStop(101.02, 100)).toBe(false);
+    expect(kiteErrorMessage({ message: "RMS: Margin exceeds", error_type: "OrderException" })).toBe("RMS: Margin exceeds");
+    expect(kiteErrorMessage(new Error("no Kite session for today"))).toBe("no Kite session for today");
+    expect(kiteErrorMessage({})).toBe("Kite did not say why the order failed.");
+    const under = holdingExit({ stop: 2485, last: 2445, high52: 2975 });
+    expect(under.underStop).toBe(true);
+    expect(under.sellWhen).toBe("Price is under ₹2,485.00. A close here sells it the next morning.");
+    expect(under.hardStop).toBe("Kite sells during the day if price hits ₹2,410.45.");
+    expect(under.target).toBe("No fixed target. It stays while the close holds above the stop. The 52-week high is ₹2,975.00, and that is not a sell price.");
+    const held = holdingExit({ stop: 2400, last: 2445, high52: 0 });
+    expect(held.underStop).toBe(false);
+    expect(held.sellWhen).toBe("Sell if the daily close finishes below ₹2,400.00. The order goes out the next morning.");
+    expect(held.target).toBe("No fixed target. It stays while the close holds above the stop.");
   });
 
   it("builds an alphanumeric tag of at most 20 characters", () => {
@@ -517,6 +545,22 @@ describe("alerts and audit views", () => {
     expect(clear(9)).toEqual([9]);
   });
 
+  it("shows one copy of a repeated engine failure and counts it once", () => {
+    const rows = Array.from({ length: 7 }, (_, i) => ({
+      id: i + 1,
+      code: "engine_error",
+      level: "problem",
+      message: "sync failed: no Kite session for today",
+      symbol: null,
+      seen: false,
+    }));
+    const grouped = collapseAlerts(rows);
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0].ids).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    const clear = rows.filter((row) => alertClearedWith(rows[0], row)).map((row) => row.id);
+    expect(clear).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  });
+
   it("reads the live Kite balance, then the cash balance", () => {
     expect(kiteAvailableCash({ available: { live_balance: 80500, cash: 80000 } })).toBe(80500);
     expect(kiteAvailableCash({ available: { cash: 80000 } })).toBe(80000);
@@ -539,12 +583,20 @@ describe("alerts and audit views", () => {
 
   it("splits the audit into buys, sells, the engine, and you", () => {
     const buy = { actor: "engine", action: "order.sent", side: "BUY" };
-    const sell = { actor: "kite", action: "gtt.exit", side: "SELL" };
+    const filled = { actor: "kite", action: "fill", side: "BUY" };
+    const sell = { actor: "kite", action: "fill", side: "SELL" };
+    const placedSell = { actor: "kite", action: "gtt.exit", side: "SELL" };
     const sized = { actor: "engine", action: "sizing", side: null };
     const you = { actor: "sanjay", action: "approval.approve", side: null };
-    expect(auditInView(buy, "bought")).toBe(true);
+    expect(auditInView(buy, "working")).toBe(true);
+    expect(auditInView(buy, "bought")).toBe(false);
+    expect(auditInView(filled, "bought")).toBe(true);
+    expect(auditInView(filled, "working")).toBe(false);
     expect(auditInView(buy, "engine")).toBe(false);
     expect(auditInView(sell, "sold")).toBe(true);
+    expect(auditInView({ actor: "sanjay", action: "position.marked_sold", side: "SELL" }, "sold")).toBe(true);
+    expect(auditInView(placedSell, "sold")).toBe(false);
+    expect(auditInView(placedSell, "working")).toBe(true);
     expect(auditInView(sell, "engine")).toBe(false);
     expect(auditInView(sized, "engine")).toBe(true);
     expect(auditInView(you, "you")).toBe(true);
@@ -604,11 +656,19 @@ describe("decision sentences, re-check, and bought-or-sold", () => {
     expect(decisionSentence({ outcome: "skipped", reasonCode: "entry_below_stop" })).toBe(
       "Not bought: the entry is below the stop."
     );
+    expect(decisionSentence({ outcome: "skipped", reasonCode: "too_close_to_stop" })).toBe(
+      "Not bought: the live price is at or within 1% of the stop."
+    );
+    expect(decisionSentence({ outcome: "skipped", reasonCode: "tick_unknown" })).toBe(
+      "Not sent: Kite did not give a tick size for this stock."
+    );
     expect(decisionSentence({ outcome: "skipped", reasonCode: "bad_data" })).toBe("Not bought: the price data is not usable.");
     expect(decisionSentence({ outcome: "skipped", reasonCode: "limit" })).toBe("Not bought: the daily buy limit is already full.");
-    expect(decisionSentence(ready)).toBe("Ready: 12 shares at ₹1,628.10, stop ₹1,601.58.");
-    expect(decisionSentence({ ...ready, outcome: "approved" })).toBe("Ready: 12 shares at ₹1,628.10, stop ₹1,601.58.");
-    expect(decisionSentence({ outcome: "sent", qty: 12, limit: 1628.1 })).toBe("Bought 12 at ₹1,628.10.");
+    expect(decisionSentence(ready)).toBe("Ready: 12 shares at ₹1,628.10, total ₹19,537.20, stop ₹1,601.58.");
+    expect(decisionSentence({ ...ready, outcome: "approved" })).toBe("Ready: 12 shares at ₹1,628.10, total ₹19,537.20, stop ₹1,601.58.");
+    expect(decisionSentence({ outcome: "sent", qty: 12, limit: 1628.1 })).toBe(
+      "Order placed: buy 12 at ₹1,628.10. Waiting to fill."
+    );
     expect(decisionSentence({ outcome: "filled", qty: 12, limit: 1628.1 })).toBe("Bought 12 at ₹1,628.10.");
   });
 
@@ -626,7 +686,7 @@ describe("decision sentences, re-check, and bought-or-sold", () => {
     expect(ledgerDay([{ symbol: "HDFCBANK", outcome: "skipped", reasonCode: "held", sentence: "Not bought: already held." }]).detail)
       .toBe("HDFCBANK not bought: already held.");
     const mixed = ledgerDay([
-      { symbol: "TRENT", outcome: "sent", side: "BUY", sentence: "Bought 4 at ₹4,980.00." },
+      { symbol: "TRENT", outcome: "filled", side: "BUY", sentence: "Bought 4 at ₹4,980.00." },
       cash("COFORGE"),
       { symbol: "LUPIN", outcome: "skipped", reasonCode: "sector_cap", sentence: "Not bought: already 2 stocks in Banks." },
     ]);
@@ -649,6 +709,7 @@ describe("decision sentences, re-check, and bought-or-sold", () => {
     expect(recheckDue(10 * 60 + 7, false)).toBe(false);
     expect(recheckDue(9 * 60 + 10, true)).toBe(false);
     expect(recheckEligible("skipped", "pacing_day")).toBe(true);
+    expect(recheckEligible("skipped", "too_close_to_stop")).toBe(true);
     expect(recheckEligible("skipped", "pacing_strategy")).toBe(true);
     expect(recheckEligible("skipped", "pacing_cash")).toBe(true);
     expect(recheckEligible("skipped", "strategy_full")).toBe(false);
@@ -782,14 +843,50 @@ describe("decision sentences, re-check, and bought-or-sold", () => {
 
   it("keeps skipped decisions out of what was bought and sold", () => {
     const rows = [
-      { kind: "decision" as const, status: "skipped", dryRun: false },
-      { kind: "order" as const, status: "COMPLETE", dryRun: false },
-      { kind: "order" as const, status: "COMPLETE", dryRun: true },
-      { kind: "gtt_exit" as const, status: "COMPLETE", dryRun: false },
-      { kind: "order" as const, status: "CANCELLED", dryRun: false },
+      { kind: "decision" as const, status: "skipped", filled: 0, dryRun: false },
+      { kind: "order" as const, status: "COMPLETE", filled: 16, dryRun: false },
+      { kind: "order" as const, status: "COMPLETE", filled: 16, dryRun: true },
+      { kind: "gtt_exit" as const, status: "COMPLETE", filled: 7, dryRun: false },
+      { kind: "order" as const, status: "CANCELLED", filled: 0, dryRun: false },
+      { kind: "order" as const, status: "OPEN", filled: 0, dryRun: false },
+      { kind: "order" as const, status: "CANCELLED", filled: 5, dryRun: false },
     ];
     expect(rows.filter((row) => isBoughtOrSold(row, false)).map((row) => row.kind)).toEqual(["order", "gtt_exit", "order"]);
     expect(rows.filter((row) => isBoughtOrSold(row, true))).toHaveLength(4);
+  });
+
+  it("describes each ZYDUSLIFE order state, and holds it only after a fill", () => {
+    const order = { side: "BUY" as const, ordered: 16, limit: 1203.9 };
+    expect(orderSentence({ ...order, status: "OPEN", filled: 0 })).toBe(
+      "Order placed: buy 16 at ₹1,203.90. Waiting to fill."
+    );
+    expect(orderSentence({ ...order, status: "OPEN", filled: 5, average: 1203.9 })).toBe(
+      "Bought 5 of 16 … 11 still waiting."
+    );
+    expect(orderSentence({ ...order, status: "COMPLETE", filled: 16, average: 1201.5 })).toBe(
+      "Bought 16 at ₹1,201.50."
+    );
+    expect(orderSentence({ ...order, status: "CANCELLED", filled: 5, average: 1203.9 })).toBe(
+      "Bought 5 of 16. The other 11 were cancelled."
+    );
+    expect(orderLabel("OPEN", 16, 0)).toBe("working");
+    expect(orderLabel("OPEN", 16, 5)).toBe("working");
+    expect(orderLabel("COMPLETE", 16, 16)).toBe("filled");
+    expect(showsHolding(0)).toBe(false);
+    expect(showsHolding(5)).toBe(true);
+    const placed = { actor: "engine", action: "order.sent", side: "BUY" };
+    const filled = { actor: "kite", action: "fill", side: "BUY" };
+    expect(auditInView(placed, "working")).toBe(true);
+    expect(auditInView(placed, "bought")).toBe(false);
+    expect(auditInView(filled, "bought")).toBe(true);
+    expect(auditInView({ actor: "kite", action: "fill", side: "SELL" }, "sold")).toBe(true);
+    expect(auditInView({ actor: "engine", action: "order.sent", side: "SELL" }, "sold")).toBe(false);
+    expect(ledgerOutcome("sent", { status: "OPEN", ordered: 16, filled: 0 })).toBe("working");
+    expect(ledgerOutcome("sent", { status: "COMPLETE", ordered: 16, filled: 16 })).toBe("filled");
+    expect(ledgerDay([{ symbol: "ZYDUSLIFE", outcome: "working", side: "BUY", sentence: orderSentence({ ...order, status: "OPEN", filled: 0 }) }]).label)
+      .toBe("Working");
+    expect(ledgerDay([{ symbol: "ZYDUSLIFE", outcome: "filled", side: "BUY", sentence: "Bought 16 at ₹1,201.50." }]).label)
+      .toBe("1 buy");
   });
 });
 

@@ -37,6 +37,13 @@ export async function raiseAlert(entry: {
   symbol?: string | null;
   runId?: number | null;
 }): Promise<number> {
+  const open = await q<{ id: string }>(
+    `SELECT id FROM mlive.mlive_alerts
+      WHERE seen_at IS NULL AND code = $1 AND message = $2 AND symbol IS NOT DISTINCT FROM $3
+      ORDER BY id DESC LIMIT 1`,
+    [entry.code, entry.message, entry.symbol ?? null]
+  );
+  if (open[0]) return Number(open[0].id);
   const rows = await q<{ id: string }>(
     `INSERT INTO mlive.mlive_alerts (level, code, message, symbol) VALUES ($1, $2, $3, $4) RETURNING id`,
     [entry.level, entry.code, entry.message, entry.symbol ?? null]

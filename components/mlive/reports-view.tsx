@@ -27,6 +27,7 @@ function dayLabel(day: string): string {
 
 const VIEWS: { id: AuditView; label: string }[] = [
   { id: "all", label: "All" },
+  { id: "working", label: "Working" },
   { id: "bought", label: "Bought" },
   { id: "sold", label: "Sold" },
   { id: "engine", label: "Engine" },
@@ -53,7 +54,7 @@ export function ReportsView() {
       if (params.get("tab") === "alerts") setTab("alerts");
       setReady(true);
       void fetch("/api/mlive/reports/ledger").then(async (res) => res.ok && setLedger(await res.json()));
-      void fetch("/api/mlive/reports/alerts").then(async (res) => res.ok && setAlerts(await res.json()));
+      void fetch("/api/mlive/reports/alerts?open=1").then(async (res) => res.ok && setAlerts(await res.json()));
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
@@ -73,6 +74,13 @@ export function ReportsView() {
     const res = await fetch(`/api/mlive/alerts/${ids[0]}/seen`, { method: "POST" });
     if (!res.ok) return;
     setAlerts((rows) => rows.map((row) => (ids.includes(row.id) ? { ...row, seen: true } : row)));
+    notifyAlertsChanged();
+  }
+
+  async function seenAll() {
+    const res = await fetch("/api/mlive/alerts/seen", { method: "POST" });
+    if (!res.ok) return;
+    setAlerts((rows) => rows.map((row) => ({ ...row, seen: true })));
     notifyAlertsChanged();
   }
 
@@ -148,9 +156,14 @@ export function ReportsView() {
 
       {tab === "alerts" && (
         <div className="card" style={{ marginTop: 16 }}>
-          <div className="card-h">
-            <h2>Alerts</h2>
-            <p className="sub">Needs you, a problem, or done. The same check is shown once.</p>
+          <div className="card-h" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+            <div>
+              <h2>Alerts</h2>
+              <p className="sub">Needs you, a problem, or done. The same message is shown once.</p>
+            </div>
+            {groups.some((row) => !row.seen) && (
+              <button type="button" className="btn" onClick={() => void seenAll()}>Mark all as read</button>
+            )}
           </div>
           {groups.length === 0 && <p style={{ padding: 20 }} className="muted">No alerts.</p>}
           {groups.map((row) => (
@@ -158,9 +171,8 @@ export function ReportsView() {
               <div className="what">
                 <b>{alertLabel(row.level)}</b>
                 <div className="muted">{alertBody(row)}</div>
-                {row.repeat > 1 && <div className="muted">Written {row.repeat} times. Marking seen clears all of them.</div>}
               </div>
-              {!row.seen && <button type="button" className="btn" onClick={() => seen(row.ids)}>Mark seen</button>}
+              {!row.seen && <button type="button" className="btn" onClick={() => void seen(row.ids)}>Mark seen</button>}
             </div>
           ))}
         </div>

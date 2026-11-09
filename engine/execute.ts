@@ -3,7 +3,7 @@ import {
   type GuardContext,
 } from "@/engine/guard";
 import { todayIst } from "@/lib/mlive/calendar";
-import { coversDecision, deployBaseline, engineSpendable, gttExitPlan, isChasing, isExcluded, limitCrossed, makeTag, roundTick, sizeOrder, spendableCash, systemCash } from "@/lib/mlive/rules";
+import { buyTooCloseToStop, coversDecision, decisionSentence, deployBaseline, engineSpendable, floorToTick, gttExitPlan, isChasing, isExcluded, kiteErrorMessage, limitCrossed, makeTag, sizeOrder, spendableCash, systemCash } from "@/lib/mlive/rules";
 import { audit } from "./audit";
 import { raiseAlert } from "./alerts";
 import {
@@ -99,8 +99,18 @@ export async function sendReady(opts: SendOpts): Promise<Record<string, unknown>
         JSON.stringify({ ...decision.sizing, qty, text: sized.text }),
       ]);
     }
+    let live: number | null = null;
+    if (decision.side === "BUY") {
+      live = await livePrice(decision.symbol);
+      const stop = decision.sizing?.stop ?? 0;
+      if (live != null && buyTooCloseToStop(live, stop)) {
+        const text = decisionSentence({ outcome: "skipped", reasonCode: "too_close_to_stop" });
+        await skip(decision, "too_close_to_stop", text, opts.runId);
+        results.push(`${decision.symbol} too_close_to_stop`);
+        continue;
+      }
+    }
     if (opts.chase) {
-      const live = await livePrice(decision.symbol);
       const signal = decision.sizing?.signalClose ?? 0;
       if (live != null && signal > 0 && isChasing(live, signal, settings.chasePct)) {
         await skip(decision, "chasing", `live ${live} is more than ${settings.chasePct * 100}% above the signal`, opts.runId);
@@ -162,15 +172,29 @@ export async function sendReady(opts: SendOpts): Promise<Record<string, unknown>
     const tag = makeTag(decision.side, shortId());
     const already = await q(`SELECT id FROM mlive.mlive_orders WHERE decision_id = $1`, [decision.id]);
     if (already[0]) continue;
+    const price = await kiteLimit(kite, decision.symbol, limit);
+    if (price == null) {
+      const text = decisionSentence({ outcome: "skipped", reasonCode: "tick_unknown" });
+      await skip(decision, "tick_unknown", text, opts.runId);
+      await raiseAlert({
+        level: "problem",
+        code: "tick_unknown",
+        symbol: decision.symbol,
+        message: `${decision.symbol}: ${text}`,
+        runId: opts.runId,
+      });
+      results.push(`${decision.symbol} tick_unknown`);
+      continue;
+    }
     try {
-      const placed = await kite.placeOrder({ symbol: decision.symbol, side: decision.side, qty, price: limit, tag });
+      const placed = await kite.placeOrder({ symbol: decision.symbol, side: decision.side, qty, price, tag });
       await recordOrder({
         decisionId: decision.id,
         tag,
         side: decision.side,
         symbol: decision.symbol,
         qty,
-        limit,
+        limit: price,
         kiteOrderId: placed.orderId,
         dryRun: placed.dryRun,
         runId: opts.runId,
@@ -179,12 +203,12 @@ export async function sendReady(opts: SendOpts): Promise<Record<string, unknown>
         buysSent += 1;
         newBuys += 1;
         strategyBuys[strategy] += 1;
-        deployed += qty * limit;
+        deployed += qty * price;
       } else sellsSent += 1;
-      if (decision.side === "BUY") spendable -= qty * limit;
+      if (decision.side === "BUY") spendable -= qty * price;
       results.push(`${decision.symbol} sent ${placed.orderId}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = kiteErrorMessage(error);
       await q(
         `UPDATE mlive.mlive_decisions SET outcome = 'skipped', reason_code = 'order_rejected', reason_text = $2 WHERE id = $1`,
         [decision.id, message]
@@ -198,6 +222,12 @@ export async function sendReady(opts: SendOpts): Promise<Record<string, unknown>
     }
   }
   return { buysSent, sellsSent, results };
+}
+
+async function kiteLimit(kite: MliveKite, symbol: string, price: number): Promise<number | null> {
+  const tick = await kite.tickSize(symbol);
+  if (tick == null) return null;
+  return floorToTick(price, tick);
 }
 
 async function ideaStrategy(ideaId: number | null): Promise<"rs" | "ema"> {
@@ -551,8 +581,17 @@ export async function coverUnguardedPositions(runId: number): Promise<number> {
     });
     if (guarded || qty < 1) continue;
     const live = await livePrice(row.symbol);
-    const limit = roundTick((live && live > 0 ? live : avg) * 0.995);
-    if (!(limit > 0)) continue;
+    const limit = await kiteLimit(kite, row.symbol, (live && live > 0 ? live : avg) * 0.995);
+    if (limit == null) {
+      await raiseAlert({
+        level: "problem",
+        code: "gtt_failed",
+        symbol: row.symbol,
+        message: `${row.symbol}: Kite did not give a tick size, so no order was sent.`,
+        runId,
+      });
+      continue;
+    }
     const inserted = await q<{ id: string }>(
       `INSERT INTO mlive.mlive_decisions
          (run_id, trade_date, position_id, side, symbol, outcome, reason_code, reason_text, sizing, dry_run)
@@ -626,7 +665,7 @@ export async function coverUnguardedPositions(runId: number): Promise<number> {
       });
       sent += 1;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = kiteErrorMessage(error);
       await q(
         `UPDATE mlive.mlive_decisions SET outcome = 'skipped', reason_code = 'order_rejected', reason_text = $2 WHERE id = $1`,
         [decisionId, message]

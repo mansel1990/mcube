@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { holdingExit } from "@/lib/mlive/rules";
 import { greeting, inr, longDay, signed } from "./format";
 
 type Home = {
@@ -22,7 +23,7 @@ type Home = {
   trades: { buys: number; sells: number; maxBuys: number; maxSells: number; waiting: number };
   fundUsed: number;
   needsYou: { id: number; side: string; symbol: string; text: string; raw?: string; sizing: { qty?: number; limit?: number } }[];
-  holdings: { id: number; symbol: string; strategy: string; qty: number; avg: number; stop: number; high: number; gtt: boolean; sellProposed: boolean; since: string | null; frozen: boolean }[];
+  holdings: { id: number; symbol: string; strategy: string; qty: number; avg: number; stop: number; high: number; gtt: boolean; stopReason: string | null; sellProposed: boolean; since: string | null; frozen: boolean }[];
   ideas: { total: number; passed: number; picked: number; rows: { symbol: string; strategy: string; result: string; reason: string; raw?: string }[] };
   cashSkipped: boolean;
   kiteCashUnknown: boolean;
@@ -44,6 +45,9 @@ export function HomeView() {
   const [prices, setPrices] = useState<Record<string, number>>({});
   const [recheckNote, setRecheckNote] = useState("");
   const [recheckBusy, setRecheckBusy] = useState(false);
+  const [pending, setPending] = useState<{ id: number; action: "approve" | "skip" } | null>(null);
+  const [leavingId, setLeavingId] = useState<number | null>(null);
+  const [actNote, setActNote] = useState("");
 
   async function load() {
     const res = await fetch("/api/mlive/home");
@@ -82,12 +86,30 @@ export function HomeView() {
   }, []);
 
   async function act(id: number, action: "approve" | "skip") {
-    await fetch("/api/mlive/approvals", {
+    if (pending) return;
+    const symbol = data?.needsYou.find((row) => row.id === id)?.symbol ?? "that idea";
+    setPending({ id, action });
+    setActNote(action === "approve" ? `Approving ${symbol}…` : `Skipping ${symbol}…`);
+    const res = await fetch("/api/mlive/approvals", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ decision_id: id, action }),
     });
-    await load();
+    if (!res.ok) {
+      setActNote(action === "approve" ? `Could not approve ${symbol}.` : `Could not skip ${symbol}.`);
+      setPending(null);
+      return;
+    }
+    setLeavingId(id);
+    setActNote(action === "approve" ? `${symbol} approved.` : `${symbol} skipped.`);
+    window.setTimeout(() => {
+      setData((current) =>
+        current ? { ...current, needsYou: current.needsYou.filter((row) => row.id !== id) } : current
+      );
+      setLeavingId(null);
+      setPending(null);
+    }, 280);
+    void load();
   }
 
   async function recheck() {
@@ -171,20 +193,30 @@ export function HomeView() {
           <div className="head">
             <h2>Needs you</h2>
             <span className="count">{data.needsYou.length}</span>
-            <span className="muted" style={{ marginLeft: "auto", fontSize: 13 }}>Nothing is sent until you approve</span>
+            <span className="muted" role="status" style={{ marginLeft: "auto", fontSize: 13 }}>{actNote || "Nothing is sent until you approve"}</span>
           </div>
-          {data.needsYou.map((row) => (
-            <div className="act" key={row.id}>
-              <span className={`side-tag ${row.side === "BUY" ? "buy" : "sell"}`}>{row.side}</span>
-              <div className="what">
-                <b>{row.symbol} · {row.sizing.qty ?? "—"} shares{row.sizing.limit ? ` @ ${inr(row.sizing.limit, 2)}` : ""}</b>
-                <div className="muted" title={row.raw || undefined}>{row.text}</div>
-                {data.state.dryRun && <div className="dry-tag">DRY RUN · no real orders</div>}
+          {data.needsYou.map((row) => {
+            const busy = pending?.id === row.id;
+            const leaving = leavingId === row.id;
+            return (
+              <div className={leaving ? "act leaving" : "act"} key={row.id} aria-busy={busy || leaving}>
+                <span className={`side-tag ${row.side === "BUY" ? "buy" : "sell"}`}>{row.side}</span>
+                <div className="what">
+                  <b>{row.symbol} · {row.sizing.qty ?? "—"} shares{row.sizing.limit ? ` @ ${inr(row.sizing.limit, 2)}` : ""}{row.sizing.qty && row.sizing.limit ? ` · ${inr(row.sizing.qty * row.sizing.limit, 2)}` : ""}</b>
+                  <div className="muted" title={row.raw || undefined}>{row.text}</div>
+                  {data.state.dryRun && <div className="dry-tag">DRY RUN · no real orders</div>}
+                </div>
+                <button type="button" className="btn" onClick={() => act(row.id, "skip")} disabled={pending != null}>
+                  {busy && pending.action === "skip" && <span className="spin" aria-hidden="true" />}
+                  {busy && pending.action === "skip" ? "Skipping…" : "Skip"}
+                </button>
+                <button type="button" className="btn primary" onClick={() => act(row.id, "approve")} disabled={pending != null}>
+                  {busy && pending.action === "approve" && <span className="spin" aria-hidden="true" />}
+                  {busy && pending.action === "approve" ? "Approving…" : "Approve"}
+                </button>
               </div>
-              <button type="button" className="btn" onClick={() => act(row.id, "skip")}>Skip</button>
-              <button type="button" className="btn primary" onClick={() => act(row.id, "approve")}>Approve</button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -204,11 +236,7 @@ export function HomeView() {
               const ltp = prices[row.symbol] ?? row.avg;
               const pnl = (ltp - row.avg) * row.qty;
               const pct = row.avg ? (ltp / row.avg - 1) * 100 : 0;
-              const hi = Math.max(row.high, ltp, row.stop, row.avg);
-              const lo = Math.min(row.stop || ltp, ltp, row.avg) * 0.99;
-              const span = hi - lo || 1;
-              const x = (value: number) => Math.max(0, Math.min(100, ((value - lo) / span) * 100));
-              const above = row.stop ? ((ltp - row.stop) / ltp) * 100 : 0;
+              const plan = holdingExit({ stop: row.stop, last: prices[row.symbol] ?? null, high52: row.high });
               return (
                 <article className="card hold" key={row.symbol}>
                   <div className="t">
@@ -226,13 +254,17 @@ export function HomeView() {
                     <div>Avg<b className="n">{inr(row.avg, 2)}</b></div>
                     <div>LTP<b className="n">{prices[row.symbol] ? inr(ltp, 2) : "—"}</b></div>
                   </div>
-                  <div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--ink3)" }}><span>Trend stop</span><span>52-wk high</span></div>
-                    <div className="range" aria-label="Price between trend stop and 52-week high">
-                      <div className="track" />
-                      <div className="fill" style={{ left: `${x(row.stop)}%`, width: `${Math.max(0, x(ltp) - x(row.stop))}%`, background: ltp >= row.stop ? "var(--up)" : "var(--down)" }} />
-                      <div className="mk" style={{ left: `${x(ltp)}%` }} />
-                      <div className="ends n"><span>{row.stop ? inr(row.stop, 0) : "—"}</span><span>{hi ? inr(hi, 0) : "—"}</span></div>
+                  <div className="exit">
+                    <div>
+                      <p className="lbl">Stop loss</p>
+                      <b className={`n ${plan.underStop ? "down" : ""}`}>{row.stop ? inr(row.stop, 2) : "—"}</b>
+                      <p>{plan.sellWhen}</p>
+                      {plan.hardStop && <p>{plan.hardStop}</p>}
+                    </div>
+                    <div>
+                      <p className="lbl">Target</p>
+                      <b>None</b>
+                      <p>{plan.target}</p>
                     </div>
                   </div>
                   {row.frozen ? (
@@ -242,7 +274,7 @@ export function HomeView() {
                     </div>
                   ) : (
                     <span className={row.sellProposed ? "state s-act" : "state s-ok"}>
-                      {row.sellProposed ? "Sell proposed · needs you" : row.gtt ? `${above.toFixed(1)}% above stop · GTT active` : "GTT missing"}
+                      {row.sellProposed ? "Sell proposed · needs you" : row.gtt ? "Hard stop is active in Kite" : row.stopReason ? `Hard stop missing. ${row.stopReason}` : "Hard stop missing in Kite"}
                     </span>
                   )}
                 </article>
@@ -263,7 +295,11 @@ export function HomeView() {
             {data.activity.map((row, i) => (
               <div key={`${row.symbol}-${row.date}-${i}`} style={{ display: "grid", gridTemplateColumns: "72px 1fr auto", gap: 12, padding: "12px 0", borderTop: "1px solid var(--line)" }}>
                 <span className="muted">{row.date}</span>
-                <div><b>{row.symbol}</b><div className="muted">{row.detail}</div></div>
+                <div>
+                  <b>{row.symbol}</b>
+                  {row.outcome === "working" && <span className="state s-work">working</span>}
+                  <div className="muted">{row.detail}</div>
+                </div>
                 <span className="n">{row.price ? inr(row.price, 2) : ""}</span>
               </div>
             ))}

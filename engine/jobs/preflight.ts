@@ -1,5 +1,6 @@
 import { istMinutes, previousTradingDay, todayIst } from "@/lib/mlive/calendar";
 import {
+  buyTooCloseToStop,
   decisionSentence,
   engineSpendable,
   entryBelowEma,
@@ -26,7 +27,7 @@ import { buyPace, openCost, openPositions, pendingBuyValue, saveDeployBaseline }
 import { jsonValue, num, q } from "../db";
 import { MliveKite } from "../kite";
 import { fundBalance, holidaySet, loadSettings, loadState, setState } from "../load";
-import { bhavcopyPresent, loadBars, previousClose, yahooPreviousClose } from "../market";
+import { bhavcopyPresent, livePrice, loadBars, previousClose, yahooPreviousClose } from "../market";
 import { runJob } from "../run";
 
 export async function preflight(): Promise<void> {
@@ -299,6 +300,19 @@ export async function preflight(): Promise<void> {
           limitCount: paceReason === "strategy_full" ? settings.maxOpenPerStrategy : paceReason === "pacing_strategy" ? settings.maxBuysPerStrategy : settings.maxNewBuys,
         });
         await proposeSkip(runId, today, num(source.id), idea.symbol, paceReason, text, settings.dryRun);
+        continue;
+      }
+      const live = await livePrice(idea.symbol);
+      if (live != null && buyTooCloseToStop(live, stop)) {
+        await proposeSkip(
+          runId,
+          today,
+          num(source.id),
+          idea.symbol,
+          "too_close_to_stop",
+          decisionSentence({ outcome: "skipped", reasonCode: "too_close_to_stop" }),
+          settings.dryRun
+        );
         continue;
       }
       await upsertBuy(runId, today, num(source.id), idea.symbol, "proposed", "ranked", sized.text, {

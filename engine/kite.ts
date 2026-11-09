@@ -1,6 +1,6 @@
 import { KiteConnect, type Connect, type GTTParams } from "kiteconnect";
 import { decryptToken } from "@/lib/mlive/crypto";
-import { kiteAvailableCash } from "@/lib/mlive/rules";
+import { kiteAvailableCash, kiteErrorMessage } from "@/lib/mlive/rules";
 import { todayIst } from "@/lib/mlive/calendar";
 import { asDate, q } from "./db";
 
@@ -31,8 +31,13 @@ async function readRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
       await sleep(400 * (attempt + 1));
     }
   }
-  const message = last instanceof Error ? last.message : String(last);
-  throw new Error(`${label} failed: ${message}`);
+  throw new Error(`${label} failed: ${kiteErrorMessage(last)}`);
+}
+
+let tickBook: Map<string, number> | null = null;
+
+export function clearTickCache(): void {
+  tickBook = null;
 }
 
 export class MliveKite {
@@ -66,6 +71,29 @@ export class MliveKite {
     const kc = await this.client();
     const rows = await readRetry("holdings", () => kc.getHoldings());
     return rows.map((row) => ({ tradingsymbol: row.tradingsymbol, quantity: row.quantity }));
+  }
+
+  /** NSE equity tick from the instrument dump. Null means no order is sent. */
+  async tickSize(symbol: string): Promise<number | null> {
+    const key = symbol.trim().toUpperCase();
+    if (!key) return null;
+    if (!tickBook) {
+      try {
+        const kc = await this.client();
+        const rows = await kc.getInstruments("NSE");
+        const next = new Map<string, number>();
+        for (const row of rows) {
+          if (row.exchange !== "NSE" || row.instrument_type !== "EQ") continue;
+          const tick = Number(row.tick_size);
+          if (Number.isFinite(tick) && tick > 0) next.set(String(row.tradingsymbol).toUpperCase(), tick);
+        }
+        if (next.size === 0) return null;
+        tickBook = next;
+      } catch {
+        return null;
+      }
+    }
+    return tickBook.get(key) ?? null;
   }
 
   async equityCash(): Promise<number> {

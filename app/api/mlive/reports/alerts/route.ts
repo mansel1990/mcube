@@ -6,5 +6,6 @@ export async function GET(request: NextRequest) {
   const session = await requireMliveSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const page = Math.max(0, Number(request.nextUrl.searchParams.get("page") ?? 0) || 0);
-  return NextResponse.json(await alertsPayload(page));
+  const openOnly = request.nextUrl.searchParams.get("open") === "1";
+  return NextResponse.json(await alertsPayload(page, openOnly));
 }

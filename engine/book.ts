@@ -1,6 +1,6 @@
 import { randomBytes } from "crypto";
 import { estimateCharges, withDp } from "@/lib/mlive/charges";
-import { clampSellQty, fillDeltaPrice, gttLastPrice, gttPrices, gttQtyAction, makeTag, rejectIsKnown, type ExitParams, type Side } from "@/lib/mlive/rules";
+import { clampSellQty, fillDeltaPrice, floorToTick, gttLastPrice, gttPrices, gttQtyAction, kiteErrorMessage, makeTag, rejectIsKnown, type ExitParams, type Side } from "@/lib/mlive/rules";
 import { audit } from "./audit";
 import { raiseAlert } from "./alerts";
 import { jsonValue, num, q } from "./db";
@@ -342,6 +342,17 @@ export async function applyFill(args: {
     message: `${args.symbol} ${delta} filled @ ₹${price}`,
     runId: args.runId,
   });
+  if (args.side === "BUY" && args.stop != null && price < args.stop - 1e-9) {
+    const filled = price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const stop = args.stop.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    await raiseAlert({
+      level: "problem",
+      code: "buy_filled_below_stop",
+      symbol: args.symbol,
+      message: `${args.symbol} filled at ₹${filled}, below its stop of ₹${stop}.`,
+      runId: args.runId,
+    });
+  }
 }
 
 async function positionIdFor(symbol: string, dryRun: boolean): Promise<number | null> {
@@ -416,7 +427,18 @@ async function ensureGtt(
   const existing = await q(`SELECT id FROM mlive.mlive_gtts WHERE position_id = $1 AND status IN ('active', 'DRY')`, [positionId]);
   if (existing[0] || args.stop == null) return;
   const gap = (args.strategy === "ema" ? args.settings.exitEma : args.settings.exitRs).gtt_gap_pct;
-  const prices = gttPrices(args.stop, gap);
+  const tick = await args.kite.tickSize(args.symbol);
+  if (tick == null) {
+    await raiseAlert({
+      level: "problem",
+      code: "gtt_failed",
+      symbol: args.symbol,
+      message: `${args.symbol}: Kite did not give a tick size, so no stop order was sent.`,
+      runId: args.runId,
+    });
+    return;
+  }
+  const prices = gttPrices(args.stop, gap, tick);
   const qty = clampSellQty(args.filledQty, args.filledQty);
   const lastPrice = await markPrice(args.symbol, args.avgPrice);
   try {
@@ -440,10 +462,8 @@ async function ensureGtt(
       runId: args.runId,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (!args.quiet) {
-      await raiseAlert({ level: "problem", code: "gtt_failed", symbol: args.symbol, message, runId: args.runId });
-    }
+    const message = kiteErrorMessage(error);
+    await raiseAlert({ level: "problem", code: "gtt_failed", symbol: args.symbol, message, runId: args.runId });
   }
 }
 
@@ -466,21 +486,44 @@ export async function syncGttToStop(args: {
   const row = rows[0];
   if (!row?.kite_trigger_id) return;
   const gap = (args.strategy === "ema" ? args.settings.exitEma : args.settings.exitRs).gtt_gap_pct;
-  const prices = gttPrices(args.stop, gap);
+  const kite = new MliveKite(args.settings.dryRun);
+  const tick = await kite.tickSize(args.symbol);
+  if (tick == null) {
+    await raiseAlert({
+      level: "problem",
+      code: "gtt_failed",
+      symbol: args.symbol,
+      message: `${args.symbol}: Kite did not give a tick size, so the stop order was not changed.`,
+      runId: args.runId,
+    });
+    return;
+  }
+  const prices = gttPrices(args.stop, gap, tick);
   const current = num(row.trigger_price);
   const nextQty = args.qty;
   const qtyChanged = num(row.qty) !== nextQty;
   const trigger = Math.max(prices.trigger, current);
   const movingUp = trigger > current + 0.001;
   if (!movingUp && !qtyChanged) return;
-  const limit = movingUp ? prices.limit : num(row.limit_price);
-  const kite = new MliveKite(args.settings.dryRun);
+  const rawLimit = movingUp ? prices.limit : num(row.limit_price);
+  const alignedTrigger = floorToTick(trigger, tick);
+  const alignedLimit = floorToTick(rawLimit, tick);
+  if (alignedTrigger == null || alignedLimit == null || alignedTrigger + 1e-9 < current) {
+    await raiseAlert({
+      level: "problem",
+      code: "gtt_failed",
+      symbol: args.symbol,
+      message: `${args.symbol}: the stop price does not fit the tick size, so the stop order was not changed.`,
+      runId: args.runId,
+    });
+    return;
+  }
   try {
     await kite.modifyGtt(String(row.kite_trigger_id), {
       symbol: args.symbol,
       qty: nextQty,
-      trigger,
-      limit,
+      trigger: alignedTrigger,
+      limit: alignedLimit,
       lastPrice: args.lastPrice,
     });
     await q(
@@ -488,17 +531,17 @@ export async function syncGttToStop(args: {
           SET trigger_price = $2, limit_price = $3, qty = $4,
               history = history || jsonb_build_array($5::jsonb)
         WHERE id = $1`,
-      [num(row.id), trigger, limit, nextQty, JSON.stringify({ at: new Date().toISOString(), stop: args.stop, trigger, limit, qty: nextQty })]
+      [num(row.id), alignedTrigger, alignedLimit, nextQty, JSON.stringify({ at: new Date().toISOString(), stop: args.stop, trigger: alignedTrigger, limit: alignedLimit, qty: nextQty })]
     );
     await raiseAlert({
       level: "done",
       code: "gtt_moved",
       symbol: args.symbol,
-      message: `${args.symbol} GTT moved to ₹${trigger}`,
+      message: `${args.symbol} GTT moved to ₹${alignedTrigger}`,
       runId: args.runId,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = kiteErrorMessage(error);
     await raiseAlert({ level: "problem", code: "gtt_failed", symbol: args.symbol, message, runId: args.runId });
   }
 }

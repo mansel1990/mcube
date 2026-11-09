@@ -1,5 +1,6 @@
 import { todayIst } from "@/lib/mlive/calendar";
 import {
+  buyTooCloseToStop,
   decisionSentence,
   engineSpendable,
   entryBelowEma,
@@ -19,7 +20,7 @@ import { buyPace, openCost, openPositions, pendingBuyValue, saveDeployBaseline, 
 import { num, q } from "../db";
 import { MliveKite } from "../kite";
 import { fundBalance, loadSettings, loadState } from "../load";
-import { loadBars, previousClose, yahooPreviousClose } from "../market";
+import { livePrice, loadBars, previousClose, yahooPreviousClose } from "../market";
 
 type Candidate = {
   id: number | null;
@@ -217,6 +218,29 @@ export async function recheckBuys(runId: number): Promise<number> {
       paceBook = { ...paceBook, baseline: paced.book.baseline };
       if (pacedAction !== "propose") continue;
       paceBook = paced.book;
+    }
+    const live = await livePrice(candidate.symbol);
+    if (live != null && buyTooCloseToStop(live, candidate.stop)) {
+      const text = decisionSentence({ outcome: "skipped", reasonCode: "too_close_to_stop" });
+      if (candidate.id != null) {
+        await q(
+          `UPDATE mlive.mlive_decisions
+              SET outcome = 'skipped', reason_code = 'too_close_to_stop', reason_text = $2, run_id = $3
+            WHERE id = $1 AND outcome IN ('proposed', 'skipped')`,
+          [candidate.id, text, runId]
+        );
+      } else {
+        await q(
+          `INSERT INTO mlive.mlive_decisions
+             (run_id, trade_date, idea_id, side, symbol, outcome, reason_code, reason_text, sizing, rank, dry_run)
+           VALUES ($1, $2::date, $3, 'BUY', $4, 'skipped', 'too_close_to_stop', $5, NULL, NULL, $6)
+           ON CONFLICT (trade_date, side, idea_id) WHERE idea_id IS NOT NULL
+           DO UPDATE SET outcome = 'skipped', reason_code = 'too_close_to_stop', reason_text = EXCLUDED.reason_text, run_id = EXCLUDED.run_id
+            WHERE mlive.mlive_decisions.outcome IN ('proposed', 'skipped')`,
+          [runId, today, candidate.ideaId, candidate.symbol, text, settings.dryRun]
+        );
+      }
+      continue;
     }
     const action = recheckPlan({
       outcome: candidate.outcome,

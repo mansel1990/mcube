@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getMargins, q, audit, raiseAlert } = vi.hoisted(() => ({
+const { getMargins, getInstruments, q, audit, raiseAlert } = vi.hoisted(() => ({
   getMargins: vi.fn(),
+  getInstruments: vi.fn(),
   q: vi.fn(),
   audit: vi.fn(),
   raiseAlert: vi.fn(),
@@ -16,6 +17,7 @@ vi.mock("kiteconnect", () => ({
   KiteConnect: vi.fn().mockImplementation(() => ({
     setAccessToken: vi.fn(),
     getMargins,
+    getInstruments,
     getHoldings: vi.fn().mockResolvedValue([]),
   })),
 }));
@@ -64,13 +66,19 @@ describe("approvals when Kite cash cannot be read", () => {
   const orders: unknown[][] = [];
   let summary: Record<string, unknown> | null = null;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    const { clearTickCache } = await import("./kite");
+    clearTickCache();
     process.env.KITE_API_KEY = "test-key";
     process.env.MLIVE_TOKEN_KEY = "test-token-key";
     orders.length = 0;
     summary = null;
     getMargins.mockReset();
     getMargins.mockResolvedValue({});
+    getInstruments.mockReset();
+    getInstruments.mockResolvedValue([
+      { tradingsymbol: "INFY", exchange: "NSE", instrument_type: "EQ", tick_size: 0.05 },
+    ]);
     audit.mockReset();
     raiseAlert.mockReset();
     q.mockReset();
