@@ -1,9 +1,10 @@
 import { randomBytes } from "crypto";
-import { estimateCharges, withDp } from "@/lib/mlive/charges";
+import { todayIst } from "@/lib/mlive/calendar";
+import { chargeDifference, estimateCharges, withDp, type ChargeSplit } from "@/lib/mlive/charges";
 import { clampSellQty, fillDeltaPrice, floorToTick, gttLastPrice, gttPrices, gttQtyAction, kiteErrorMessage, makeTag, rejectIsKnown, type ExitParams, type Side } from "@/lib/mlive/rules";
 import { audit } from "./audit";
 import { raiseAlert } from "./alerts";
-import { jsonValue, num, q } from "./db";
+import { asDate, jsonValue, num, q } from "./db";
 import { MliveKite } from "./kite";
 import { livePrice, previousClose } from "./market";
 import type { MliveSettings } from "./load";
@@ -311,21 +312,60 @@ export async function applyFill(args: {
     [args.orderId, args.filledQty, args.avgPrice, args.orderStatus]
   );
 
-  const api = await args.kite.contractCharges({ symbol: args.symbol, side: args.side, qty: delta, price });
-  const charges = api == null
-    ? estimateCharges(args.side, delta * price, args.settings.charges).total
-    : withDp(api, args.side, args.settings.charges);
+  // A same-day CNC sell, including a gtt_fallback sell, is intraday. The buy was already charged.
+  const intraday = args.side === "SELL" && (await soldSameDay(args.symbol, args.dryRun));
+  const formula = estimateCharges(args.side, delta * price, args.settings.charges, intraday);
+  const api = intraday ? null : await args.kite.contractCharges({ symbol: args.symbol, side: args.side, qty: delta, price });
+  const dp = api && !intraday && args.side === "SELL" ? Math.round(args.settings.charges.dpInr * 100) / 100 : formula.dp;
+  const split: ChargeSplit = api
+    ? {
+        brokerage: api.brokerage,
+        stt: api.stt,
+        exchange: api.exchange,
+        sebi: api.sebi,
+        stamp: api.stamp,
+        gst: api.gst,
+        dp,
+        total: withDp(api.total, args.side, args.settings.charges, intraday),
+      }
+    : {
+        brokerage: formula.brokerage,
+        stt: formula.stt,
+        exchange: formula.exchange,
+        sebi: formula.sebi,
+        stamp: formula.stamp,
+        gst: formula.gst,
+        dp: formula.dp,
+        total: formula.total,
+      };
+  const charges = split.total;
+  const source = api ? "kite" : "formula";
 
   if (args.side === "BUY") {
-    await addBuyPosition({ ...args, avgPrice: price }, delta, charges);
+    const positionId = await addBuyPosition({ ...args, avgPrice: price }, delta, charges);
+    await insertChargeItem({ positionId, orderId: args.orderId, side: "BUY", intraday: false, source, split, dryRun: args.dryRun });
     await q(
       `INSERT INTO mlive.mlive_fund_ledger (kind, amount, ref_order_id, note, dry_run) VALUES ('charges', $1, $2, $3, $4)`,
       [-charges, args.orderId, `Buy charges ${args.symbol}`, args.dryRun]
     );
-    const positionId = await positionIdFor(args.symbol, args.dryRun);
-    if (positionId) await ensureGtt(positionId, { ...args, avgPrice: price, filledQty: delta });
+    await ensureGtt(positionId, { ...args, avgPrice: price, filledQty: delta });
   } else {
+    const positionId = await positionIdFor(args.symbol, args.dryRun);
+    const buyCredit = intraday ? await creditDeliveryBuy(args, delta) : 0;
     await reducePosition({ ...args, avgPrice: price }, delta, charges);
+    if (positionId) {
+      await insertChargeItem({ positionId, orderId: args.orderId, side: "SELL", intraday, source, split, dryRun: args.dryRun });
+    }
+    if (buyCredit > 0) {
+      await audit({
+        actor: "system",
+        action: "charges.intraday",
+        symbol: args.symbol,
+        after: { buyCredit, sellCharges: charges },
+        reason: "Same-day CNC was charged as delivery. Zerodha charges it as intraday.",
+        runId: args.runId,
+      });
+    }
   }
   await alignPositionGtt({ ...args, gttExit: args.gttExit === true });
   await audit({
@@ -353,6 +393,74 @@ export async function applyFill(args: {
       runId: args.runId,
     });
   }
+}
+
+/**
+ * The buy was booked as delivery before we knew it would close today.
+ * Credit the difference against the shares just sold. The original buy row stays.
+ */
+async function creditDeliveryBuy(
+  args: { symbol: string; orderId: number; dryRun: boolean; settings: MliveSettings },
+  delta: number
+): Promise<number> {
+  const rows = await q(
+    `SELECT id, qty, avg_price FROM mlive.mlive_positions
+      WHERE symbol = $1 AND closed_at IS NULL AND dry_run = $2 ORDER BY id LIMIT 1`,
+    [args.symbol, args.dryRun]
+  );
+  const position = rows[0];
+  if (!position) return 0;
+  const sellQty = Math.min(delta, num(position.qty));
+  const turnover = num(position.avg_price) * sellQty;
+  const delivery = estimateCharges("BUY", turnover, args.settings.charges);
+  const intradayBuy = estimateCharges("BUY", turnover, args.settings.charges, true);
+  const amount = Math.round((delivery.total - intradayBuy.total) * 100) / 100;
+  if (!(amount > 0)) return 0;
+  await insertChargeItem({
+    positionId: num(position.id),
+    orderId: args.orderId,
+    side: "BUY",
+    intraday: true,
+    source: "adjustment",
+    split: chargeDifference(intradayBuy, delivery),
+    dryRun: args.dryRun,
+  });
+  await q(
+    `INSERT INTO mlive.mlive_fund_ledger (kind, amount, ref_order_id, note, dry_run) VALUES ('charges', $1, $2, $3, $4)`,
+    [amount, args.orderId, `Intraday charge adjustment ${args.symbol}`, args.dryRun]
+  );
+  await q(`UPDATE mlive.mlive_positions SET charges = charges - $2 WHERE id = $1`, [num(position.id), amount]);
+  return amount;
+}
+
+/** True when this sell's trade date is the position's buy date. */
+async function soldSameDay(symbol: string, dryRun: boolean): Promise<boolean> {
+  const rows = await q<{ opened_at: unknown }>(
+    `SELECT opened_at FROM mlive.mlive_positions
+      WHERE symbol = $1 AND closed_at IS NULL AND dry_run = $2
+      ORDER BY id LIMIT 1`,
+    [symbol, dryRun]
+  );
+  const opened = asDate(rows[0]?.opened_at);
+  return opened != null && opened === todayIst();
+}
+
+async function insertChargeItem(args: {
+  positionId: number;
+  orderId: number;
+  side: Side;
+  intraday: boolean;
+  source: "kite" | "formula" | "adjustment";
+  split: ChargeSplit;
+  dryRun: boolean;
+}): Promise<void> {
+  const row = args.split;
+  await q(
+    `INSERT INTO mlive.mlive_charge_items
+      (position_id, order_id, side, intraday, source, brokerage, stt, exchange, sebi, stamp, gst, dp, total, dry_run)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+    [args.positionId, args.orderId, args.side, args.intraday, args.source, row.brokerage, row.stt, row.exchange, row.sebi, row.stamp, row.gst, row.dp, row.total, args.dryRun]
+  );
 }
 
 async function positionIdFor(symbol: string, dryRun: boolean): Promise<number | null> {

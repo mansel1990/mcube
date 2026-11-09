@@ -83,6 +83,21 @@ describe("Kite equity cash", () => {
     await expect(new MliveKite(false).tickSize("INFY")).resolves.toBeNull();
   });
 
+  it("reads the virtual contract breakdown", async () => {
+    const { readContractCharges } = await import("./kite");
+    expect(readContractCharges({
+      brokerage: 5,
+      transaction_tax: 4,
+      exchange_turnover_charge: 0.5,
+      sebi_turnover_charge: 0.02,
+      stamp_duty: 0.5,
+      gst: { total: 1 },
+      total: 11.02,
+    })).toEqual({ brokerage: 5, stt: 4, exchange: 0.5, sebi: 0.02, stamp: 0.5, gst: 1, total: 11.02 });
+    expect(readContractCharges(undefined)).toBeNull();
+    expect(readContractCharges({ total: "11" })).toBeNull();
+  });
+
   it("throws when the cash fields are missing and does not return 0", async () => {
     const { MliveKite } = await import("./kite");
     getMargins.mockResolvedValue({});

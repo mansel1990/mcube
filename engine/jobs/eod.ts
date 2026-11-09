@@ -1,7 +1,7 @@
 import { todayIst } from "@/lib/mlive/calendar";
-import { breakerTripped, systemCash } from "@/lib/mlive/rules";
+import { breakerTripped } from "@/lib/mlive/rules";
 import { raiseAlert } from "../alerts";
-import { openCost, openPositions, pendingBuyValue } from "../book";
+import { openPositions } from "../book";
 import { num, q } from "../db";
 import { fundBalance, loadSettings, loadState, setState } from "../load";
 import { livePrice, previousClose } from "../market";
@@ -21,13 +21,17 @@ async function closeBook(runId: number, official: boolean): Promise<Record<strin
     const state = await loadState();
     const fund = await fundBalance(false);
     const positions = await openPositions(false);
+    let openCost = 0;
     let positionsValue = 0;
     for (const position of positions) {
       const marked = official ? (await previousClose(position.symbol))?.close : await livePrice(position.symbol);
-      positionsValue += position.qty * (marked || position.avgPrice);
+      const price = marked || position.avgPrice;
+      openCost += position.qty * position.avgPrice;
+      positionsValue += position.qty * price;
     }
-    const cash = systemCash(fund, await openCost(false), await pendingBuyValue(false));
-    const systemValue = cash + positionsValue;
+    // A pending buy is still the account's money. It only reduces spendable cash elsewhere.
+    const cash = fund - openCost;
+    const systemValue = fund - openCost + positionsValue;
     let peak = state.peak;
     const tripped = official && breakerTripped(systemValue, peak, settings.breakerPct);
     if (official && systemValue > peak) peak = systemValue;

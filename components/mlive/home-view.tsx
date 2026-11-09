@@ -2,8 +2,21 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { holdingExit } from "@/lib/mlive/rules";
+import { gttPrices, holdingExit } from "@/lib/mlive/rules";
 import { greeting, inr, longDay, signed } from "./format";
+
+function sinceLabel(iso: string): string {
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const parts = iso.split("-");
+  const month = months[Number(parts[1]) - 1];
+  if (!month || !parts[2]) return iso;
+  return `${Number(parts[2])} ${month}`;
+}
+
+function markAt(value: number, low: number, high: number): number {
+  if (!(high > low)) return 50;
+  return Math.min(100, Math.max(0, ((value - low) / (high - low)) * 100));
+}
 
 type Home = {
   today: string;
@@ -224,7 +237,6 @@ export function HomeView() {
         <div className="sec-h">
           <div>
             <h2>What we hold</h2>
-            <p className="sub">Every holding has a GTT stop in Kite. Sold when the trend breaks on a daily close.</p>
           </div>
           <span className="pill"><span className={data.kite.matches ? "dot live" : "dot"} />{data.kite.matches ? "Matches Kite" : "Mismatch"}{data.kite.checkedAt ? ` · ${data.kite.checkedAt}` : ""}</span>
         </div>
@@ -233,50 +245,69 @@ export function HomeView() {
         ) : (
           <div className="hold-grid">
             {data.holdings.map((row) => {
-              const ltp = prices[row.symbol] ?? row.avg;
+              const live = prices[row.symbol] ?? null;
+              const ltp = live ?? row.avg;
               const pnl = (ltp - row.avg) * row.qty;
               const pct = row.avg ? (ltp / row.avg - 1) * 100 : 0;
-              const plan = holdingExit({ stop: row.stop, last: prices[row.symbol] ?? null, high52: row.high });
+              const up = pnl >= 0;
+              const plan = holdingExit({ stop: row.stop, last: live, high52: row.high });
+              const dayStop = row.stop > 0 ? gttPrices(row.stop, 0.03).trigger : 0;
+              const scale = [dayStop, row.stop, live ?? 0, row.high].filter((value) => value > 0);
+              const low = scale.length ? Math.min(...scale) : 0;
+              const high = scale.length ? Math.max(...scale) : 0;
+              const pad = (high - low) * 0.08;
+              const tone = plan.underStop ? "under" : row.sellProposed ? "sell" : row.gtt ? "ok" : "wait";
               return (
-                <article className="card hold" key={row.symbol}>
+                <article className={`card hold ${tone}`} key={row.symbol}>
                   <div className="t">
                     <div>
-                      <div className="sym">{row.symbol}</div>
-                      <div className="strat"><i style={{ background: row.strategy === "ema" ? "var(--ema)" : "var(--rs)" }} />{row.strategy === "ema" ? "EMA Pullback" : "RS Resilience"}{row.since ? ` · since ${row.since}` : ""}</div>
+                      <div className="symline">
+                        <span className="sym">{row.symbol}</span>
+                        <span className="hold-tag">No target</span>
+                      </div>
+                      <div className="strat" title={row.strategy === "ema" ? "EMA Pullback" : "RS Resilience"}>
+                        <i style={{ background: row.strategy === "ema" ? "var(--ema)" : "var(--rs)" }} />
+                        {row.strategy === "ema" ? "EMA" : "RS"}
+                        {row.since ? ` · ${sinceLabel(row.since)}` : ""}
+                      </div>
                     </div>
-                    <div className="pnl">
-                      <div className={`v n ${pnl >= 0 ? "up" : "down"}`}>{signed(pnl)}</div>
-                      <div className={`p n ${pnl >= 0 ? "up" : "down"}`}>{pct >= 0 ? "+" : "−"}{Math.abs(pct).toFixed(2)}%</div>
+                    <div className={`pnl-pill ${up ? "up" : "down"}`}>
+                      <div className="v n">{signed(pnl)}</div>
+                      <div className="p n">{pct >= 0 ? "+" : "−"}{Math.abs(pct).toFixed(2)}%</div>
                     </div>
                   </div>
                   <div className="kv">
                     <div>Qty<b className="n">{row.qty}</b></div>
                     <div>Avg<b className="n">{inr(row.avg, 2)}</b></div>
-                    <div>LTP<b className="n">{prices[row.symbol] ? inr(ltp, 2) : "—"}</b></div>
                   </div>
-                  <div className="exit">
-                    <div>
-                      <p className="lbl">Stop loss</p>
-                      <b className={`n ${plan.underStop ? "down" : ""}`}>{row.stop ? inr(row.stop, 2) : "—"}</b>
-                      <p>{plan.sellWhen}</p>
-                      {plan.hardStop && <p>{plan.hardStop}</p>}
+                  {scale.length > 1 && (
+                    <div className="hold-scale" aria-hidden="true">
+                      <div className="track" />
+                      {dayStop > 0 && <i className="mk day" style={{ left: `${markAt(dayStop, low - pad, high + pad)}%` }} />}
+                      {row.stop > 0 && <i className="mk close" style={{ left: `${markAt(row.stop, low - pad, high + pad)}%` }} />}
+                      {row.high > 0 && <i className="mk high" style={{ left: `${markAt(row.high, low - pad, high + pad)}%` }} />}
+                      {live != null && <i className={`mk now ${live >= row.avg ? "up" : "down"}`} style={{ left: `${markAt(live, low - pad, high + pad)}%` }} />}
                     </div>
-                    <div>
-                      <p className="lbl">Target</p>
-                      <b>None</b>
-                      <p>{plan.target}</p>
-                    </div>
+                  )}
+                  <div className="marks">
+                    <div title="Sells during the day"><i className="day" />Kite<b className="n down">{dayStop ? inr(dayStop, 2) : "—"}</b></div>
+                    <div title="Sells if the close finishes below this"><i className="close" />Stop<b className={`n ${plan.underStop ? "down" : "warn"}`}>{row.stop ? inr(row.stop, 2) : "—"}</b></div>
+                    <div><i className={live != null && live < row.avg ? "day" : "now"} />LTP<b className={`n ${live == null ? "" : live >= row.avg ? "up" : "down"}`}>{live ? inr(live, 2) : "—"}</b></div>
+                    <div title="Not a sell price"><i className="high" />52w<b className="n">{row.high ? inr(row.high, 2) : "—"}</b></div>
                   </div>
                   {row.frozen ? (
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <button type="button" className="btn" onClick={() => markSold(row.symbol)}>Mark as sold manually</button>
                       <Link className="btn" href={`/live-trade-mansel/reports?symbol=${row.symbol}`}>Investigate</Link>
                     </div>
+                  ) : row.sellProposed ? (
+                    <span className="state s-act">Sell waiting</span>
+                  ) : row.gtt ? (
+                    <span className="state s-ok">Kite stop on</span>
                   ) : (
-                    <span className={row.sellProposed ? "state s-act" : "state s-ok"}>
-                      {row.sellProposed ? "Sell proposed · needs you" : row.gtt ? "Hard stop is active in Kite" : row.stopReason ? `Hard stop missing. ${row.stopReason}` : "Hard stop missing in Kite"}
-                    </span>
+                    <span className="state s-warn" title={row.stopReason ?? undefined}>Kite stop off</span>
                   )}
+                  {!row.frozen && !row.gtt && row.stopReason && <p className="stop-why">{row.stopReason}</p>}
                 </article>
               );
             })}
@@ -290,19 +321,26 @@ export function HomeView() {
             <h2>What we bought & sold</h2>
             <Link href="/live-trade-mansel/reports">All activity →</Link>
           </div>
-          <div style={{ padding: "0 20px 12px" }}>
+          <div className="act-list">
             {data.activity.length === 0 && <p className="muted">Nothing bought or sold yet.</p>}
-            {data.activity.map((row, i) => (
-              <div key={`${row.symbol}-${row.date}-${i}`} style={{ display: "grid", gridTemplateColumns: "72px 1fr auto", gap: 12, padding: "12px 0", borderTop: "1px solid var(--line)" }}>
-                <span className="muted">{row.date}</span>
-                <div>
-                  <b>{row.symbol}</b>
-                  {row.outcome === "working" && <span className="state s-work">working</span>}
-                  <div className="muted">{row.detail}</div>
+            {data.activity.map((row, i) => {
+              const bought = row.side !== "SELL";
+              const total = row.qty > 0 && row.price > 0 ? Math.round(row.qty * row.price * 100) / 100 : 0;
+              return (
+                <div key={`${row.symbol}-${row.date}-${i}`} className={`act ${bought ? "buy" : "sell"}`}>
+                  <span className="muted">{row.date}</span>
+                  <div>
+                    <div className="symline">
+                      <b>{row.symbol}</b>
+                      <span className={`chip ${bought ? "bought" : "sold"}`}>{bought ? "Bought" : "Sold"}</span>
+                      {row.outcome === "working" && <span className="state s-work">Working</span>}
+                    </div>
+                    <div className="muted">{row.detail}</div>
+                  </div>
+                  <span className="amt n" title={total ? `Total ${inr(total, 2)}` : undefined}>{total ? inr(total, 2) : ""}</span>
                 </div>
-                <span className="n">{row.price ? inr(row.price, 2) : ""}</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
         <div className="card">

@@ -1178,8 +1178,27 @@ export function collapseAlerts<T extends AlertRow>(rows: readonly T[]): AlertGro
 
 export function alertLabel(level: string): string {
   if (level === "needs_you") return "Needs you";
+  if (level === "problem") return "Problem";
   if (level === "done") return "Done";
-  return "Problem";
+  const text = level.trim().replace(/[_-]+/g, " ");
+  if (!text) return "Other";
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+const ALERT_SECTION_ORDER = ["needs_you", "problem", "done"] as const;
+
+/** Needs you, then problems, then done. Any other level is its own section. */
+export function alertSections<T extends { level: string }>(rows: readonly T[]): { level: string; label: string; rows: T[] }[] {
+  const buckets = new Map<string, T[]>();
+  for (const row of rows) {
+    const level = row.level.trim() || "other";
+    buckets.set(level, [...(buckets.get(level) ?? []), row]);
+  }
+  const ordered = [
+    ...ALERT_SECTION_ORDER.filter((level) => buckets.has(level)),
+    ...[...buckets.keys()].filter((level) => !(ALERT_SECTION_ORDER as readonly string[]).includes(level)).sort(),
+  ];
+  return ordered.map((level) => ({ level, label: alertLabel(level), rows: buckets.get(level) ?? [] }));
 }
 
 /** The old cash alert was one sentence repeated by every preflight run. */

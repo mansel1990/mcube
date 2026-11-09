@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { alertBody, alertLabel, auditLabel, collapseAlerts, groupAuditByDay, ENGINE_GROUPS, type AuditView, type EngineGroupId } from "@/lib/mlive/rules";
+import { useEffect, useRef, useState } from "react";
+import { alertBody, alertSections, auditLabel, collapseAlerts, groupAuditByDay, ENGINE_GROUPS, type AuditView, type EngineGroupId } from "@/lib/mlive/rules";
 import { notifyAlertsChanged } from "./alert-count";
 import { inr } from "./format";
+import { ReportsPnl, TradesTable } from "./reports-pnl";
+import { TradePanel } from "./trade-panel";
+import type { PnlModel, PnlTrade } from "@/lib/mlive/pnl";
 
 type Ledger = {
   tiles: { closed: number; winRate: number; realised: number; charges: number };
@@ -14,6 +17,8 @@ type AuditRow = { id: number; ts: string; actor: string; action: string; symbol:
 type AuditPage = { rows: AuditRow[]; page: number; pageSize: number; total: number; groups: { id: EngineGroupId; count: number }[] };
 
 const TABS = [
+  { id: "pnl", label: "P&L" },
+  { id: "trades", label: "Trades" },
   { id: "ledger", label: "Ledger" },
   { id: "alerts", label: "Alerts" },
   { id: "audit", label: "Audit" },
@@ -35,7 +40,9 @@ const VIEWS: { id: AuditView; label: string }[] = [
 ];
 
 export function ReportsView() {
-  const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("ledger");
+  const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("pnl");
+  const [pnl, setPnl] = useState<PnlModel | null>(null);
+  const [trade, setTrade] = useState<PnlTrade | null>(null);
   const [view, setView] = useState<AuditView>("all");
   const [group, setGroup] = useState<EngineGroupId>("all");
   const [page, setPage] = useState(0);
@@ -44,15 +51,21 @@ export function ReportsView() {
   const [ledger, setLedger] = useState<Ledger | null>(null);
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [audit, setAudit] = useState<AuditPage | null>(null);
+  const [auditBusy, setAuditBusy] = useState(false);
+  const auditRequest = useRef(0);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams(window.location.search);
       const querySymbol = params.get("symbol") ?? "";
       setSymbol(querySymbol);
-      if (querySymbol || params.get("tab") === "audit") setTab("audit");
-      if (params.get("tab") === "alerts") setTab("alerts");
+      const requested = params.get("tab");
+      if (querySymbol || requested === "audit") setTab("audit");
+      else if (requested === "alerts" || requested === "ledger" || requested === "trades" || requested === "pnl") setTab(requested);
       setReady(true);
+      void fetch("/api/mlive/pnl?range=all&strategy=all", { cache: "no-store" }).then(async (res) => {
+        if (res.ok) setPnl((await res.json()) as PnlModel);
+      });
       void fetch("/api/mlive/reports/ledger").then(async (res) => res.ok && setLedger(await res.json()));
       void fetch("/api/mlive/reports/alerts?open=1").then(async (res) => res.ok && setAlerts(await res.json()));
     }, 0);
@@ -61,11 +74,20 @@ export function ReportsView() {
 
   useEffect(() => {
     if (!ready) return;
+    const request = ++auditRequest.current;
+    setAuditBusy(true);
     const params = new URLSearchParams({ page: String(page), view });
     if (view === "engine" && group !== "all") params.set("group", group);
     if (symbol) params.set("symbol", symbol);
     const timer = window.setTimeout(() => {
-      void fetch(`/api/mlive/reports/audit?${params}`).then(async (res) => res.ok && setAudit(await res.json()));
+      void fetch(`/api/mlive/reports/audit?${params}`)
+        .then(async (res) => {
+          if (auditRequest.current !== request || !res.ok) return;
+          setAudit((await res.json()) as AuditPage);
+        })
+        .finally(() => {
+          if (auditRequest.current === request) setAuditBusy(false);
+        });
     }, 0);
     return () => window.clearTimeout(timer);
   }, [ready, page, view, group, symbol]);
@@ -85,6 +107,10 @@ export function ReportsView() {
   }
 
   const groups = collapseAlerts(alerts);
+  const sections = alertSections(groups);
+  const viewLabel = VIEWS.find((item) => item.id === view)?.label ?? "Audit";
+  const groupLabel = view === "engine" && group !== "all" ? ENGINE_GROUPS.find((item) => item.id === group)?.label : "";
+  const auditPlace = `${groupLabel ? `${viewLabel} · ${groupLabel}` : viewLabel}${page > 0 ? `, page ${page + 1}` : ""}`;
   const auditRows = audit?.rows ?? [];
   const auditDays = groupAuditByDay(auditRows);
   const pageSize = audit?.pageSize ?? 25;
@@ -98,7 +124,7 @@ export function ReportsView() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div>
           <h1>Reports</h1>
-          <p className="sub">The daily ledger, alerts, and the audit.</p>
+          <p className="sub">Profit and loss, the trades, the daily ledger, alerts, and the audit.</p>
         </div>
         {tab === "ledger" && <a className="btn" href="/api/mlive/reports/csv">Download CSV</a>}
       </div>
@@ -109,6 +135,9 @@ export function ReportsView() {
           </button>
         ))}
       </div>
+
+      {tab === "pnl" && (pnl ? <ReportsPnl pnl={pnl} onOpen={setTrade} /> : <p className="muted" role="status">Loading P&L…</p>)}
+      {tab === "trades" && (pnl ? <TradesTable pnl={pnl} onOpen={setTrade} /> : <p className="muted" role="status">Loading trades…</p>)}
 
       {tab === "ledger" && ledger && (
         <>
@@ -165,21 +194,28 @@ export function ReportsView() {
               <button type="button" className="btn" onClick={() => void seenAll()}>Mark all as read</button>
             )}
           </div>
-          {groups.length === 0 && <p style={{ padding: 20 }} className="muted">No alerts.</p>}
-          {groups.map((row) => (
-            <div className="act" key={row.ids.join("-")}>
-              <div className="what">
-                <b>{alertLabel(row.level)}</b>
-                <div className="muted">{alertBody(row)}</div>
+          {sections.length === 0 && <p style={{ padding: 20 }} className="muted">No alerts.</p>}
+          {sections.map((section) => (
+            <div key={section.level} className="alert-sec">
+              <div className="card-h" style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                <h2>{section.label}</h2>
+                <span className="muted">{section.rows.length}</span>
               </div>
-              {!row.seen && <button type="button" className="btn" onClick={() => void seen(row.ids)}>Mark seen</button>}
+              {section.rows.map((row) => (
+                <div className="act" key={row.ids.join("-")}>
+                  <div className="what">
+                    <div>{alertBody(row)}</div>
+                  </div>
+                  {!row.seen && <button type="button" className="btn" onClick={() => void seen(row.ids)}>Mark seen</button>}
+                </div>
+              ))}
             </div>
           ))}
         </div>
       )}
 
       {tab === "audit" && (
-        <div className="card" style={{ marginTop: 16 }}>
+        <div className="card" style={{ marginTop: 16 }} aria-busy={auditBusy}>
           <div className="card-h">
             <h2>Audit log</h2>
             <p className="sub">{symbol ? `Filtered to ${symbol}. ` : ""}Rows are never edited or deleted.</p>
@@ -201,36 +237,46 @@ export function ReportsView() {
               ))}
             </div>
           )}
-          {view === "engine" && (
+          {view === "engine" && !auditBusy && (
             <p className="sub" style={{ padding: "10px 20px 0" }}>Same stock and same detail on one day is one line. The number is how many times it was written.</p>
           )}
-          {auditDays.map((bucket) => (
-            <div key={bucket.day}>
-              <div className="card-h"><b>{dayLabel(bucket.day)}</b></div>
-              <table>
-                <thead><tr><th>When</th><th>Who</th><th>What</th><th>Stock</th><th>Detail</th></tr></thead>
-                <tbody>
-                  {bucket.rows.map((row) => (
-                    <tr key={row.id}>
-                      <td>{new Date(row.ts).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}</td>
-                      <td>{row.actor}</td>
-                      <td>{auditLabel(row.action, row.side)}{row.repeat > 1 ? ` ×${row.repeat}` : ""}</td>
-                      <td>{row.symbol ?? ""}</td>
-                      <td>{row.reason}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))}
-          {auditRows.length === 0 && <p style={{ padding: 20 }} className="muted">Nothing in this view yet.</p>}
+          {auditBusy ? (
+            <p className="muted" role="status" aria-live="polite" style={{ padding: 20 }}>
+              <span className="spin" aria-hidden="true" />
+              Loading {auditPlace}…
+            </p>
+          ) : (
+            <>
+              {auditDays.map((bucket) => (
+                <div key={bucket.day}>
+                  <div className="card-h"><b>{dayLabel(bucket.day)}</b></div>
+                  <table>
+                    <thead><tr><th>When</th><th>Who</th><th>What</th><th>Stock</th><th>Detail</th></tr></thead>
+                    <tbody>
+                      {bucket.rows.map((row) => (
+                        <tr key={row.id} id={`audit-${row.id}`}>
+                          <td>{new Date(row.ts).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}</td>
+                          <td>{row.actor}</td>
+                          <td>{auditLabel(row.action, row.side)}{row.repeat > 1 ? ` ×${row.repeat}` : ""}</td>
+                          <td>{row.symbol ?? ""}</td>
+                          <td>{row.reason}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+              {auditRows.length === 0 && <p style={{ padding: 20 }} className="muted">Nothing in {auditPlace} yet.</p>}
+            </>
+          )}
           <div className="field">
-            <button type="button" className="btn" disabled={page === 0} onClick={() => setPage((current) => Math.max(0, current - 1))}>Newer</button>
-            <span className="muted">{total === 0 ? "No rows" : `${from}–${to} of ${total}`}</span>
-            <button type="button" className="btn" disabled={to >= total} onClick={() => setPage((current) => current + 1)}>Older</button>
+            <button type="button" className="btn" disabled={auditBusy || page === 0} onClick={() => setPage((current) => Math.max(0, current - 1))}>Newer</button>
+            <span className="muted" role="status">{auditBusy ? `Loading ${auditPlace}…` : total === 0 ? "No rows" : `${auditPlace} · ${from}–${to} of ${total}`}</span>
+            <button type="button" className="btn" disabled={auditBusy || to >= total} onClick={() => setPage((current) => current + 1)}>Older</button>
           </div>
         </div>
       )}
+      <TradePanel trade={trade} onClose={() => setTrade(null)} />
     </section>
   );
 }

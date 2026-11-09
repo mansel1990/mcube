@@ -210,7 +210,7 @@ export class MliveKite {
   }
 
   /** Kite virtual contract note. Personal-plan access is unconfirmed; callers fall back to the formula. */
-  async contractCharges(params: { symbol: string; side: "BUY" | "SELL"; qty: number; price: number }): Promise<number | null> {
+  async contractCharges(params: { symbol: string; side: "BUY" | "SELL"; qty: number; price: number }): Promise<ContractCharges | null> {
     try {
       const kc = await this.client();
       const rows = await kc.getvirtualContractNote([
@@ -226,10 +226,42 @@ export class MliveKite {
           average_price: params.price,
         },
       ]);
-      const total = rows[0]?.charges?.total;
-      return typeof total === "number" ? total : null;
+      return readContractCharges(rows[0]?.charges);
     } catch {
       return null;
     }
   }
+}
+
+export type ContractCharges = {
+  brokerage: number;
+  stt: number;
+  exchange: number;
+  sebi: number;
+  stamp: number;
+  gst: number;
+  total: number;
+};
+
+/** Map Kite's virtual-contract charge object. `transaction_tax` is STT. */
+export function readContractCharges(charges: {
+  brokerage?: unknown;
+  transaction_tax?: unknown;
+  exchange_turnover_charge?: unknown;
+  sebi_turnover_charge?: unknown;
+  stamp_duty?: unknown;
+  gst?: { total?: unknown };
+  total?: unknown;
+} | null | undefined): ContractCharges | null {
+  if (!charges || typeof charges.total !== "number") return null;
+  const num = (value: unknown) => (typeof value === "number" ? value : 0);
+  return {
+    brokerage: num(charges.brokerage),
+    stt: num(charges.transaction_tax),
+    exchange: num(charges.exchange_turnover_charge),
+    sebi: num(charges.sebi_turnover_charge),
+    stamp: num(charges.stamp_duty),
+    gst: num(charges.gst?.total),
+    total: charges.total,
+  };
 }

@@ -1,4 +1,14 @@
 import { sql } from "@/lib/sql";
+import YahooFinance from "yahoo-finance2";
+import {
+  accountDrawdown,
+  equitySeries,
+  homeAccount,
+  settleTrades,
+  strategyFromBooks,
+  type ChargeRow,
+  type TradeBook,
+} from "./charts";
 import { kiteSessionStatus, kiteTokenDay, readKiteFunds } from "./kite-session";
 import { addDays, nextTradingDay, sessionsBack, todayIst } from "./calendar";
 import {
@@ -31,6 +41,58 @@ function num(value: unknown): number {
 
 function day(value: unknown): string | null {
   return kiteTokenDay(value);
+}
+
+const yahoo = new YahooFinance();
+
+export async function liveMarks(symbols: string[]): Promise<Map<string, number>> {
+  const marks = new Map<string, number>();
+  const unique = [...new Set(symbols.map((symbol) => symbol.trim()).filter(Boolean))];
+  if (!unique.length) return marks;
+  await Promise.all(unique.map(async (symbol) => {
+    const quote = await Promise.race([
+      yahoo.quote(`${symbol}.NS`, { fields: ["regularMarketPrice"] }).then((row) => row).catch(() => null),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500)),
+    ]);
+    const price = quote && typeof quote.regularMarketPrice === "number" ? quote.regularMarketPrice : null;
+    if (price != null && price > 0) marks.set(symbol, price);
+  }));
+  return marks;
+}
+
+function instant(value: unknown): number | null {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.getTime();
+  const parsed = Date.parse(String(value ?? ""));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function tradeBooks(rows: Record<string, unknown>[]): TradeBook[] {
+  return rows.flatMap((row) => {
+    const openedAt = instant(row.opened_at);
+    if (openedAt == null) return [];
+    return [{
+      strategy: String(row.strategy ?? "rs"),
+      realised: num(row.realised_pnl),
+      closed: row.closed_at != null,
+      symbol: String(row.symbol ?? ""),
+      dryRun: row.dry_run === true,
+      openedAt,
+      closedAt: row.closed_at == null ? null : instant(row.closed_at),
+    }];
+  });
+}
+
+function chargeBooks(rows: Record<string, unknown>[]): ChargeRow[] {
+  return rows.flatMap((row) => {
+    const ts = instant(row.ts);
+    if (ts == null) return [];
+    return [{
+      symbol: String(row.symbol ?? ""),
+      dryRun: row.dry_run === true,
+      amount: num(row.amount),
+      ts,
+    }];
+  });
 }
 
 function json<T>(value: unknown, fallback: T): T {
@@ -88,8 +150,15 @@ export async function homePayload(displayName: string) {
     .filter((row) => row.side === "BUY" && (row.outcome === "sent" || row.outcome === "approved"))
     .reduce((sum, row) => sum + num(json<{ qty?: number }>(row.sizing, {}).qty) * num(json<{ limit?: number }>(row.sizing, {}).limit), 0);
   const cash = fund - invested - pending;
-  const lastEquity = equity.length ? num(equity[equity.length - 1].system_value) : fund;
-  const account = positions.length ? cash + invested : lastEquity;
+  const marks = await liveMarks(positions.map((row) => String(row.symbol)));
+  const account = homeAccount({
+    fund,
+    positions: positions.map((row) => ({
+      qty: num(row.qty),
+      avgPrice: num(row.avg_price),
+      live: marks.get(String(row.symbol)) ?? null,
+    })),
+  });
   const started = day(fundRows[0]?.started) ?? day(state?.peak_date);
   const settings = await settingsMap();
   const maxBuys = num(settings.max_buys_per_day ?? 4);
@@ -104,7 +173,7 @@ export async function homePayload(displayName: string) {
   const sells = orderRows.filter((row) => row.side === "SELL").length;
   const connected = kiteStatus.connected;
   const peak = num(state?.peak_value ?? fund);
-  const drawdown = peak > 0 ? Math.max(0, (1 - account / peak) * 100) : 0;
+  const drawdown = accountDrawdown(account, peak);
   const heldSymbols = positions.map((row) => String(row.symbol));
   const [highRows, gttRows, checkRows, stopReasonRows] = await Promise.all([
     positions.length
@@ -254,23 +323,55 @@ export async function homePayload(displayName: string) {
 
 export async function chartsPayload(range: string) {
   const includeDry = await includeDryRows();
-  const rows = await sql`
-    SELECT trade_date::text AS trade_date, system_value, peak, drawdown_pct
-      FROM mlive.mlive_equity_daily ORDER BY trade_date`;
-  const all = rows.map((row) => ({
-    date: day(row.trade_date) ?? "",
-    value: num(row.system_value),
-    peak: num(row.peak),
-    drawdown: num(row.drawdown_pct),
-  }));
-  const series = range === "1m" ? all.slice(-22) : all;
-  const byStrategy = await sql`
-    SELECT strategy, COALESCE(SUM(realised_pnl), 0) AS pnl
-      FROM mlive.mlive_positions WHERE (${includeDry}::boolean OR dry_run = false) GROUP BY strategy`;
+  const today = todayIst();
+  const settings = await settingsMap();
+  const [rows, depositRows, fundRows, positions, books, charges, stateRows] = await Promise.all([
+    sql`SELECT trade_date::text AS trade_date, system_value, peak, drawdown_pct
+          FROM mlive.mlive_equity_daily ORDER BY trade_date`,
+    sql`SELECT ts, amount FROM mlive.mlive_fund_ledger
+         WHERE kind = 'deposit' AND (${includeDry}::boolean OR dry_run = false)
+         ORDER BY ts ASC, id ASC LIMIT 1`,
+    sql`SELECT COALESCE(SUM(amount), 0) AS total FROM mlive.mlive_fund_ledger
+         WHERE (${includeDry}::boolean OR dry_run = false)`,
+    sql`SELECT symbol, qty, avg_price FROM mlive.mlive_positions
+         WHERE closed_at IS NULL AND qty > 0 AND (${includeDry}::boolean OR dry_run = false)`,
+    sql`SELECT strategy, realised_pnl, opened_at, closed_at, symbol, dry_run
+          FROM mlive.mlive_positions
+         WHERE (${includeDry}::boolean OR dry_run = false)`,
+    sql`SELECT o.symbol, o.dry_run, l.amount, o.placed_at AS ts
+          FROM mlive.mlive_fund_ledger l
+          JOIN mlive.mlive_orders o ON o.id = l.ref_order_id
+         WHERE l.kind = 'charges'
+           AND (${includeDry}::boolean OR o.dry_run = false)`,
+    sql`SELECT peak_value FROM mlive.mlive_state WHERE id = 1`,
+  ]);
+  const fund = num(fundRows[0]?.total);
+  const marks = await liveMarks(positions.map((row) => String(row.symbol)));
+  const account = homeAccount({
+    fund,
+    positions: positions.map((row) => ({
+      qty: num(row.qty),
+      avgPrice: num(row.avg_price),
+      live: marks.get(String(row.symbol)) ?? null,
+    })),
+  });
+  const peak = num(stateRows[0]?.peak_value ?? fund);
+  const depositDate = day(depositRows[0]?.ts);
+  const series = equitySeries({
+    history: rows.map((row) => ({
+      date: day(row.trade_date) ?? "",
+      value: num(row.system_value),
+      peak: num(row.peak),
+      drawdown: num(row.drawdown_pct),
+    })),
+    deposit: depositRows[0] && depositDate ? { date: depositDate, amount: num(depositRows[0].amount) } : null,
+    live: { date: today, value: account, peak, drawdown: accountDrawdown(account, peak) },
+    range: range === "1m" ? "1m" : "all",
+  });
   return {
     series,
-    strategies: byStrategy.map((row) => ({ strategy: String(row.strategy ?? "rs"), pnl: num(row.pnl) })),
-    breakerPct: 25,
+    strategies: strategyFromBooks(tradeBooks(books), chargeBooks(charges)),
+    breakerPct: num(settings.breaker_pct ?? 0.25) * 100,
   };
 }
 
@@ -282,12 +383,17 @@ export async function ledgerPayload() {
       FROM mlive.mlive_daily_reports r
       LEFT JOIN mlive.mlive_equity_daily e ON e.trade_date = r.trade_date
      ORDER BY r.trade_date DESC LIMIT 60`;
-  const closed = await sql`
-    SELECT COUNT(*)::int AS n,
-           COALESCE(SUM(CASE WHEN realised_pnl > 0 THEN 1 ELSE 0 END), 0)::int AS wins,
-           COALESCE(SUM(realised_pnl), 0) AS pnl,
-           COALESCE(SUM(charges), 0) AS charges
-      FROM mlive.mlive_positions WHERE closed_at IS NOT NULL AND (${includeDry}::boolean OR dry_run = false)`;
+  const positionRows = await sql`
+    SELECT strategy, realised_pnl, charges, opened_at, closed_at, symbol, dry_run
+      FROM mlive.mlive_positions
+     WHERE (${includeDry}::boolean OR dry_run = false)`;
+  const chargeLedger = await sql`
+    SELECT o.symbol, o.dry_run, l.amount, o.placed_at AS ts
+      FROM mlive.mlive_fund_ledger l
+      JOIN mlive.mlive_orders o ON o.id = l.ref_order_id
+     WHERE l.kind = 'charges'
+       AND (${includeDry}::boolean OR o.dry_run = false)`;
+  const closedTrades = settleTrades(tradeBooks(positionRows), chargeBooks(chargeLedger)).filter((trade) => trade.closed);
   const decided = await sql`
     SELECT d.trade_date::text AS trade_date, d.side, d.symbol, d.outcome, d.reason_code, d.reason_text, d.sizing, i.sector,
            o.status AS order_status, o.qty AS order_qty, o.filled_qty, o.avg_price AS fill_price, o.limit_price AS order_limit, o.kind AS order_kind
@@ -302,15 +408,15 @@ export async function ledgerPayload() {
       ) o ON true
      WHERE (${includeDry}::boolean OR d.dry_run = false)
      ORDER BY d.id`;
-  const summary = closed[0];
-  const n = num(summary?.n);
-  const wins = num(summary?.wins);
+  const n = closedTrades.length;
+  const wins = closedTrades.filter((trade) => trade.pnl > 0).length;
+  const charges = positionRows.reduce((sum, row) => (row.closed_at == null ? sum : sum + num(row.charges)), 0);
   return {
     tiles: {
       closed: n,
       winRate: n ? Math.round((wins / n) * 100) : 0,
-      realised: num(summary?.pnl),
-      charges: num(summary?.charges),
+      realised: closedTrades.reduce((sum, trade) => sum + trade.pnl, 0),
+      charges,
     },
     rows: rows.map((row) => {
       const date = day(row.trade_date);

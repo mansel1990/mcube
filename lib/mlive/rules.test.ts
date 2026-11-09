@@ -10,6 +10,7 @@ import {
   atr,
   breakerTripped,
   alertBody,
+  alertSections,
   alertLabel,
   auditInView,
   auditLabel,
@@ -370,6 +371,31 @@ describe("charges and token crypto", () => {
     expect(sell.total).toBeGreaterThan(buy.total);
     expect(buy.stamp).toBeGreaterThan(0);
     expect(sell.stamp).toBe(0);
+    expect(buy.brokerage).toBe(0);
+  });
+
+  it("charges the MPHASIS same-day round trip as intraday and the next day as delivery", () => {
+    const buyTurnover = 7 * 2438.5;
+    const sellTurnover = 7 * 2444.8;
+    const sameDay =
+      estimateCharges("BUY", buyTurnover, undefined, true).total +
+      estimateCharges("SELL", sellTurnover, undefined, true).total;
+    const nextDay =
+      estimateCharges("BUY", buyTurnover).total + estimateCharges("SELL", sellTurnover).total;
+    expect(Math.abs(sameDay - 18)).toBeLessThanOrEqual(1);
+    expect(Math.abs(nextDay - 54)).toBeLessThanOrEqual(1);
+    const sell = estimateCharges("SELL", sellTurnover, undefined, true);
+    expect(sell.dp).toBe(0);
+    expect(sell.stt).toBeGreaterThan(0);
+    expect(estimateCharges("BUY", buyTurnover, undefined, true).stt).toBe(0);
+  });
+
+  it("caps intraday brokerage at ₹20", () => {
+    const buy = estimateCharges("BUY", 1_000_000, undefined, true);
+    const sell = estimateCharges("SELL", 1_000_000, undefined, true);
+    expect(buy.brokerage).toBe(20);
+    expect(sell.brokerage).toBe(20);
+    expect(estimateCharges("BUY", 7 * 2438.5, undefined, true).brokerage).toBeLessThan(20);
   });
 
   it("round-trips a Kite token", () => {
@@ -509,6 +535,21 @@ describe("alerts and audit views", () => {
     expect(grouped[0].repeat).toBe(7);
     expect(grouped[0].ids).toEqual([1, 2, 3, 4, 5, 6, 7]);
     expect(alertLabel("problem")).toBe("Problem");
+    expect(alertLabel("needs_you")).toBe("Needs you");
+    expect(alertLabel("done")).toBe("Done");
+    const sections = alertSections([
+      { level: "done", id: 1 },
+      { level: "problem", id: 2 },
+      { level: "needs_you", id: 3 },
+      { level: "problem", id: 4 },
+      { level: "note", id: 5 },
+    ]);
+    expect(sections.map((section) => [section.label, section.rows.map((row) => row.id)])).toEqual([
+      ["Needs you", [3]],
+      ["Problem", [2, 4]],
+      ["Done", [1]],
+      ["Note", [5]],
+    ]);
     expect(alertBody(grouped[0])).toMatch(/short of the book by ₹80000/);
     expect(alertBody(grouped[0])).not.toMatch(/below system cash/);
   });
