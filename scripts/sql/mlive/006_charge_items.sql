@@ -1,13 +1,19 @@
 -- Charge breakdown per fill. Rows are append-only: a correction is a new
 -- `adjustment` row, which may be negative. Run this by hand. It is not applied
--- by a deploy.
+-- by a deploy. Statements 1–7 are idempotent, and the backfill skips a
+-- position that already has items, so the file can be run again.
 --
 -- The estimate matches lib/mlive/charges.ts (delivery by default, intraday when
 -- a sell is on the position's buy date). For each position that has no items
 -- yet, the engine model (including the same-day buy adjustment) is kept when
 -- it sums to the booked charges. Otherwise the delivery model is kept when
--- that sums instead, which is the pre-adjustment MPHASIS book. Anything else
--- raises.
+-- that sums instead, which is the pre-adjustment MPHASIS book.
+--
+-- A Kite virtual contract note can differ from the formula. The rule is
+-- backfillDiff() in lib/mlive/charges.ts: within a paisa is a match, within ₹1
+-- or 1% of the booked total is one extra adjustment row (components 0, total
+-- = booked − formula, note "Kite contract-note difference"). pnl.ts treats a
+-- total that the components do not cover as Unclassified. A wider gap raises.
 
 CREATE TABLE IF NOT EXISTS mlive.mlive_charge_items (
   id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -43,6 +49,8 @@ CREATE TRIGGER mlive_charge_items_no_update
   FOR EACH ROW EXECUTE FUNCTION mlive.reject_charge_item_mutation();
 
 REVOKE UPDATE, DELETE ON mlive.mlive_charge_items FROM PUBLIC;
+
+ALTER TABLE mlive.mlive_charge_items ADD COLUMN IF NOT EXISTS note text;
 
 CREATE OR REPLACE FUNCTION mlive.estimate_charge(p_side text, p_turnover numeric, p_intraday boolean)
 RETURNS TABLE (
@@ -90,6 +98,10 @@ DECLARE
   sold_qty numeric;
   delivery_sum numeric;
   engine_sum numeric;
+  booked numeric;
+  engine_diff numeric;
+  delivery_diff numeric;
+  diff numeric;
   use_model text;
   same_day boolean;
   is_intra boolean;
@@ -169,11 +181,28 @@ BEGIN
 
     SELECT COALESCE(SUM(total), 0) INTO engine_sum FROM _mlive_charge_try WHERE model = 'engine';
     SELECT COALESCE(SUM(total), 0) INTO delivery_sum FROM _mlive_charge_try WHERE model = 'delivery';
+    booked := ROUND(COALESCE(pos.charges, 0), 2);
+    engine_diff := ROUND(booked - engine_sum, 2);
+    delivery_diff := ROUND(booked - delivery_sum, 2);
 
-    IF abs(engine_sum - pos.charges) <= 0.01 THEN
+    -- Same order as before: an exact engine total, then an exact delivery total.
+    -- A small contract-note gap uses the closer model, with engine on a tie.
+    IF abs(engine_diff) <= 0.01 THEN
       use_model := 'engine';
-    ELSIF abs(delivery_sum - pos.charges) <= 0.01 THEN
+      diff := 0;
+    ELSIF abs(delivery_diff) <= 0.01 THEN
       use_model := 'delivery';
+      diff := 0;
+    ELSIF (abs(engine_diff) <= 1 OR abs(engine_diff) <= abs(booked) * 0.01)
+      AND (
+        NOT (abs(delivery_diff) <= 1 OR abs(delivery_diff) <= abs(booked) * 0.01)
+        OR abs(engine_diff) <= abs(delivery_diff)
+      ) THEN
+      use_model := 'engine';
+      diff := engine_diff;
+    ELSIF abs(delivery_diff) <= 1 OR abs(delivery_diff) <= abs(booked) * 0.01 THEN
+      use_model := 'delivery';
+      diff := delivery_diff;
     ELSE
       RAISE EXCEPTION 'charge items for % (position %) sum to engine % / delivery % but booked charges are %',
         pos.symbol, pos.id, engine_sum, delivery_sum, pos.charges;
@@ -184,6 +213,13 @@ BEGIN
     SELECT pos.id, order_id, side, intraday, source, brokerage, stt, exchange, sebi, stamp, gst, dp, total, pos.dry_run
       FROM _mlive_charge_try
      WHERE model = use_model;
+
+    IF abs(diff) > 0.01 THEN
+      INSERT INTO mlive.mlive_charge_items
+        (position_id, order_id, side, intraday, source, brokerage, stt, exchange, sebi, stamp, gst, dp, total, dry_run, note)
+      VALUES
+        (pos.id, NULL, 'BUY', false, 'adjustment', 0, 0, 0, 0, 0, 0, 0, diff, pos.dry_run, 'Kite contract-note difference');
+    END IF;
   END LOOP;
 
   IF EXISTS (

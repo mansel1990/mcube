@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { chargeGroups, formatInr } from "@/components/mlive/pnl-ui";
 import { estimateCharges } from "./charges";
 import { buildPnl, type BuildPnlInput, type PnlChargeItem, type PnlFill, type PnlLedgerRow, type PnlPosition } from "./pnl";
 
@@ -399,5 +400,36 @@ describe("capital and filters", () => {
     expect(trade.charges.total).toBe(20);
     expect(model.summary.chargesByType.brokerage).toBe(0);
     expect(model.summary.chargesByType.unclassified).toBe(20);
+  });
+
+  it("shows a Kite contract-note gap as Unclassified", () => {
+    const formula = { brokerage: 20, stt: 1.2, exchange: 1.1, sebi: 0.04, stamp: 0.45, gst: 0.06, dp: 0, total: 22.85 };
+    const model = buildPnl({
+      ...EMPTY,
+      ledger: [{ id: 1, kind: "deposit", amount: 80000, ts: "2026-11-01T04:00:00.000Z" }],
+      positions: [{
+        id: 2,
+        symbol: "ZYDUSLIFE",
+        strategy: "ema",
+        qty: 16,
+        avgPrice: 1203.9,
+        openedAt: "2026-11-04T04:00:00.000Z",
+        closedAt: null,
+        trendStop: 1175.4,
+        charges: 22.98,
+      }],
+      fills: [{ id: 1, positionId: 2, side: "BUY", qty: 16, price: 1203.9, ts: "2026-11-04T04:00:00.000Z" }],
+      chargeItems: [
+        { id: 1, positionId: 2, side: "BUY", intraday: false, source: "formula", ts: "2026-11-04T04:00:00.000Z", ...formula },
+        { id: 2, positionId: 2, side: "BUY", intraday: false, source: "adjustment", ts: "2026-11-04T04:00:00.000Z", brokerage: 0, stt: 0, exchange: 0, sebi: 0, stamp: 0, gst: 0, dp: 0, total: 0.13 },
+      ],
+    });
+    const charges = model.trades[0].charges;
+    expect(charges.total).toBe(22.98);
+    expect(charges.unclassified).toBe(0.13);
+    expect(charges.brokerage).toBe(20);
+    const bucket = chargeGroups(charges).find((group) => group.id === "unclassified");
+    expect(bucket?.label).toBe("Unclassified");
+    expect(`${bucket?.label} ${formatInr(bucket?.total ?? 0)}`).toBe("Unclassified ₹0.13");
   });
 });

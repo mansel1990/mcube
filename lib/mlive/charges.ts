@@ -94,6 +94,20 @@ export function chargeDifference(next: ChargeSplit, prev: ChargeSplit): ChargeSp
   };
 }
 
+export type BackfillDiff = "none" | "adjust" | "fail";
+
+/**
+ * How a charge backfill should treat booked charges minus the formula total.
+ * A paisa is a match. Up to ₹1, or 1% of the booked total, is one adjustment
+ * row. Anything larger on both measures is a failure.
+ */
+export function backfillDiff(booked: number, formula: number): BackfillDiff {
+  const diff = Math.abs(paise(booked - formula));
+  if (diff <= 0.01) return "none";
+  if (diff <= 1 || diff <= Math.abs(booked) * 0.01) return "adjust";
+  return "fail";
+}
+
 /** Add the flat DP charge onto a Kite virtual-contract total. Intraday and buys have none. */
 export function withDp(
   apiTotal: number,

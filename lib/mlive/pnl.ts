@@ -250,6 +250,8 @@ function emptySplit(): BookedCharges {
 }
 
 function addSplit(into: BookedCharges, row: ChargeSplit & { unclassified?: number }): void {
+  const covered = paise(row.brokerage + row.stt + row.exchange + row.sebi + row.stamp + row.gst + row.dp);
+  const gap = paise(row.total - covered) || 0;
   into.brokerage = paise(into.brokerage + row.brokerage);
   into.stt = paise(into.stt + row.stt);
   into.exchange = paise(into.exchange + row.exchange);
@@ -257,7 +259,7 @@ function addSplit(into: BookedCharges, row: ChargeSplit & { unclassified?: numbe
   into.stamp = paise(into.stamp + row.stamp);
   into.gst = paise(into.gst + row.gst);
   into.dp = paise(into.dp + row.dp);
-  into.unclassified = paise(into.unclassified + (row.unclassified ?? 0));
+  into.unclassified = paise(into.unclassified + gap);
   into.total = paise(into.total + row.total);
 }
 
