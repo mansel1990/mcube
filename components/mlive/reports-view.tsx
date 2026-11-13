@@ -202,11 +202,9 @@ export function ReportsView() {
                 <span className="muted">{section.rows.length}</span>
               </div>
               {section.rows.map((row) => (
-                <div className="act" key={row.ids.join("-")}>
-                  <div className="what">
-                    <div>{alertBody(row)}</div>
-                  </div>
-                  {!row.seen && <button type="button" className="btn" onClick={() => void seen(row.ids)}>Mark seen</button>}
+                <div className="alert-row" key={row.ids.join("-")}>
+                  <div className="what">{alertBody(row)}</div>
+                  {!row.seen && <button type="button" className="btn tiny" onClick={() => void seen(row.ids)}>Mark seen</button>}
                 </div>
               ))}
             </div>

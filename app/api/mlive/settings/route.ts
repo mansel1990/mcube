@@ -12,7 +12,7 @@ export async function GET() {
   const anchor = String(settings.review_anchor_date ?? "2026-11-05").replace(/"/g, "");
   const days = Number(settings.review_every_days ?? 60);
   const [stateRows, kite, runs, cash] = await Promise.all([
-    sql`SELECT status, mode FROM mlive.mlive_state WHERE id = 1`,
+    sql`SELECT status, mode, halt_reason FROM mlive.mlive_state WHERE id = 1`,
     kiteSessionStatus(),
     sql`SELECT kind, status, finished_at FROM mlive.mlive_runs ORDER BY id DESC LIMIT 1`,
     cashPicture(),

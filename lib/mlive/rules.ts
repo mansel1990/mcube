@@ -549,8 +549,62 @@ export function stripNs(symbol: string): string {
   return symbol.trim().toUpperCase().replace(/\.NS$/, "");
 }
 
-/** 09:10 IST is the last preflight. A missing Kite session before that only waits. */
+/** 09:10 IST is the last preflight. A missing Kite session waits. It does not stop the day. */
 export const PREFLIGHT_FINAL_MINUTE = 9 * 60 + 10;
+
+export const KITE_LOGIN_WAIT = "Log in to Kite. Buys wait until you do.";
+
+/** A login clears today's stop only when that stop is the missing Kite session, and only on a trading day. */
+export function autoResumeOnLogin(args: {
+  status: string;
+  haltReason: string | null;
+  tradingDay: boolean;
+}): boolean {
+  return args.tradingDay && args.status === "halted_today" && args.haltReason === "no_kite_session";
+}
+
+export function loginResumeCopy(clock: string): { audit: string; alert: string } {
+  return {
+    audit: `Kite login at ${clock} cleared today's no-login stop`,
+    alert: `Kite connected at ${clock}. Trading resumed.`,
+  };
+}
+
+const HALT_WORDS: Record<string, string> = {
+  no_kite_session: "No Kite login.",
+  order_rejected: "An order was rejected.",
+  breaker: "The breaker tripped.",
+  ledger_failed: "The ledger could not be read.",
+  eod_missing: "Yesterday's end-of-day row is missing.",
+  kite_unreadable: "Kite holdings or cash could not be read.",
+  bhavcopy_missing: "The price file is missing.",
+  holdings_mismatch: "Holdings do not match.",
+};
+
+/** Settings shows this next to Resume. Unknown codes stay visible. */
+export function haltReasonText(reason: string | null): string {
+  if (!reason) return "Stopped for today.";
+  return reason.split(",").map((part) => HALT_WORDS[part.trim()] ?? part.trim()).filter(Boolean).join(" ");
+}
+
+/** Home header. A missing login is a wait, not a halt. A late login that cleared the stop says when. */
+export function homeStatusPill(args: {
+  status: string;
+  haltReason: string | null;
+  kiteConnected: boolean;
+  resumedAt: string | null;
+}): { label: string; connect: boolean } {
+  const realHalt = args.status === "halted_today" && args.haltReason !== "no_kite_session";
+  if (!args.kiteConnected && !realHalt) return { label: "Waiting for Kite login", connect: true };
+  if (args.kiteConnected && args.resumedAt) return { label: `Resumed at ${args.resumedAt} after Kite login`, connect: false };
+  const labels: Record<string, string> = {
+    active: "Engine active",
+    paused_by_user: "Paused",
+    paused_by_breaker: "Breaker paused",
+    halted_today: "Halted today",
+  };
+  return { label: labels[args.status] ?? args.status, connect: false };
+}
 
 export type PreflightPlan = {
   halt: boolean;
@@ -567,13 +621,12 @@ export function preflightSessionPlan(args: {
 }): PreflightPlan {
   const blocking = args.reasons.filter((reason) => reason !== "kite_unreadable" || !args.reasons.includes("no_kite_session"));
   const onlySession = blocking.length === 1 && blocking[0] === "no_kite_session";
-  const beforeFinal = args.minute < PREFLIGHT_FINAL_MINUTE;
   const sessionHalt = args.status === "halted_today" && args.haltReason === "no_kite_session";
   if (blocking.length === 0) {
     return { halt: false, clearHalt: sessionHalt, alert: "none", haltReason: null };
   }
-  if (onlySession && beforeFinal) {
-    return { halt: false, clearHalt: sessionHalt, alert: "wait", haltReason: null };
+  if (onlySession) {
+    return { halt: false, clearHalt: false, alert: "wait", haltReason: null };
   }
   return { halt: true, clearHalt: false, alert: "halt", haltReason: blocking.join(",") };
 }
@@ -739,6 +792,19 @@ function orderStatus(status: string | null | undefined): string {
 /** A position is shown under What we hold only after at least one share has filled. */
 export function showsHolding(filledQty: number): boolean {
   return filledQty > 0;
+}
+
+export type ActivityFace = { tone: "buy" | "sell" | "cancel"; label: "Bought" | "Sold" | "Cancelled" | "Rejected" };
+
+/** A buy or sell that never filled is not a buy or a sell. A partial fill still is. */
+export function activityFace(row: { side: string; outcome: string; detail: string }): ActivityFace {
+  const sell = row.side.toUpperCase() === "SELL";
+  const dead = row.outcome === "cancelled" || row.outcome === "rejected";
+  const keptSome = /^(Bought|Sold|Stop sold)\b/.test(row.detail);
+  if (dead && !keptSome) {
+    return { tone: "cancel", label: row.outcome === "rejected" ? "Rejected" : "Cancelled" };
+  }
+  return sell ? { tone: "sell", label: "Sold" } : { tone: "buy", label: "Bought" };
 }
 
 /** Home label. Open and partly filled orders stay “working” until they finish or die. */
@@ -1236,6 +1302,8 @@ export function auditLabel(action: string, side: string | null): string {
   if (action === "alert") return "Raised an alert";
   if (action === "setting.change") return "Setting changed";
   if (action === "kite.login") return "Kite connected";
+  if (action === "state.auto_resume") return "Trading resumed";
+  if (action.endsWith(".skipped")) return "Waited for Kite";
   if (action === "kite.disconnect") return "Kite disconnected";
   if (action.startsWith("fund.")) return "Trading limit change";
   if (action === "run.error") return "Engine error";

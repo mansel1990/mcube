@@ -11,6 +11,8 @@ import {
   kiteCashGap,
   kiteCashMessage,
   limitPrice,
+  KITE_LOGIN_WAIT,
+  PREFLIGHT_FINAL_MINUTE,
   preflightSessionPlan,
   paceBuys,
   priceSkip,
@@ -101,20 +103,23 @@ export async function preflight(): Promise<void> {
       state = { ...state, status: "active", haltReason: null };
     }
     if (plan.alert === "wait") {
+      const finalCall = minute >= PREFLIGHT_FINAL_MINUTE;
+      const message = finalCall ? KITE_LOGIN_WAIT : "No Kite session yet. Preflight will wait until 09:10.";
       const already = await q(
         `SELECT id FROM mlive.mlive_alerts
-          WHERE code = 'kite_login_needed' AND (ts AT TIME ZONE 'Asia/Kolkata')::date = $1::date`,
-        [today]
+          WHERE code = 'kite_login_needed' AND message = $2
+            AND (ts AT TIME ZONE 'Asia/Kolkata')::date = $1::date`,
+        [today, message]
       );
       if (!already[0]) {
         await raiseAlert({
           level: "needs_you",
           code: "kite_login_needed",
-          message: "No Kite session yet. Preflight will wait until 09:10.",
+          message,
           runId,
         });
       }
-      await writeDraft(today, { waiting: "no_kite_session" });
+      await writeDraft(today, { waiting: "no_kite_session", note: "waiting for Kite login" });
       return { waiting: "no_kite_session" };
     }
     if (plan.halt) {

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { gttPrices, holdingExit } from "@/lib/mlive/rules";
+import { activityFace, gttPrices, holdingExit, homeStatusPill } from "@/lib/mlive/rules";
 import { greeting, inr, longDay, signed } from "./format";
 
 function sinceLabel(iso: string): string {
@@ -21,7 +21,7 @@ function markAt(value: number, low: number, high: number): number {
 type Home = {
   today: string;
   displayName: string;
-  state: { status: string; mode: string; dryRun: boolean; drawdown: number; breakerPct: number };
+  state: { status: string; mode: string; haltReason: string | null; resumedAt: string | null; dryRun: boolean; drawdown: number; breakerPct: number };
   kite: { connected: boolean; at: string | null; checkedAt: string | null; matches: boolean };
   fund: number;
   tradingLimit: number;
@@ -45,12 +45,6 @@ type Home = {
 };
 
 const MODE: Record<string, string> = { approve: "Approve each", auto: "Fully automatic", paused: "Paused" };
-const STATUS: Record<string, string> = {
-  active: "Engine active",
-  paused_by_user: "Paused",
-  paused_by_breaker: "Breaker paused",
-  halted_today: "Halted today",
-};
 
 export function HomeView() {
   const [data, setData] = useState<Home | null>(null);
@@ -166,6 +160,12 @@ export function HomeView() {
   if (error) return <p className="page">{error}</p>;
   if (!data) return <p className="page">Loading the book…</p>;
   const up = data.change >= 0;
+  const statusPill = homeStatusPill({
+    status: data.state.status,
+    haltReason: data.state.haltReason,
+    kiteConnected: data.kite.connected,
+    resumedAt: data.state.resumedAt,
+  });
 
   return (
     <section className="page">
@@ -175,7 +175,11 @@ export function HomeView() {
           <h1 style={{ marginTop: 6 }}>{greeting()}, {data.displayName}</h1>
         </div>
         <div className="pills">
-          <span className="pill"><span className={data.state.status === "active" ? "dot live" : "dot"} /> <b>{STATUS[data.state.status] ?? data.state.status}</b></span>
+          <span className={`pill ${statusPill.connect ? "warn" : ""}`}>
+            <span className={data.state.status === "active" && !statusPill.connect ? "dot live" : "dot"} />
+            <b>{statusPill.label}</b>
+          </span>
+          {statusPill.connect && <a className="btn tiny" href="/api/mlive/kite/login">Connect Kite</a>}
           <span className="pill">Mode <b>{MODE[data.state.mode] ?? data.state.mode}</b></span>
           <span className="pill">Kite <b>{data.kite.connected ? `connected ${data.kite.at ?? ""}` : "not connected"}</b></span>
           <span className="pill">Breaker <b className="n">{data.state.drawdown.toFixed(1)}% / {data.state.breakerPct}%</b></span>
@@ -324,15 +328,15 @@ export function HomeView() {
           <div className="act-list">
             {data.activity.length === 0 && <p className="muted">Nothing bought or sold yet.</p>}
             {data.activity.map((row, i) => {
-              const bought = row.side !== "SELL";
+              const face = activityFace(row);
               const total = row.qty > 0 && row.price > 0 ? Math.round(row.qty * row.price * 100) / 100 : 0;
               return (
-                <div key={`${row.symbol}-${row.date}-${i}`} className={`act ${bought ? "buy" : "sell"}`}>
+                <div key={`${row.symbol}-${row.date}-${i}`} className={`act ${face.tone}`}>
                   <span className="muted">{row.date}</span>
                   <div>
                     <div className="symline">
                       <b>{row.symbol}</b>
-                      <span className={`chip ${bought ? "bought" : "sold"}`}>{bought ? "Bought" : "Sold"}</span>
+                      <span className={`chip ${face.tone === "buy" ? "bought" : face.tone === "sell" ? "sold" : "dead"}`}>{face.label}</span>
                       {row.outcome === "working" && <span className="state s-work">Working</span>}
                     </div>
                     <div className="muted">{row.detail}</div>
@@ -349,6 +353,7 @@ export function HomeView() {
               <h2>Last night&apos;s ideas</h2>
               <p className="sub">Copied from the paper scan. The engine decides.</p>
               <p className="sub" role="status">{recheckNote}</p>
+              <Link href="/live-trade-mansel/ideas">See all ideas →</Link>
             </div>
             {(data.cashSkipped || data.kiteCashUnknown) && (
               <button type="button" className="btn" onClick={recheck} disabled={recheckBusy} aria-busy={recheckBusy}>

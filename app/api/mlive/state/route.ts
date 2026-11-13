@@ -7,7 +7,7 @@ export async function POST(request: Request) {
   const session = await requireMliveSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = (await request.json()) as { pause?: boolean; resume?: boolean; mode?: string };
-  const current = await sql`SELECT status, mode FROM mlive.mlive_state WHERE id = 1`;
+  const current = await sql`SELECT status, mode, halt_reason FROM mlive.mlive_state WHERE id = 1`;
   const before = current[0];
   if (!before) return NextResponse.json({ error: "mlive_state is missing" }, { status: 500 });
 
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Send pause, resume, or mode" }, { status: 400 });
   }
 
-  await sql`UPDATE mlive.mlive_state SET status = ${status}, mode = ${mode}, updated_at = now() WHERE id = 1`;
+  await sql`UPDATE mlive.mlive_state SET status = ${status}, mode = ${mode}, halt_reason = ${action === "resume" ? null : before.halt_reason ?? null}, updated_at = now() WHERE id = 1`;
   await sql`
     INSERT INTO mlive.mlive_settings (key, value, updated_at, updated_by)
     VALUES ('mode', ${JSON.stringify(mode)}::jsonb, now(), ${session.user.id})

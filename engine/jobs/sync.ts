@@ -1,6 +1,7 @@
 import { istMinutes } from "@/lib/mlive/calendar";
 import { coverUnguardedPositions, syncBroker } from "../execute";
 import { runJob } from "../run";
+import { skipIfNoSession } from "../session";
 
 export async function sync(): Promise<void> {
   const minute = istMinutes();
@@ -12,6 +13,7 @@ export async function sync(): Promise<void> {
     console.log("sync skipped: market closed");
     return;
   }
+  if (await skipIfNoSession("sync")) return;
   await runJob("sync", async (runId) => {
     const synced = await syncBroker(runId);
     const covered = await coverUnguardedPositions(runId);

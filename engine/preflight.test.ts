@@ -52,6 +52,7 @@ vi.mock("./alerts", () => ({
 
 describe("preflight when Kite cash cannot be read", () => {
   let summary: Record<string, unknown> | null = null;
+  let kiteRows: unknown[] = [];
 
   beforeEach(() => {
     process.env.KITE_API_KEY = "test-key";
@@ -62,6 +63,7 @@ describe("preflight when Kite cash cannot be read", () => {
     getHoldings.mockReset();
     getHoldings.mockResolvedValue([]);
     raiseAlert.mockReset();
+    kiteRows = [{ access_token_enc: "enc", token_date: "2026-11-06" }];
     q.mockReset();
     q.mockImplementation(async (text: string, params: unknown[] = []) => {
       if (text.includes("INSERT INTO mlive.mlive_runs")) return [{ id: "7" }];
@@ -69,7 +71,7 @@ describe("preflight when Kite cash cannot be read", () => {
         summary = JSON.parse(String(params[1])) as Record<string, unknown>;
         return [];
       }
-      if (text.includes("mlive_kite_sessions")) return [{ access_token_enc: "enc", token_date: "2026-11-06" }];
+      if (text.includes("mlive_kite_sessions")) return kiteRows;
       if (text.includes("mlive_settings")) return [];
       if (text.includes("FROM mlive.mlive_state")) {
         return [{
@@ -103,5 +105,21 @@ describe("preflight when Kite cash cannot be read", () => {
     expect(raiseAlert).not.toHaveBeenCalledWith(expect.objectContaining({ code: "kite_cash_low" }));
     const messages = raiseAlert.mock.calls.map((call) => String((call[0] as { message?: string }).message));
     expect(messages.some((message) => message.includes("₹0"))).toBe(false);
+  });
+
+  it("at 09:10 with no login does not set halted_today", async () => {
+    kiteRows = [];
+    const { preflight } = await import("./jobs/preflight");
+    await preflight();
+    expect(summary).toEqual({ waiting: "no_kite_session" });
+    expect(raiseAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: "needs_you",
+        code: "kite_login_needed",
+        message: "Log in to Kite. Buys wait until you do.",
+      })
+    );
+    const halted = q.mock.calls.some((call) => Array.isArray(call[1]) && (call[1] as unknown[]).includes("halted_today"));
+    expect(halted).toBe(false);
   });
 });

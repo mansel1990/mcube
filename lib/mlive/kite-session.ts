@@ -1,7 +1,7 @@
 import { KiteConnect } from "kiteconnect";
-import { todayIst } from "./calendar";
+import { isTradingDay, todayIst } from "./calendar";
 import { encryptToken, decryptToken } from "./crypto";
-import { kiteAvailableCash } from "./rules";
+import { autoResumeOnLogin, kiteAvailableCash, loginResumeCopy } from "./rules";
 
 /** IST calendar day for a Postgres date, whether the driver returned a Date or text. */
 export function kiteTokenDay(value: unknown): string | null {
@@ -72,6 +72,60 @@ export async function saveEncryptedSession(userId: string, requestToken: string)
       connected_at = now(),
       kite_user_id = EXCLUDED.kite_user_id`;
   return session.user_id;
+}
+
+function istClock(now: Date): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(now);
+}
+
+/** After a login, clear today's no-login stop. Any other halt stays for a person. */
+export async function clearNoLoginHalt(now = new Date()): Promise<boolean> {
+  const { sql } = await import("@/lib/sql");
+  const today = todayIst(now);
+  const [state, holidays] = await Promise.all([
+    sql`SELECT status, halt_reason FROM mlive.mlive_state WHERE id = 1`,
+    sql`SELECT trade_date::text AS trade_date FROM mlive.mlive_holidays`,
+  ]);
+  const row = state[0];
+  const closed = new Set(holidays.map((item) => String(item.trade_date).slice(0, 10)));
+  const resume = autoResumeOnLogin({
+    status: String(row?.status ?? ""),
+    haltReason: row?.halt_reason == null || row.halt_reason === "" ? null : String(row.halt_reason),
+    tradingDay: isTradingDay(today, closed),
+  });
+  if (!resume) return false;
+  const copy = loginResumeCopy(istClock(now));
+  await sql`
+    UPDATE mlive.mlive_state
+       SET status = 'active', halt_reason = NULL, updated_at = now()
+     WHERE id = 1 AND status = 'halted_today' AND halt_reason = 'no_kite_session'`;
+  await sql`
+    INSERT INTO mlive.mlive_audit_log (actor, action, reason)
+    VALUES ('system', 'state.auto_resume', ${copy.audit})`;
+  const alerts = await sql`
+    INSERT INTO mlive.mlive_alerts (level, code, message)
+    VALUES ('done', 'kite_connected', ${copy.alert})
+    RETURNING id`;
+  const id = Number(alerts[0]?.id);
+  const secret = process.env.MLIVE_PUSH_SECRET || process.env.CRON_SECRET;
+  if (secret && Number.isFinite(id)) {
+    const url = process.env.MLIVE_PUSH_URL || "https://mcubetechstudio.com/api/mlive/push";
+    try {
+      await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-mlive-secret": secret },
+        body: JSON.stringify({ alert_id: id, level: "done", code: "kite_connected", message: copy.alert }),
+      });
+    } catch (error) {
+      console.error("mlive resume push failed", error instanceof Error ? error.message : error);
+    }
+  }
+  return true;
 }
 
 /** Today's Kite equity cash. `connected` is false when the morning login is missing. */

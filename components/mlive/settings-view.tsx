@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { haltReasonText } from "@/lib/mlive/rules";
 import { inr } from "./format";
 
 type Settings = Record<string, unknown>;
 type Payload = {
   settings: Settings;
   nextReview: string;
-  state: { status?: string; mode?: string } | null;
+  state: { status?: string; mode?: string; halt_reason?: string | null } | null;
   kite: { connected: boolean; connectedAt: string | null; kiteUserId: string | null } | null;
   kiteFunds: { connected: boolean; cash: number | null; error?: string | null };
   tradingLimit: number;
@@ -60,11 +61,11 @@ export function SettingsView() {
   const [note, setNote] = useState("");
   const [limitOpen, setLimitOpen] = useState(false);
   const [amount, setAmount] = useState("");
-  const kiteNote = kiteFlag === "connected"
-    ? "Kite is connected for today."
-    : kiteFlag === "error"
-      ? "Kite login did not finish. Try reconnect."
-      : "";
+  const [connecting, setConnecting] = useState(false);
+  const [confirmAuto, setConfirmAuto] = useState(false);
+  const [modeBusy, setModeBusy] = useState<"approve" | "auto" | "paused" | null>(null);
+  const [toast, setToast] = useState(kiteFlag === "connected" ? "Kite is connected." : "");
+  const kiteError = kiteFlag === "error" ? "Kite login did not finish. Try reconnect." : "";
   async function load() {
     const res = await fetch("/api/mlive/settings");
     if (!res.ok) return;
@@ -78,6 +79,17 @@ export function SettingsView() {
     return () => window.clearTimeout(timer);
   }, []);
 
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(""), 4500);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  useEffect(() => {
+    if (!payload?.kite) return;
+    window.dispatchEvent(new CustomEvent("mlive-kite", { detail: { connected: payload.kite.connected } }));
+  }, [payload]);
+
   async function save(key: string, value: unknown) {
     const res = await fetch("/api/mlive/settings", {
       method: "POST",
@@ -88,13 +100,40 @@ export function SettingsView() {
     await load();
   }
 
-  async function mode(next: "approve" | "auto" | "paused") {
-    await fetch("/api/mlive/state", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ mode: next }),
-    });
-    await load();
+  const modeNow = String(payload?.state?.mode ?? payload?.settings.mode ?? "approve").replace(/"/g, "");
+
+  async function commitMode(next: "approve" | "auto" | "paused") {
+    setConfirmAuto(false);
+    setModeBusy(next);
+    try {
+      const res = await fetch("/api/mlive/state", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode: next }),
+      });
+      setNote(res.ok ? "" : "Could not change the mode.");
+      await load();
+    } finally {
+      setModeBusy(null);
+    }
+  }
+
+  function mode(next: "approve" | "auto" | "paused") {
+    if (modeBusy || next === modeNow) return;
+    if (modeNow === "approve" && next === "auto") {
+      setConfirmAuto(true);
+      return;
+    }
+    setConfirmAuto(false);
+    void commitMode(next);
+  }
+
+  function reconnect(event: { preventDefault: () => void }) {
+    event.preventDefault();
+    setConnecting(true);
+    window.setTimeout(() => {
+      window.location.assign("/api/mlive/kite/login");
+    }, 60);
   }
 
   async function changeLimit(kind: "deposit" | "withdrawal") {
@@ -117,7 +156,6 @@ export function SettingsView() {
   if (!payload) return <p className="page">Loading settings…</p>;
   const settings = payload.settings;
   const nextReview = payload.nextReview;
-  const modeNow = String(payload.state?.mode ?? settings.mode ?? "approve").replace(/"/g, "");
   const strategies = enabled(settings.strategies_enabled);
   const status = String(payload.state?.status ?? "active");
   const engineAt = payload.engine?.finished_at
@@ -132,11 +170,20 @@ export function SettingsView() {
           <p className="sub">Changes apply on the next engine run. Exit rules are fixed from the backtest and shown read-only. Next review {nextReview}.</p>
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button type="button" className="btn warn" onClick={async () => { await fetch("/api/mlive/kite/disconnect", { method: "POST" }); setNote("Disconnected"); await load(); }}>Disconnect</button>
-          <a className="btn primary" href="/api/mlive/kite/login">Reconnect Kite</a>
+          <button type="button" className="btn warn" onClick={async () => {
+            const res = await fetch("/api/mlive/kite/disconnect", { method: "POST" });
+            setNote(res.ok ? "Disconnected" : "Could not disconnect");
+            if (res.ok) window.dispatchEvent(new CustomEvent("mlive-kite", { detail: { connected: false } }));
+            await load();
+          }}>Disconnect</button>
+          <a className="btn primary" href="/api/mlive/kite/login" onClick={reconnect} aria-busy={connecting}>
+            {connecting && <span className="spin" aria-hidden="true" />}
+            {connecting ? "Connecting…" : "Reconnect Kite"}
+          </a>
         </div>
       </div>
-      {(kiteNote || note) && <p className="sub">{kiteNote || note}</p>}
+      {(kiteError || note) && <p className="sub">{kiteError || note}</p>}
+      {toast && <p className="toast" role="status">{toast}</p>}
       <div className="stats cash-strip">
         <div className="card stat">
           <p className="lbl">Cash in Kite</p>
@@ -174,12 +221,30 @@ export function SettingsView() {
           <div className="card-h"><h2>How orders go out</h2></div>
           <div className="modes">
             {(["approve", "auto", "paused"] as const).map((item) => (
-              <button key={item} type="button" className="mode" data-mode={item} aria-pressed={modeNow === item} onClick={() => mode(item)}>
-                <b>{item === "approve" ? "Approve each" : item === "auto" ? "Fully automatic" : "Paused"}</b>
+              <button key={item} type="button" className="mode" data-mode={item} aria-pressed={modeNow === item} aria-busy={modeBusy === item} disabled={modeBusy != null} onClick={() => mode(item)}>
+                <b>
+                  {modeBusy === item && <span className="spin" aria-hidden="true" />}
+                  {modeBusy === item ? "Saving…" : item === "approve" ? "Approve each" : item === "auto" ? "Fully automatic" : "Paused"}
+                </b>
                 <span>{item === "approve" ? "You confirm each buy and sell." : item === "auto" ? "The engine sends inside the rules." : "No new orders. Stops still protect."}</span>
               </button>
             ))}
           </div>
+          {confirmAuto && (
+            <div className="field" role="alertdialog" aria-label="Confirm fully automatic">
+              <div>
+                <b>Switch to fully automatic?</b>
+                <small>The engine will send buys and sells inside the rules without asking you.</small>
+              </div>
+              <div style={{ display: "flex", gap: 8, flex: "none" }}>
+                <button type="button" className="btn" onClick={() => setConfirmAuto(false)} disabled={modeBusy != null}>Cancel</button>
+                <button type="button" className="btn primary" onClick={() => void commitMode("auto")} disabled={modeBusy != null}>
+                  {modeBusy === "auto" && <span className="spin" aria-hidden="true" />}
+                  {modeBusy === "auto" ? "Switching…" : "Confirm"}
+                </button>
+              </div>
+            </div>
+          )}
           <div className="field">
             <div><b>Account</b><small>Zerodha client ID</small></div>
             <span className="n">{payload.kite?.kiteUserId || "—"}</span>
@@ -200,9 +265,18 @@ export function SettingsView() {
             <div><b>Morning login reminder</b><small>Push at 08:30 and again at 09:00 if there is no session</small></div>
             <Toggle on={settings.login_reminder !== false} label="Morning login reminder" onClick={() => save("login_reminder", settings.login_reminder === false)} />
           </div>
-          {(status === "paused_by_breaker" || status === "paused_by_user") && (
+          {(status === "paused_by_breaker" || status === "paused_by_user" || status === "halted_today") && (
             <div className="field">
-              <div><b>Resume</b><small>{status === "paused_by_breaker" ? "The breaker stays paused until you resume." : "Paused from Home or Settings."}</small></div>
+              <div>
+                <b>Resume</b>
+                <small>
+                  {status === "halted_today"
+                    ? haltReasonText(payload.state?.halt_reason ?? null)
+                    : status === "paused_by_breaker"
+                      ? "The breaker stays paused until you resume."
+                      : "Paused from Home or Settings."}
+                </small>
+              </div>
               <button type="button" className="btn primary" onClick={async () => { await fetch("/api/mlive/state", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resume: true }) }); await load(); }}>Resume</button>
             </div>
           )}

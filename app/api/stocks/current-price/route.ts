@@ -18,18 +18,27 @@ export async function GET(request: NextRequest) {
 
   const tickers = tickersParam.split(",").map((t) => t.trim()).filter(Boolean);
 
-  const results: Record<string, { price: number; change: number; changePct: number } | null> = {};
+  const results: Record<string, { price: number; change: number; changePct: number; asOf: string | null } | null> = {};
 
   await Promise.all(
     tickers.map(async (ticker) => {
       try {
         const quote = await yahooFinance.quote(`${ticker}.NS`, {
-          fields: ["regularMarketPrice", "regularMarketChange", "regularMarketChangePercent"],
+          fields: ["regularMarketPrice", "regularMarketChange", "regularMarketChangePercent", "regularMarketTime"],
         });
+        const stamp = (quote as { regularMarketTime?: unknown }).regularMarketTime;
+        const asOf = stamp instanceof Date
+          ? stamp.toISOString()
+          : typeof stamp === "number"
+            ? new Date(stamp < 1e12 ? stamp * 1000 : stamp).toISOString()
+            : typeof stamp === "string" && !Number.isNaN(Date.parse(stamp))
+              ? new Date(stamp).toISOString()
+              : null;
         results[ticker] = {
           price: quote.regularMarketPrice ?? 0,
           change: quote.regularMarketChange ?? 0,
           changePct: quote.regularMarketChangePercent ?? 0,
+          asOf,
         };
       } catch {
         results[ticker] = null;

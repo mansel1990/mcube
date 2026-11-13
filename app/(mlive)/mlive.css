@@ -197,12 +197,21 @@
 .mlive .chip.bought { background: color-mix(in srgb, var(--up) 16%, transparent); color: var(--up); }
 .mlive .chip.sold { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
 .mlive .act-list { padding: 0 8px 8px; }
-.mlive .act { display: grid; grid-template-columns: 104px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 12px 12px 14px; border-top: 1px solid var(--line); border-left: 3px solid transparent; }
-.mlive .act.buy { border-left-color: var(--up); }
-.mlive .act.sell { border-left-color: var(--warn); }
-.mlive .act .amt { font-weight: 700; font-size: 15px; }
-.mlive .act.buy .amt { color: var(--up); }
-.mlive .act.sell .amt { color: var(--warn); }
+.mlive .act-list .act { display: grid; grid-template-columns: 104px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 12px 12px 14px; border-top: 1px solid var(--line); border-left: 3px solid transparent; border-bottom: 0; }
+.mlive .act-list .act.buy { border-left-color: var(--up); }
+.mlive .act-list .act.sell { border-left-color: var(--warn); }
+.mlive .act-list .act.cancel { border-left-color: var(--line2); background: transparent; color: inherit; }
+.mlive .act-list .act .amt { font-weight: 700; font-size: 15px; }
+.mlive .act-list .act.buy .amt { color: var(--up); }
+.mlive .act-list .act.sell .amt { color: var(--warn); }
+.mlive .act-list .act.cancel .amt { color: var(--ink3); }
+.mlive .chip.dead { background: var(--surface2); color: var(--ink3); }
+.mlive .alert-row { display: flex; align-items: flex-start; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line); }
+.mlive .alert-row .what { flex: 1; min-width: 0; }
+.mlive .alert-row .btn { flex: none; margin-top: 1px; }
+.mlive .kite-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--down); box-shadow: 0 0 0 3px color-mix(in srgb, var(--down) 28%, transparent); flex: none; }
+.mlive .kite-dot.on { background: var(--up); box-shadow: 0 0 0 3px color-mix(in srgb, var(--up) 28%, transparent); }
+.mlive .toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 40; max-width: min(420px, calc(100% - 32px)); margin: 0; padding: 12px 16px; border-radius: 12px; background: var(--ink); color: var(--bg); font-size: 14px; font-weight: 600; box-shadow: var(--shadow); }
 .mlive .two { display: grid; grid-template-columns: 1.25fr 1fr; gap: 16px; }
 .mlive .funnel { display: flex; gap: 10px; padding: 18px 20px 6px; flex-wrap: wrap; }
 .mlive .fstep { flex: 1; min-width: 90px; background: var(--surface2); border-radius: 12px; padding: 12px 14px; }
@@ -213,6 +222,8 @@
 .mlive .stack { display: flex; flex-direction: column; gap: 16px; }
 .mlive .modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 0 20px 20px; }
 .mlive .mode { border: 1px solid var(--line); border-radius: 12px; padding: 14px; cursor: pointer; background: var(--surface); text-align: left; color: var(--ink); }
+.mlive .mode:disabled { cursor: progress; opacity: 0.72; }
+.mlive .mode .spin { display: inline-block; margin-top: 0; color: inherit; }
 .mlive .mode[data-mode="approve"][aria-pressed="true"] { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 10%, var(--surface)); box-shadow: 0 0 0 3px var(--brand-soft); }
 .mlive .mode[data-mode="auto"][aria-pressed="true"] { border-color: var(--up); background: color-mix(in srgb, var(--up) 12%, var(--surface)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--up) 22%, transparent); }
 .mlive .mode[data-mode="paused"][aria-pressed="true"] { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, var(--surface)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 24%, transparent); }
@@ -448,6 +459,52 @@
 .mlive .range-scale { display: grid; gap: 8px; margin-top: 4px; }
 .mlive .range-ends { position: relative; display: flex; justify-content: space-between; min-height: 34px; font-size: 11px; color: var(--ink3); }
 .mlive .range-ends .mid { position: absolute; top: 16px; transform: translateX(-50%); white-space: nowrap; }
+.mlive .nav-count { margin-left: 6px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 99px; background: var(--warn); color: #1a1408; font-size: 10px; font-weight: 700; display: inline-grid; place-items: center; font-variant-numeric: tabular-nums; }
+.mlive .ideas-top { display: flex; justify-content: space-between; gap: 16px; align-items: flex-end; flex-wrap: wrap; }
+.mlive .ideas-controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.mlive .idea-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+.mlive .idea-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.mlive .idea-wait { display: grid; grid-template-columns: 1fr; gap: 14px; }
+.mlive .idea-group { margin-top: 18px; }
+.mlive .idea-group h3, .mlive .idea-mobile h3 { margin: 0 0 10px; font-size: 14px; }
+.mlive .idea-card { padding: 14px; border-left: 3px solid var(--line2); display: flex; flex-direction: column; gap: 10px; }
+.mlive .idea-card.wait { border-left-color: var(--warn); }
+.mlive .idea-card.work { border-left-color: var(--open); }
+.mlive .idea-card.bought { border-left-color: var(--profit); }
+.mlive .idea-card.quiet { border-left-color: var(--line2); }
+.mlive .idea-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.mlive .idea-card .score { font-weight: 700; font-size: 13px; color: var(--ink2); background: var(--surface2); border-radius: 8px; padding: 4px 8px; }
+.mlive .strat-chip.rs { background: color-mix(in srgb, var(--rs) 16%, transparent); color: var(--rs); }
+.mlive .strat-chip.ema { background: color-mix(in srgb, var(--ema) 18%, transparent); color: var(--ema); }
+.mlive .chip.wait { background: var(--charges-bg); color: var(--charges); }
+.mlive .chip.work { background: var(--open-bg); color: var(--open); }
+.mlive .chip.quiet { background: var(--surface2); color: var(--ink3); }
+.mlive .chip.profit { background: var(--profit-bg); color: var(--profit); }
+.mlive .chip.loss { background: var(--loss-bg); color: var(--loss); }
+.mlive .idea-chart { height: 140px; }
+.mlive .idea-chart.empty { height: auto; margin: 0; }
+.mlive .idea-prices { display: flex; flex-wrap: wrap; gap: 6px 10px; font-size: 12px; color: var(--ink2); font-variant-numeric: tabular-nums; }
+.mlive .idea-prices i { font-style: normal; color: var(--ink3); }
+.mlive .idea-size { margin: 0; font-size: 13px; font-weight: 600; }
+.mlive .idea-facts { display: flex; flex-wrap: wrap; gap: 6px; }
+.mlive .idea-facts .chip b { font-weight: 700; margin-right: 4px; }
+.mlive .idea-foot { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.mlive .idea-foot p, .mlive .idea-acts { margin: 0; }
+.mlive .idea-foot p { font-size: 13px; line-height: 1.4; }
+.mlive .idea-acts { display: flex; gap: 8px; justify-content: flex-end; }
+.mlive .idea-empty { padding: 20px; }
+.mlive .idea-empty p { margin: 0 0 8px; }
+.mlive .idea-table { width: 100%; }
+.mlive .idea-table th, .mlive .idea-table td { white-space: nowrap; }
+.mlive .idea-table th.wrap, .mlive .idea-table th.wrap .sort { white-space: normal; text-align: left; }
+.mlive .idea-table .sort { background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }
+.mlive .idea-day td { background: var(--surface2); font-weight: 700; }
+.mlive .idea-table tr.open, .mlive .idea-expand td { background: color-mix(in srgb, var(--open) 6%, var(--surface)); }
+.mlive .idea-expand td { white-space: normal; }
+.mlive .idea-table-h { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.mlive .idea-mobile { display: none; }
+.mlive .idea-mobile .idea-card { margin-bottom: 12px; }
+.mlive .idea-moves { color: var(--ink2); }
 @media (min-width: 1700px) {
   .mlive .wrap { max-width: none; padding: 0 48px; }
 }
@@ -470,6 +527,14 @@
   .mlive .trade-filters .seg, .mlive .trade-filters .vdiv, .mlive .trade-filters .exit-pick { order: 3; }
   .mlive .break-board { grid-template-columns: 1fr; }
   .mlive .break-total b { font-size: 24px; }
-  .mlive .act { grid-template-columns: 88px minmax(0, 1fr) auto; gap: 8px; padding-left: 10px; }
+  .mlive .act-list .act { grid-template-columns: 88px minmax(0, 1fr) auto; gap: 8px; padding-left: 10px; }
+  .mlive .toast { bottom: 78px; }
   .mlive table.trades th, .mlive table.trades td { white-space: normal; }
+  .mlive .mnav a { font-size: 11px; padding: 0 4px; flex-direction: column; gap: 2px; }
+  .mlive .nav-count { margin-left: 0; }
+  .mlive .ideas-top, .mlive .ideas-controls { align-items: stretch; }
+  .mlive .idea-stats { grid-template-columns: 1fr 1fr; }
+  .mlive .idea-grid, .mlive .idea-wait { grid-template-columns: 1fr; }
+  .mlive .idea-desk { display: none; }
+  .mlive .idea-mobile { display: block; }
 }

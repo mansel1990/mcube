@@ -39,6 +39,7 @@ import {
   collapseAuditRows,
   decisionSentence,
   ledgerOutcome,
+  activityFace,
   orderLabel,
   orderSentence,
   showsHolding,
@@ -57,6 +58,10 @@ import {
   makeTag,
   mergeDayDecisions,
   nextTrendStop,
+  autoResumeOnLogin,
+  haltReasonText,
+  homeStatusPill,
+  loginResumeCopy,
   preflightSessionPlan,
   rejectIsKnown,
   priceSkip,
@@ -419,16 +424,37 @@ describe("go-live session rules", () => {
     expect(nextTradingDay(todayIst(new Date("2026-11-06T19:45:00+05:30")), holidays)).toBe("2026-11-09");
   });
 
-  it("waits for a Kite session before 09:10 and halts only on the final run", () => {
+  it("waits for a Kite session through 09:10 and does not stop the day", () => {
     const waiting = preflightSessionPlan({ minute: 8 * 60 + 40, reasons: ["no_kite_session", "kite_unreadable"], status: "active", haltReason: null });
     expect(waiting).toMatchObject({ halt: false, alert: "wait" });
     const final = preflightSessionPlan({ minute: 9 * 60 + 10, reasons: ["no_kite_session"], status: "active", haltReason: null });
-    expect(final).toMatchObject({ halt: true, haltReason: "no_kite_session" });
+    expect(final).toMatchObject({ halt: false, alert: "wait", haltReason: null });
     const cleared = preflightSessionPlan({ minute: 9 * 60 + 5, reasons: [], status: "halted_today", haltReason: "no_kite_session" });
     expect(cleared).toMatchObject({ halt: false, clearHalt: true });
     const other = preflightSessionPlan({ minute: 8 * 60 + 40, reasons: ["bhavcopy_missing", "no_kite_session"], status: "active", haltReason: null });
     expect(other.halt).toBe(true);
     expect(other.haltReason).toContain("bhavcopy_missing");
+    const rejected = preflightSessionPlan({ minute: 9 * 60 + 10, reasons: ["order_rejected"], status: "active", haltReason: null });
+    expect(rejected).toMatchObject({ halt: true, haltReason: "order_rejected" });
+  });
+
+  it("clears a no-login stop when Kite connects, and leaves every other stop", () => {
+    expect(autoResumeOnLogin({ status: "halted_today", haltReason: "no_kite_session", tradingDay: true })).toBe(true);
+    expect(autoResumeOnLogin({ status: "halted_today", haltReason: "order_rejected", tradingDay: true })).toBe(false);
+    expect(autoResumeOnLogin({ status: "halted_today", haltReason: "no_kite_session", tradingDay: false })).toBe(false);
+    expect(autoResumeOnLogin({ status: "halted_today", haltReason: "breaker", tradingDay: true })).toBe(false);
+    expect(autoResumeOnLogin({ status: "active", haltReason: "no_kite_session", tradingDay: true })).toBe(false);
+    const copy = loginResumeCopy("11:17");
+    expect(copy.audit).toBe("Kite login at 11:17 cleared today's no-login stop");
+    expect(copy.alert).toBe("Kite connected at 11:17. Trading resumed.");
+    expect(haltReasonText("order_rejected")).toBe("An order was rejected.");
+    expect(haltReasonText("ledger_failed")).toBe("The ledger could not be read.");
+    expect(homeStatusPill({ status: "halted_today", haltReason: "no_kite_session", kiteConnected: false, resumedAt: null })).toEqual({
+      label: "Waiting for Kite login",
+      connect: true,
+    });
+    expect(homeStatusPill({ status: "halted_today", haltReason: "order_rejected", kiteConnected: false, resumedAt: null }).label).toBe("Halted today");
+    expect(homeStatusPill({ status: "active", haltReason: null, kiteConnected: true, resumedAt: "11:17" }).label).toBe("Resumed at 11:17 after Kite login");
   });
 
   it("keeps one decision per idea when preflight runs twice", () => {
@@ -749,6 +775,9 @@ describe("decision sentences, re-check, and bought-or-sold", () => {
     expect(recheckDue(10 * 60 + 7, true)).toBe(true);
     expect(recheckDue(10 * 60 + 7, false)).toBe(false);
     expect(recheckDue(9 * 60 + 10, true)).toBe(false);
+    expect(recheckDue(11 * 60, false)).toBe(true);
+    expect(recheckDue(14 * 60 + 31, false)).toBe(false);
+    expect(recheckPlan({ outcome: null, reasonCode: null, sizingReason: "ok", ...limits })).toBe("propose");
     expect(recheckEligible("skipped", "pacing_day")).toBe(true);
     expect(recheckEligible("skipped", "too_close_to_stop")).toBe(true);
     expect(recheckEligible("skipped", "pacing_strategy")).toBe(true);
@@ -910,6 +939,12 @@ describe("decision sentences, re-check, and bought-or-sold", () => {
     expect(orderSentence({ ...order, status: "CANCELLED", filled: 5, average: 1203.9 })).toBe(
       "Bought 5 of 16. The other 11 were cancelled."
     );
+    expect(activityFace({ side: "BUY", outcome: "cancelled", detail: "Buy cancelled." })).toEqual({ tone: "cancel", label: "Cancelled" });
+    expect(activityFace({ side: "BUY", outcome: "rejected", detail: "Buy rejected." })).toEqual({ tone: "cancel", label: "Rejected" });
+    expect(activityFace({ side: "SELL", outcome: "cancelled", detail: "Sell cancelled." })).toEqual({ tone: "cancel", label: "Cancelled" });
+    expect(activityFace({ side: "BUY", outcome: "cancelled", detail: "Bought 5 of 16. The other 11 were cancelled." })).toEqual({ tone: "buy", label: "Bought" });
+    expect(activityFace({ side: "BUY", outcome: "filled", detail: "Bought 16 at ₹1,201.50." })).toEqual({ tone: "buy", label: "Bought" });
+    expect(activityFace({ side: "SELL", outcome: "filled", detail: "Sold 7 at ₹2,444.80." })).toEqual({ tone: "sell", label: "Sold" });
     expect(orderLabel("OPEN", 16, 0)).toBe("working");
     expect(orderLabel("OPEN", 16, 5)).toBe("working");
     expect(orderLabel("COMPLETE", 16, 16)).toBe("filled");

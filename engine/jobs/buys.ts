@@ -3,11 +3,13 @@ import { decisionsFor } from "../book";
 import { freshBuySizing, sendReady } from "../execute";
 import { loadSettings, loadState } from "../load";
 import { runJob } from "../run";
+import { skipIfNoSession } from "../session";
 
 export async function buys(): Promise<void> {
+  const minute = istMinutes();
+  if (minute < 9 * 60 + 40 || minute > 10 * 60) return;
+  if (await skipIfNoSession("buys")) return;
   await runJob("buys", async (runId) => {
-    const minute = istMinutes();
-    if (minute < 9 * 60 + 40 || minute > 10 * 60) return { skipped: "outside buy window" };
     const settings = await loadSettings();
     const state = await loadState();
     const open = await decisionsFor(todayIst(), "BUY");

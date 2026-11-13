@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireMliveSession } from "@/lib/mlive/auth";
-import { saveEncryptedSession } from "@/lib/mlive/kite-session";
+import { clearNoLoginHalt, saveEncryptedSession } from "@/lib/mlive/kite-session";
 import { userAudit } from "@/lib/mlive/write";
 
 const ALLOWED_HOSTS = new Set([
@@ -46,6 +46,7 @@ export async function GET(request: NextRequest) {
   try {
     const kiteUser = await saveEncryptedSession(session.user.id, requestToken);
     await userAudit({ userId: session.user.id, action: "kite.login", after: { kiteUser } });
+    await clearNoLoginHalt();
     return NextResponse.redirect(new URL("/live-trade-mansel/settings?kite=connected", here));
   } catch {
     return NextResponse.redirect(new URL("/live-trade-mansel/settings?kite=error", here));

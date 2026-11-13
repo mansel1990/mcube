@@ -119,7 +119,7 @@ export async function homePayload(displayName: string) {
   const nextSession = nextTradingDay(today, new Set(holidayRows.map((row) => String(row.trade_date).slice(0, 10))));
   const includeDry = await includeDryRows();
   const [stateRows, fundRows, positions, decisions, upcoming, ideas, equity, kiteStatus, alerts, runs, instruments] = await Promise.all([
-    sql`SELECT status, mode, peak_value, peak_date::text AS peak_date, last_eod_date::text AS last_eod_date, updated_at FROM mlive.mlive_state WHERE id = 1`,
+    sql`SELECT status, mode, halt_reason, peak_value, peak_date::text AS peak_date, last_eod_date::text AS last_eod_date, updated_at FROM mlive.mlive_state WHERE id = 1`,
     sql`SELECT COALESCE(SUM(amount), 0) AS total, MIN(ts) AS started FROM mlive.mlive_fund_ledger WHERE (${includeDry}::boolean OR dry_run = false)`,
     sql`SELECT id, symbol, strategy, qty, avg_price, trend_stop, high_52w_flag, frozen, opened_at FROM mlive.mlive_positions WHERE closed_at IS NULL AND qty > 0 AND (${includeDry}::boolean OR dry_run = false) ORDER BY opened_at`,
     sql`SELECT d.id, d.trade_date::text AS trade_date, d.side, d.symbol, d.outcome, d.reason_code, d.reason_text, d.sizing,
@@ -143,6 +143,13 @@ export async function homePayload(displayName: string) {
     sql`SELECT symbol, is_etf FROM mlive.mlive_instruments`,
   ]);
   const state = stateRows[0];
+  const resumeRows = await sql`
+    SELECT reason FROM mlive.mlive_audit_log
+     WHERE action = 'state.auto_resume'
+       AND (ts AT TIME ZONE 'Asia/Kolkata')::date = ${today}::date
+     ORDER BY id DESC
+     LIMIT 1`;
+  const resumedAt = String(resumeRows[0]?.reason ?? "").match(/at (\d{2}:\d{2})/)?.[1] ?? null;
   const fund = num(fundRows[0]?.total);
   const picture = await cashPicture();
   const invested = positions.reduce((sum, row) => sum + num(row.qty) * num(row.avg_price), 0);
@@ -216,6 +223,8 @@ export async function homePayload(displayName: string) {
     state: {
       status: String(state?.status ?? "active"),
       mode: String(state?.mode ?? "approve"),
+      haltReason: state?.halt_reason == null || state.halt_reason === "" ? null : String(state.halt_reason),
+      resumedAt,
       dryRun: settings.dry_run !== false,
       drawdown,
       breakerPct: num(settings.breaker_pct ?? 0.25) * 100,
