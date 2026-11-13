@@ -1,12 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { recheckDue } from "@/lib/mlive/rules";
 
-const { getMargins, getHoldings, q, audit, raiseAlert } = vi.hoisted(() => ({
+const { getMargins, getHoldings, q, audit, raiseAlert, book } = vi.hoisted(() => ({
   getMargins: vi.fn(),
   getHoldings: vi.fn(),
   q: vi.fn(),
   audit: vi.fn(),
   raiseAlert: vi.fn(),
+  book: {
+    live: {} as Record<string, number>,
+    prev: {} as Record<string, number>,
+    ideas: [] as Array<Record<string, string>>,
+  },
 }));
 
 vi.mock("@/lib/mlive/calendar", async () => {
@@ -24,8 +29,12 @@ vi.mock("kiteconnect", () => ({
 
 vi.mock("yahoo-finance2", () => ({
   default: class {
-    quote() {
-      return { regularMarketPrice: 200, regularMarketPreviousClose: 200 };
+    quote(symbol: string) {
+      const name = String(symbol).replace(/\.NS$/, "");
+      return {
+        regularMarketPrice: book.live[name] ?? 200,
+        regularMarketPreviousClose: book.prev[name] ?? 200,
+      };
     }
   },
 }));
@@ -62,11 +71,24 @@ const bars = Array.from({ length: 25 }, (_, index) => ({
 
 describe("recheck after a late login", () => {
   const inserts: unknown[][] = [];
+  const baselines: unknown[] = [];
 
   beforeEach(() => {
     process.env.KITE_API_KEY = "test-key";
     process.env.MLIVE_TOKEN_KEY = "test-token-key";
     inserts.length = 0;
+    baselines.length = 0;
+    book.live = {};
+    book.prev = {};
+    book.ideas = [{
+      id: "15",
+      symbol: "INFY",
+      strategy: "rs",
+      signal_close: "200",
+      initial_stop: "190",
+      sector: "Technology",
+      score: "1",
+    }];
     getMargins.mockReset();
     getMargins.mockResolvedValue({ available: { live_balance: 80000 } });
     getHoldings.mockReset();
@@ -93,23 +115,20 @@ describe("recheck after a late login", () => {
       if (text.includes("filled_qty")) return [{ total: "0" }];
       if (text.includes("FROM mlive.mlive_positions")) return [];
       if (text.includes("GROUP BY o.side")) return [];
-      if (text.includes("outcome = 'skipped'")) return [];
-      if (text.includes("SELECT i.id")) {
-        return [{
-          id: "15",
-          symbol: "INFY",
-          strategy: "rs",
-          signal_close: "200",
-          initial_stop: "190",
-          sector: "Technology",
-          score: "1",
-        }];
-      }
-      if (text.includes("high, low, close")) return bars;
-      if (text.includes("SELECT close, volume")) return [{ close: "200", volume: "1000" }];
-      if (text.includes("mlive_instruments")) return [{ is_etf: false }];
       if (text.includes("INSERT INTO mlive.mlive_decisions")) {
         inserts.push([text, ...params]);
+        return [];
+      }
+      if (text.includes("outcome = 'skipped'")) return [];
+      if (text.includes("SELECT i.id")) return book.ideas;
+      if (text.includes("high, low, close")) return bars;
+      if (text.includes("SELECT close, volume")) {
+        const name = String(params[0] ?? "");
+        return [{ close: String(book.prev[name] ?? 200), volume: "1000" }];
+      }
+      if (text.includes("mlive_instruments")) return [{ is_etf: false }];
+      if (text.includes("deployBaseline")) {
+        baselines.push(params[1]);
         return [];
       }
       return [];
@@ -125,5 +144,30 @@ describe("recheck after a late login", () => {
     expect(inserts).toHaveLength(1);
     expect(String(inserts[0][0])).toContain("'proposed'");
     expect(inserts[0]).toContain("INFY");
+  });
+
+  it("does not spend the deploy budget on a name that is too close to its stop", async () => {
+    getMargins.mockResolvedValue({ available: { live_balance: 40000 } });
+    book.ideas = [
+      { id: "1", symbol: "HEROMOTOCO", strategy: "ema", signal_close: "1890.55", initial_stop: "1820", sector: "Automobile", score: "3" },
+      { id: "2", symbol: "COFORGE", strategy: "ema", signal_close: "1800", initial_stop: "1680", sector: "Technology", score: "2" },
+      { id: "3", symbol: "PERSISTENT", strategy: "ema", signal_close: "2500", initial_stop: "2420", sector: "Technology", score: "1" },
+    ];
+    book.prev = { HEROMOTOCO: 1890.55, COFORGE: 1800, PERSISTENT: 2500 };
+    book.live = { HEROMOTOCO: 1830, COFORGE: 1800, PERSISTENT: 2500 };
+    const { recheckBuys } = await import("./recheck");
+    const proposed = await recheckBuys(4);
+    const row = (symbol: string) => inserts.find((insert) => insert.includes(symbol));
+    const hero = row("HEROMOTOCO");
+    const coforge = row("COFORGE");
+    const persistent = row("PERSISTENT");
+    expect(proposed).toBe(1);
+    expect(String(hero?.[0])).toContain("'skipped'");
+    expect(hero).toContain("too_close_to_stop");
+    expect(String(coforge?.[0])).toContain("'proposed'");
+    expect(coforge).toEqual(expect.arrayContaining([expect.stringContaining("10854")]));
+    expect(String(persistent?.[0])).toContain("'skipped'");
+    expect(persistent).toContain("pacing_cash");
+    expect(baselines).toEqual([39500]);
   });
 });

@@ -176,6 +176,11 @@ export async function recheckBuys(runId: number): Promise<number> {
   for (const candidate of candidates) {
     if (candidate.stop == null || !(candidate.signalClose > 0)) continue;
     const entry = limitPrice(candidate.signalClose, settings.limitOffset);
+    const live = await livePrice(candidate.symbol);
+    if (live != null && buyTooCloseToStop(live, candidate.stop)) {
+      await rememberSkip(candidate, "too_close_to_stop", decisionSentence({ outcome: "skipped", reasonCode: "too_close_to_stop" }), runId, today, settings.dryRun);
+      continue;
+    }
     const sized = sizeOrder({
       fund,
       entry,
@@ -185,61 +190,29 @@ export async function recheckBuys(runId: number): Promise<number> {
       maxOrderPct: settings.maxOrderPct,
       minOrderInr: settings.minOrderInr,
     });
-    if (sized.reason === "ok") {
-      const paced = paceBuys([{ symbol: candidate.symbol, strategy: candidate.strategy, notional: sized.notional }], paceBook, paceLimits);
-      const paceReason = paced.results[0]?.reason ?? "ok";
-      if (paceReason !== "ok") {
-        paceBook = paced.book;
-        if (candidate.id != null && candidate.reasonCode !== paceReason) {
-          const text = decisionSentence({
-            outcome: "skipped",
-            reasonCode: paceReason,
-            strategy: candidate.strategy,
-            limitCount: paceReason === "strategy_full" ? settings.maxOpenPerStrategy : paceReason === "pacing_strategy" ? settings.maxBuysPerStrategy : settings.maxNewBuys,
-          });
-          await q(
-            `UPDATE mlive.mlive_decisions SET reason_code = $2, reason_text = $3 WHERE id = $1 AND outcome = 'skipped'`,
-            [candidate.id, paceReason, text]
-          );
-        }
-        continue;
-      }
-      const pacedAction = recheckPlan({
-        outcome: candidate.outcome,
-        reasonCode: candidate.reasonCode,
-        sizingReason: sized.reason,
-        buysSent,
-        maxBuys: settings.maxBuys,
-        openPositions: openCount,
-        maxPositions: settings.maxOpen,
-        sectorCount: sectorCounts.get(candidate.sector) ?? 0,
-        maxPerSector: settings.maxPerSector,
-      });
-      paceBook = { ...paceBook, baseline: paced.book.baseline };
-      if (pacedAction !== "propose") continue;
-      paceBook = paced.book;
+    if (sized.reason !== "ok") {
+      const would = Math.min(sized.qtyRisk, sized.qtyCap);
+      await rememberSkip(
+        candidate,
+        sized.reason,
+        decisionSentence({ outcome: "skipped", reasonCode: sized.reason, qty: would, notional: would * entry, minOrderInr: settings.minOrderInr }),
+        runId,
+        today,
+        settings.dryRun,
+        { qty: would, limit: entry, stop: candidate.stop, notional: would * entry, text: sized.text },
+      );
+      continue;
     }
-    const live = await livePrice(candidate.symbol);
-    if (live != null && buyTooCloseToStop(live, candidate.stop)) {
-      const text = decisionSentence({ outcome: "skipped", reasonCode: "too_close_to_stop" });
-      if (candidate.id != null) {
-        await q(
-          `UPDATE mlive.mlive_decisions
-              SET outcome = 'skipped', reason_code = 'too_close_to_stop', reason_text = $2, run_id = $3
-            WHERE id = $1 AND outcome IN ('proposed', 'skipped')`,
-          [candidate.id, text, runId]
-        );
-      } else {
-        await q(
-          `INSERT INTO mlive.mlive_decisions
-             (run_id, trade_date, idea_id, side, symbol, outcome, reason_code, reason_text, sizing, rank, dry_run)
-           VALUES ($1, $2::date, $3, 'BUY', $4, 'skipped', 'too_close_to_stop', $5, NULL, NULL, $6)
-           ON CONFLICT (trade_date, side, idea_id) WHERE idea_id IS NOT NULL
-           DO UPDATE SET outcome = 'skipped', reason_code = 'too_close_to_stop', reason_text = EXCLUDED.reason_text, run_id = EXCLUDED.run_id
-            WHERE mlive.mlive_decisions.outcome IN ('proposed', 'skipped')`,
-          [runId, today, candidate.ideaId, candidate.symbol, text, settings.dryRun]
-        );
-      }
+    const paced = paceBuys([{ symbol: candidate.symbol, strategy: candidate.strategy, notional: sized.notional }], paceBook, paceLimits);
+    const paceReason = paced.results[0]?.reason ?? "ok";
+    if (paceReason !== "ok") {
+      const text = decisionSentence({
+        outcome: "skipped",
+        reasonCode: paceReason,
+        strategy: candidate.strategy,
+        limitCount: paceReason === "strategy_full" ? settings.maxOpenPerStrategy : paceReason === "pacing_strategy" ? settings.maxBuysPerStrategy : settings.maxNewBuys,
+      });
+      await rememberSkip(candidate, paceReason, text, runId, today, settings.dryRun);
       continue;
     }
     const action = recheckPlan({
@@ -254,6 +227,7 @@ export async function recheckBuys(runId: number): Promise<number> {
       maxPerSector: settings.maxPerSector,
     });
     if (action !== "propose") continue;
+    paceBook = paced.book;
     const sizing = {
       qty: sized.qty,
       limit: entry,
@@ -305,6 +279,36 @@ export async function recheckBuys(runId: number): Promise<number> {
   }
   if (paceBook.baseline != null && paceBook.baseline > 0) await saveDeployBaseline(today, paceBook.baseline);
   return promoted;
+}
+
+async function rememberSkip(
+  candidate: Candidate,
+  code: string,
+  text: string,
+  runId: number,
+  today: string,
+  dryRun: boolean,
+  sizing: unknown = null,
+): Promise<void> {
+  if (candidate.id != null) {
+    if (candidate.reasonCode === code) return;
+    await q(
+      `UPDATE mlive.mlive_decisions
+          SET outcome = 'skipped', reason_code = $2, reason_text = $3, run_id = $4
+        WHERE id = $1 AND outcome IN ('proposed', 'skipped')`,
+      [candidate.id, code, text, runId]
+    );
+    return;
+  }
+  await q(
+    `INSERT INTO mlive.mlive_decisions
+       (run_id, trade_date, idea_id, side, symbol, outcome, reason_code, reason_text, sizing, rank, dry_run)
+     VALUES ($1, $2::date, $3, 'BUY', $4, 'skipped', $5, $6, $7::jsonb, NULL, $8)
+     ON CONFLICT (trade_date, side, idea_id) WHERE idea_id IS NOT NULL
+     DO UPDATE SET outcome = 'skipped', reason_code = EXCLUDED.reason_code, reason_text = EXCLUDED.reason_text, sizing = EXCLUDED.sizing, run_id = EXCLUDED.run_id
+      WHERE mlive.mlive_decisions.outcome IN ('proposed', 'skipped')`,
+    [runId, today, candidate.ideaId, candidate.symbol, code, text, sizing == null ? null : JSON.stringify(sizing), dryRun]
+  );
 }
 
 async function ideaIsViable(args: {
