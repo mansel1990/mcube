@@ -84,6 +84,7 @@ describe("approvals when Kite cash cannot be read", () => {
     q.mockReset();
     q.mockImplementation(async (text: string, params: unknown[] = []) => {
       if (text.includes("INSERT INTO mlive.mlive_runs")) return [{ id: "12" }];
+      if (text.includes("summary->>'session'") || text.includes("preflight.late")) return [{ id: "3" }];
       if (text.includes("status = 'ok'")) {
         summary = JSON.parse(String(params[1])) as Record<string, unknown>;
         return [];

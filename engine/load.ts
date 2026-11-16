@@ -109,17 +109,18 @@ export async function holidaySet(): Promise<Set<string>> {
 
 export async function setState(patch: Partial<Pick<MliveState, "status" | "mode" | "peak" | "peakDate" | "lastEod" | "haltReason">>): Promise<void> {
   const current = await loadState();
+  const status = patch.status ?? current.status;
   await q(
     `UPDATE mlive.mlive_state
         SET status = $1, mode = $2, peak_value = $3, peak_date = $4, last_eod_date = $5, halt_reason = $6, updated_at = now()
       WHERE id = 1`,
     [
-      patch.status ?? current.status,
+      status,
       patch.mode ?? current.mode,
       patch.peak ?? current.peak,
       patch.peakDate === undefined ? current.peakDate : patch.peakDate,
       patch.lastEod === undefined ? current.lastEod : patch.lastEod,
-      patch.haltReason === undefined ? current.haltReason : patch.haltReason,
+      status === "active" ? null : patch.haltReason === undefined ? current.haltReason : patch.haltReason,
     ]
   );
 }

@@ -91,6 +91,7 @@ export async function recheckBuys(runId: number): Promise<number> {
       ORDER BY d.rank NULLS LAST, d.id`,
     [today, settings.dryRun, [...RECHECK_REASON_CODES]]
   );
+  await skipUnviableFreshIdeas(runId, { settings, positions, sectorCounts, kiteQty });
   const fresh = await q<{
     id: string;
     symbol: string;
@@ -129,18 +130,6 @@ export async function recheckBuys(runId: number): Promise<number> {
     const strategy = idea.strategy === "ema" ? "ema" : "rs";
     if (!settings.strategies.includes(strategy)) continue;
     const symbol = String(idea.symbol);
-    const viable = await ideaIsViable({
-      symbol,
-      strategy,
-      signalClose: num(idea.signal_close),
-      stop: idea.initial_stop == null ? null : num(idea.initial_stop),
-      sector: String(idea.sector ?? ""),
-      sectorCounts,
-      kiteQty,
-      systemQty: positions.find((row) => row.symbol === symbol)?.qty ?? 0,
-      settings,
-    });
-    if (!viable) continue;
     candidates.push({
       id: null,
       ideaId: num(idea.id),
@@ -311,6 +300,105 @@ async function rememberSkip(
   );
 }
 
+type FreshBook = {
+  settings: Awaited<ReturnType<typeof loadSettings>>;
+  positions: Awaited<ReturnType<typeof openPositions>>;
+  sectorCounts: Map<string, number>;
+  kiteQty: Map<string, number>;
+};
+
+/** Record a hard skip for a fresh idea. These codes are not rechecked later in the day. */
+export async function skipUnviableFreshIdeas(runId: number, ready?: FreshBook): Promise<number> {
+  const settings = ready?.settings ?? await loadSettings();
+  if (!ready) {
+    const state = await loadState();
+    if (state.mode === "paused" || state.status !== "active") return 0;
+  }
+  const today = todayIst();
+  const positions = ready?.positions ?? await openPositions(settings.dryRun);
+  const sectorCounts = ready?.sectorCounts ?? new Map<string, number>();
+  const kiteQty = ready?.kiteQty ?? new Map<string, number>();
+  if (!ready) {
+    for (const position of positions) {
+      const sector = await q<{ sector: string | null }>(`SELECT sector FROM mlive.mlive_instruments WHERE symbol = $1`, [position.symbol]);
+      const name = sector[0]?.sector;
+      if (name) sectorCounts.set(name, (sectorCounts.get(name) ?? 0) + 1);
+    }
+    const kite = new MliveKite(settings.dryRun);
+    if (await kite.sessionOk()) {
+      try {
+        for (const row of await kite.holdings()) kiteQty.set(row.tradingsymbol.toUpperCase(), row.quantity);
+      } catch {
+        /* a missing holdings read does not invent a skip */
+      }
+    }
+  }
+  const fresh = await q<{
+    id: string;
+    symbol: string;
+    strategy: string | null;
+    signal_close: string | null;
+    initial_stop: string | null;
+    sector: string | null;
+  }>(
+    `SELECT i.id, i.symbol, i.strategy, i.signal_close, i.initial_stop, i.sector
+       FROM mlive.mlive_ideas i
+      WHERE i.valid_for = $1::date
+        AND NOT EXISTS (
+          SELECT 1 FROM mlive.mlive_decisions d
+           WHERE d.idea_id = i.id AND d.trade_date = i.valid_for AND d.side = 'BUY'
+        )
+      ORDER BY i.score DESC`,
+    [today]
+  );
+  let written = 0;
+  for (const idea of fresh) {
+    const strategy = idea.strategy === "ema" ? "ema" : "rs";
+    if (!settings.strategies.includes(strategy)) continue;
+    const symbol = String(idea.symbol);
+    const sector = String(idea.sector ?? "");
+    const reason = await ideaIsViable({
+      symbol,
+      strategy,
+      signalClose: num(idea.signal_close),
+      stop: idea.initial_stop == null ? null : num(idea.initial_stop),
+      sector,
+      sectorCounts,
+      kiteQty,
+      systemQty: positions.find((row) => row.symbol === symbol)?.qty ?? 0,
+      settings,
+    });
+    if (!reason) continue;
+    await rememberSkip(
+      {
+        id: null,
+        ideaId: num(idea.id),
+        symbol,
+        strategy,
+        sector,
+        signalClose: num(idea.signal_close),
+        stop: idea.initial_stop == null ? null : num(idea.initial_stop),
+        rank: null,
+        outcome: null,
+        reasonCode: null,
+      },
+      reason,
+      decisionSentence({
+        outcome: "skipped",
+        reasonCode: reason,
+        sector,
+        sectorCount: sectorCounts.get(sector) ?? 0,
+        strategy,
+      }),
+      runId,
+      today,
+      settings.dryRun,
+    );
+    written += 1;
+  }
+  return written;
+}
+
 async function ideaIsViable(args: {
   symbol: string;
   strategy: "rs" | "ema";
@@ -321,7 +409,7 @@ async function ideaIsViable(args: {
   kiteQty: Map<string, number>;
   systemQty: number;
   settings: Awaited<ReturnType<typeof loadSettings>>;
-}): Promise<boolean> {
+}): Promise<string | null> {
   const bars = await loadBars(args.symbol, 30);
   const last = await previousClose(args.symbol);
   const yahoo = await yahooPreviousClose(args.symbol);
@@ -347,5 +435,5 @@ async function ideaIsViable(args: {
     belowMinAfterSizing: false,
     entryBelowStop: args.strategy === "ema" && args.stop != null && entryBelowEma(entry, args.stop),
   });
-  return reason == null;
+  return reason;
 }

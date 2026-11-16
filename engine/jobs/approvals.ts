@@ -6,6 +6,7 @@ import { q } from "../db";
 import { sendReady } from "../execute";
 import { runJob } from "../run";
 import { skipIfNoSession } from "../session";
+import { runLatePreflight } from "../late-preflight";
 import { recheckBuys } from "./recheck";
 
 function failureText(error: unknown): string {
@@ -20,6 +21,7 @@ export async function approvals(): Promise<void> {
   }
   if (await skipIfNoSession("approvals")) return;
   await runJob("approvals", async (runId) => {
+    await runLatePreflight(runId);
     const open = await q<{ id: string }>(
       `SELECT id FROM mlive.mlive_requests WHERE kind = 'recheck' AND done_at IS NULL ORDER BY id LIMIT 1`
     );

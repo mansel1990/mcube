@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { kiteSessionView, kiteTokenDay } from "./kite-session";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { clearNoLoginHalt, kiteSessionView, kiteTokenDay } from "./kite-session";
+import { homeStatusPill } from "./rules";
+
+const { sql } = vi.hoisted(() => ({ sql: vi.fn() }));
+
+vi.mock("@/lib/sql", () => ({ sql }));
 
 const today = "2026-11-06";
 
@@ -26,5 +31,43 @@ describe("kite session date", () => {
     expect(home).toEqual(settings);
     expect(home.connected).toBe(true);
     expect(settings.kiteUserId).toBe("AB1234");
+  });
+});
+
+describe("login with a stale halt reason", () => {
+  const updates: string[] = [];
+  const inserts: string[] = [];
+
+  beforeEach(() => {
+    updates.length = 0;
+    inserts.length = 0;
+    sql.mockReset();
+    sql.mockImplementation(async (strings: TemplateStringsArray) => {
+      const text = Array.isArray(strings) ? strings.join(" ") : String(strings);
+      if (text.includes("UPDATE") && text.includes("mlive_state")) {
+        updates.push(text);
+        return [];
+      }
+      if (text.includes("INSERT")) {
+        inserts.push(text);
+        return [{ id: "1" }];
+      }
+      if (text.includes("mlive_state")) return [{ status: "active", halt_reason: "no_kite_session" }];
+      return [];
+    });
+  });
+
+  it("clears halt_reason and Home says the engine is active", async () => {
+    await clearNoLoginHalt(new Date("2026-11-16T04:27:00.000Z"));
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toContain("halt_reason = NULL");
+    expect(updates[0]).toContain("status = 'active'");
+    expect(inserts).toEqual([]);
+    expect(homeStatusPill({
+      status: "active",
+      haltReason: null,
+      kiteConnected: true,
+      resumedAt: null,
+    }).label).toBe("Engine active");
   });
 });

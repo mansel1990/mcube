@@ -87,15 +87,22 @@ function istClock(now: Date): string {
 export async function clearNoLoginHalt(now = new Date()): Promise<boolean> {
   const { sql } = await import("@/lib/sql");
   const today = todayIst(now);
-  const [state, holidays] = await Promise.all([
-    sql`SELECT status, halt_reason FROM mlive.mlive_state WHERE id = 1`,
-    sql`SELECT trade_date::text AS trade_date FROM mlive.mlive_holidays`,
-  ]);
+  const state = await sql`SELECT status, halt_reason FROM mlive.mlive_state WHERE id = 1`;
   const row = state[0];
+  const status = String(row?.status ?? "");
+  const haltReason = row?.halt_reason == null || row.halt_reason === "" ? null : String(row.halt_reason);
+  if (status === "active" && haltReason === "no_kite_session") {
+    await sql`
+      UPDATE mlive.mlive_state
+         SET halt_reason = NULL, updated_at = now()
+       WHERE id = 1 AND status = 'active' AND halt_reason = 'no_kite_session'`;
+    return true;
+  }
+  const holidays = await sql`SELECT trade_date::text AS trade_date FROM mlive.mlive_holidays`;
   const closed = new Set(holidays.map((item) => String(item.trade_date).slice(0, 10)));
   const resume = autoResumeOnLogin({
-    status: String(row?.status ?? ""),
-    haltReason: row?.halt_reason == null || row.halt_reason === "" ? null : String(row.halt_reason),
+    status,
+    haltReason,
     tradingDay: isTradingDay(today, closed),
   });
   if (!resume) return false;

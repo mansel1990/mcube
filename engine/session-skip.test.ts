@@ -60,14 +60,17 @@ describe("jobs with no Kite session", () => {
     });
   });
 
-  it("skips sells, buys, approvals and sync once each, with no alert", async () => {
+  it("skips sells, refresh, buys, approvals and sync once each, with no alert", async () => {
     const { sells } = await import("./jobs/sells");
+    const { refresh } = await import("./jobs/refresh");
     const { buys } = await import("./jobs/buys");
     const { approvals } = await import("./jobs/approvals");
     const { sync } = await import("./jobs/sync");
     clock.minute = 9 * 60 + 25;
     await sells();
     await sells();
+    await refresh();
+    await refresh();
     clock.minute = 9 * 60 + 50;
     await buys();
     await buys();
@@ -78,7 +81,7 @@ describe("jobs with no Kite session", () => {
     await sync();
     await sync();
     const rows = audit.mock.calls.map((call) => call[0] as { action: string; reason: string });
-    expect(rows.map((row) => row.action)).toEqual(["sells.skipped", "buys.skipped", "approvals.skipped", "sync.skipped"]);
+    expect(rows.map((row) => row.action)).toEqual(["sells.skipped", "refresh.skipped", "buys.skipped", "approvals.skipped", "sync.skipped"]);
     expect(rows.every((row) => row.reason === "no_kite_session")).toBe(true);
     expect(raiseAlert).not.toHaveBeenCalled();
     expect(q).not.toHaveBeenCalledWith(expect.stringContaining("INSERT INTO mlive.mlive_runs"), expect.anything());

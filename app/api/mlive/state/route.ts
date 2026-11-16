@@ -30,7 +30,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Send pause, resume, or mode" }, { status: 400 });
   }
 
-  await sql`UPDATE mlive.mlive_state SET status = ${status}, mode = ${mode}, halt_reason = ${action === "resume" ? null : before.halt_reason ?? null}, updated_at = now() WHERE id = 1`;
+  const haltReason = status === "active" ? null : before.halt_reason ?? null;
+  await sql`UPDATE mlive.mlive_state SET status = ${status}, mode = ${mode}, halt_reason = ${haltReason}, updated_at = now() WHERE id = 1`;
   await sql`
     INSERT INTO mlive.mlive_settings (key, value, updated_at, updated_by)
     VALUES ('mode', ${JSON.stringify(mode)}::jsonb, now(), ${session.user.id})

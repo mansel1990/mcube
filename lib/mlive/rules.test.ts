@@ -61,6 +61,7 @@ import {
   autoResumeOnLogin,
   haltReasonText,
   homeStatusPill,
+  kiteCheckedAt,
   loginResumeCopy,
   preflightSessionPlan,
   rejectIsKnown,
@@ -455,6 +456,13 @@ describe("go-live session rules", () => {
     });
     expect(homeStatusPill({ status: "halted_today", haltReason: "order_rejected", kiteConnected: false, resumedAt: null }).label).toBe("Halted today");
     expect(homeStatusPill({ status: "active", haltReason: null, kiteConnected: true, resumedAt: "11:17" }).label).toBe("Resumed at 11:17 after Kite login");
+    expect(homeStatusPill({ status: "active", haltReason: null, kiteConnected: true, resumedAt: null }).label).toBe("Engine active");
+    const morning = new Date("2026-11-16T03:30:00.000Z");
+    const late = new Date("2026-11-16T04:27:00.000Z");
+    const checked = kiteCheckedAt([morning, null, late]);
+    expect(checked).toEqual(late);
+    const clock = checked!.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" });
+    expect(`Matches Kite · ${clock}`).toContain("09:57");
   });
 
   it("keeps one decision per idea when preflight runs twice", () => {

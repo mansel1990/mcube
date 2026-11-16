@@ -25,6 +25,7 @@ import {
   engineSpendable,
   knownEngineActions,
   kiteCashMessage,
+  kiteCheckedAt,
   type AuditView,
   type EngineGroupId,
 } from "./rules";
@@ -182,7 +183,7 @@ export async function homePayload(displayName: string) {
   const peak = num(state?.peak_value ?? fund);
   const drawdown = accountDrawdown(account, peak);
   const heldSymbols = positions.map((row) => String(row.symbol));
-  const [highRows, gttRows, checkRows, stopReasonRows] = await Promise.all([
+  const [highRows, gttRows, sessionCheckRows, lateCheckRows, checkRows, stopReasonRows] = await Promise.all([
     positions.length
       ? sql`SELECT UPPER(ticker) AS symbol, MAX(high) AS high
               FROM stocks.daily_ohlcv
@@ -191,6 +192,12 @@ export async function homePayload(displayName: string) {
              GROUP BY 1`
       : Promise.resolve([]),
     sql`SELECT position_id, status FROM mlive.mlive_gtts WHERE status IN ('active', 'DRY') AND (${includeDry}::boolean OR dry_run = false)`,
+    sql`SELECT finished_at FROM mlive.mlive_runs
+         WHERE kind = 'preflight' AND status = 'ok'
+           AND (summary->>'session' = 'true' OR summary ? 'spendable')
+         ORDER BY finished_at DESC NULLS LAST, id DESC
+         LIMIT 1`,
+    sql`SELECT ts FROM mlive.mlive_audit_log WHERE action = 'preflight.late' ORDER BY ts DESC, id DESC LIMIT 1`,
     sql`SELECT finished_at FROM mlive.mlive_runs WHERE kind = 'preflight' AND status = 'ok' ORDER BY id DESC LIMIT 1`,
     positions.length
       ? sql`SELECT DISTINCT ON (UPPER(symbol)) UPPER(symbol) AS symbol, message
@@ -217,6 +224,11 @@ export async function homePayload(displayName: string) {
        AND (kind = 'gtt_exit' OR status IN ('OPEN', 'COMPLETE', 'CANCELLED', 'REJECTED', 'DRY', 'TRIGGER PENDING', 'PUT ORDER REQ RECEIVED'))
      ORDER BY placed_at DESC NULLS LAST, id DESC
      LIMIT 30`;
+  const checked = kiteCheckedAt([
+    sessionCheckRows[0]?.finished_at,
+    lateCheckRows[0]?.ts,
+    checkRows[0]?.finished_at,
+  ]);
   return {
     today,
     displayName,
@@ -235,8 +247,8 @@ export async function homePayload(displayName: string) {
         ? new Date(kiteStatus.connectedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })
         : null,
       clientId: kiteStatus.kiteUserId,
-      checkedAt: checkRows[0]?.finished_at
-        ? new Date(String(checkRows[0].finished_at)).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })
+      checkedAt: checked
+        ? checked.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })
         : null,
       matches: !positions.some((row) => row.frozen === true),
     },

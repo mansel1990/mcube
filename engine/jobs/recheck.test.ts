@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { recheckDue } from "@/lib/mlive/rules";
+import { RECHECK_REASON_CODES, recheckDue } from "@/lib/mlive/rules";
 
 const { getMargins, getHoldings, q, audit, raiseAlert, book } = vi.hoisted(() => ({
   getMargins: vi.fn(),
@@ -11,6 +11,7 @@ const { getMargins, getHoldings, q, audit, raiseAlert, book } = vi.hoisted(() =>
     live: {} as Record<string, number>,
     prev: {} as Record<string, number>,
     ideas: [] as Array<Record<string, string>>,
+    positions: [] as Array<Record<string, unknown>>,
   },
 }));
 
@@ -72,12 +73,15 @@ const bars = Array.from({ length: 25 }, (_, index) => ({
 describe("recheck after a late login", () => {
   const inserts: unknown[][] = [];
   const baselines: unknown[] = [];
+  const decided = new Set<string>();
 
   beforeEach(() => {
     process.env.KITE_API_KEY = "test-key";
     process.env.MLIVE_TOKEN_KEY = "test-token-key";
     inserts.length = 0;
     baselines.length = 0;
+    decided.clear();
+    book.positions = [];
     book.live = {};
     book.prev = {};
     book.ideas = [{
@@ -113,14 +117,15 @@ describe("recheck after a late login", () => {
       if (text.includes("mlive_fund_ledger")) return [{ total: "80000" }];
       if (text.includes("SUM(qty * avg_price)")) return [{ total: "0" }];
       if (text.includes("filled_qty")) return [{ total: "0" }];
-      if (text.includes("FROM mlive.mlive_positions")) return [];
+      if (text.includes("FROM mlive.mlive_positions")) return book.positions;
       if (text.includes("GROUP BY o.side")) return [];
       if (text.includes("INSERT INTO mlive.mlive_decisions")) {
         inserts.push([text, ...params]);
+        if (params[2] != null) decided.add(String(params[2]));
         return [];
       }
       if (text.includes("outcome = 'skipped'")) return [];
-      if (text.includes("SELECT i.id")) return book.ideas;
+      if (text.includes("SELECT i.id")) return book.ideas.filter((row) => !decided.has(String(row.id)));
       if (text.includes("high, low, close")) return bars;
       if (text.includes("SELECT close, volume")) {
         const name = String(params[0] ?? "");
@@ -169,5 +174,39 @@ describe("recheck after a late login", () => {
     expect(String(persistent?.[0])).toContain("'skipped'");
     expect(persistent).toContain("pacing_cash");
     expect(baselines).toEqual([39500]);
+  });
+
+  it("records a held name as already held, once", async () => {
+    book.positions = [{
+      id: "4",
+      symbol: "COFORGE",
+      strategy: "rs",
+      qty: "3",
+      avg_price: "1500",
+      trend_stop: "1400",
+      frozen: false,
+      opened_at: "2026-11-01",
+    }];
+    book.ideas = [{
+      id: "21",
+      symbol: "COFORGE",
+      strategy: "rs",
+      signal_close: "1800",
+      initial_stop: "1680",
+      sector: "Technology",
+      score: "2",
+    }];
+    book.prev = { COFORGE: 1800 };
+    const { recheckBuys } = await import("./recheck");
+    expect(await recheckBuys(4)).toBe(0);
+    expect(await recheckBuys(4)).toBe(0);
+    expect(inserts).toHaveLength(1);
+    expect(String(inserts[0][0])).toContain("'skipped'");
+    expect(inserts[0]).toContain("held");
+    expect(inserts[0]).toContain("Not bought: already held.");
+    expect(inserts[0]).toContain("COFORGE");
+    for (const code of ["held", "excluded", "sector_cap", "short_history", "bad_data", "entry_below_stop"]) {
+      expect(RECHECK_REASON_CODES).not.toContain(code);
+    }
   });
 });

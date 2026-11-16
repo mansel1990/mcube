@@ -587,6 +587,18 @@ export function haltReasonText(reason: string | null): string {
   return reason.split(",").map((part) => HALT_WORDS[part.trim()] ?? part.trim()).filter(Boolean).join(" ");
 }
 
+/** Home's "Matches Kite · HH:MM" uses the latest check, including a late login. */
+export function kiteCheckedAt(times: readonly (string | Date | null | undefined)[]): Date | null {
+  let best: Date | null = null;
+  for (const value of times) {
+    if (value == null || value === "") continue;
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) continue;
+    if (!best || date.getTime() > best.getTime()) best = date;
+  }
+  return best;
+}
+
 /** Home header. A missing login is a wait, not a halt. A late login that cleared the stop says when. */
 export function homeStatusPill(args: {
   status: string;

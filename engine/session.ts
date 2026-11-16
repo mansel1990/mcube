@@ -4,7 +4,7 @@ import { q } from "./db";
 import { MliveKite } from "./kite";
 import { loadSettings } from "./load";
 
-export type SessionJob = "sells" | "buys" | "approvals" | "sync";
+export type SessionJob = "sells" | "buys" | "approvals" | "sync" | "refresh";
 
 /** No login: skip the job. One audit row for that job today, and no alert. */
 export async function skipIfNoSession(kind: SessionJob): Promise<boolean> {

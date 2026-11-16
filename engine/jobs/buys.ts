@@ -4,12 +4,14 @@ import { freshBuySizing, sendReady } from "../execute";
 import { loadSettings, loadState } from "../load";
 import { runJob } from "../run";
 import { skipIfNoSession } from "../session";
+import { skipUnviableFreshIdeas } from "./recheck";
 
 export async function buys(): Promise<void> {
   const minute = istMinutes();
   if (minute < 9 * 60 + 40 || minute > 10 * 60) return;
   if (await skipIfNoSession("buys")) return;
   await runJob("buys", async (runId) => {
+    await skipUnviableFreshIdeas(runId);
     const settings = await loadSettings();
     const state = await loadState();
     const open = await decisionsFor(todayIst(), "BUY");

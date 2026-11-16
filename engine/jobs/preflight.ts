@@ -103,6 +103,10 @@ export async function preflight(): Promise<void> {
       state = { ...state, status: "active", haltReason: null };
     }
     if (plan.alert === "wait") {
+      if (state.status === "active" && state.haltReason) {
+        await setState({ status: "active", haltReason: null });
+        state = { ...state, status: "active", haltReason: null };
+      }
       const finalCall = minute >= PREFLIGHT_FINAL_MINUTE;
       const message = finalCall ? KITE_LOGIN_WAIT : "No Kite session yet. Preflight will wait until 09:10.";
       const already = await q(
@@ -134,8 +138,37 @@ export async function preflight(): Promise<void> {
       return { halted: plan.haltReason };
     }
 
-    const positions = await openPositions(settings.dryRun);
+    return runSessionPreflight(runId, {
+      settings,
+      state,
+      holdings,
+      kiteCash,
+      fund,
+      reconcile: true,
+      alertCash: true,
+      draftBuys: true,
+    });
+  });
+}
+
+export type SessionPreflightInput = {
+  settings: Awaited<ReturnType<typeof loadSettings>>;
+  state: Awaited<ReturnType<typeof loadState>>;
+  holdings: { tradingsymbol: string; quantity: number }[];
+  kiteCash: number;
+  fund: number;
+  reconcile: boolean;
+  alertCash: boolean;
+  draftBuys: boolean;
+};
+
+/** Holdings check, Kite cash, and the morning buy draft. No clock window and no no-session halt. */
+export async function runSessionPreflight(runId: number, input: SessionPreflightInput): Promise<Record<string, unknown>> {
+  const { settings, state, holdings, kiteCash, fund } = input;
+  const today = todayIst();
+  const positions = await openPositions(settings.dryRun);
     const kiteQty = new Map(holdings.map((row) => [row.tradingsymbol.toUpperCase(), row.quantity]));
+    if (input.reconcile) {
     for (const position of positions) {
       const have = kiteQty.get(position.symbol) ?? 0;
       const result = reconcile(position.qty, have);
@@ -155,11 +188,12 @@ export async function preflight(): Promise<void> {
       }
     }
     await audit({ actor: "engine", action: "reconcile", after: { positions: positions.length }, runId });
+    }
 
     const system = systemCash(fund, await openCost(settings.dryRun), await pendingBuyValue(settings.dryRun));
     const spendable = spendableCash(system, kiteCash, settings.cashReserve);
     const gap = kiteCashGap(system, kiteCash);
-    if (gap > 0) {
+    if (input.alertCash && gap > 0) {
       const already = await q(
         `SELECT id FROM mlive.mlive_alerts
           WHERE code = 'kite_cash_low' AND (ts AT TIME ZONE 'Asia/Kolkata')::date = $1::date`,
@@ -173,6 +207,10 @@ export async function preflight(): Promise<void> {
           runId,
         });
       }
+    }
+
+    if (!input.draftBuys || !input.reconcile || !input.alertCash) {
+      return { reconciled: input.reconcile, drafted: false };
     }
 
     const ideas = await q(
@@ -220,7 +258,21 @@ export async function preflight(): Promise<void> {
         entryBelowStop: strategy === "ema" && stop != null && entryBelowEma(entry, stop),
       });
       if (reason) {
-        await proposeSkip(runId, today, num(idea.id), symbol, reason, bad ?? reason, settings.dryRun);
+        await proposeSkip(
+          runId,
+          today,
+          num(idea.id),
+          symbol,
+          reason,
+          decisionSentence({
+            outcome: "skipped",
+            reasonCode: reason,
+            sector: String(idea.sector ?? ""),
+            sectorCount: sectorCounts.get(String(idea.sector ?? "")) ?? 0,
+            strategy,
+          }),
+          settings.dryRun,
+        );
         continue;
       }
       viable.push({ symbol, strategy, score: num(idea.score) });
@@ -341,8 +393,7 @@ export async function preflight(): Promise<void> {
     ))[0];
     if (paceBook.baseline != null && paceBook.baseline > 0) await saveDeployBaseline(today, paceBook.baseline);
     await writeDraft(today, { buys: planned, sells: num(sellCount?.n), ideas: ideas.length, deployBaseline: paceBook.baseline });
-    return { buys: planned, ideas: ideas.length, spendable };
-  });
+    return { buys: planned, ideas: ideas.length, spendable, session: true };
 }
 
 async function proposeSkip(runId: number, day: string, ideaId: number, symbol: string, code: string, text: string, dryRun: boolean): Promise<void> {
@@ -388,6 +439,7 @@ async function writeDraft(day: string, summary: Record<string, unknown>): Promis
   const prev = jsonValue(existing[0]?.decision_summary);
   const prior = prev && typeof prev === "object" ? (prev as Record<string, unknown>) : {};
   const merged = { ...prior, ...summary };
+  if ("buys" in summary) delete merged.waiting;
   const nextBaseline = Number(merged.deployBaseline);
   const priorBaseline = Number(prior.deployBaseline);
   if (!(nextBaseline > 0)) {

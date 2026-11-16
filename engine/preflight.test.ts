@@ -53,11 +53,13 @@ vi.mock("./alerts", () => ({
 describe("preflight when Kite cash cannot be read", () => {
   let summary: Record<string, unknown> | null = null;
   let kiteRows: unknown[] = [];
+  let haltReason: string | null = null;
 
   beforeEach(() => {
     process.env.KITE_API_KEY = "test-key";
     process.env.MLIVE_TOKEN_KEY = "test-token-key";
     summary = null;
+    haltReason = null;
     getMargins.mockReset();
     getMargins.mockResolvedValue({});
     getHoldings.mockReset();
@@ -81,7 +83,7 @@ describe("preflight when Kite cash cannot be read", () => {
           peak_date: "2026-11-05",
           last_eod_date: "2026-11-05",
           updated_at: "2026-11-06T02:00:00.000Z",
-          halt_reason: null,
+          halt_reason: haltReason,
         }];
       }
       if (text.includes("mlive_holidays")) return [];
@@ -121,5 +123,19 @@ describe("preflight when Kite cash cannot be read", () => {
     );
     const halted = q.mock.calls.some((call) => Array.isArray(call[1]) && (call[1] as unknown[]).includes("halted_today"));
     expect(halted).toBe(false);
+  });
+
+  it("clears a stale halt reason while it waits, and does not write one", async () => {
+    kiteRows = [];
+    haltReason = "no_kite_session";
+    const { preflight } = await import("./jobs/preflight");
+    await preflight();
+    expect(summary).toEqual({ waiting: "no_kite_session" });
+    const writes = q.mock.calls.filter((call) => String(call[0]).includes("UPDATE") && String(call[0]).includes("halt_reason"));
+    expect(writes).toHaveLength(1);
+    const params = writes[0][1] as unknown[];
+    expect(params[0]).toBe("active");
+    expect(params[5]).toBeNull();
+    expect(params).not.toContain("no_kite_session");
   });
 });
