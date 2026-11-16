@@ -23,6 +23,24 @@ export function db(): Sql {
   return cached;
 }
 
+let marketCached: Sql | null = null;
+
+export function marketDb(): Sql {
+  loadEnv();
+  const url = process.env.MARKET_DATABASE_URL_UNPOOLED || process.env.MARKET_DATABASE_URL;
+  if (!url) throw new Error("MARKET_DATABASE_URL is not set");
+  if (!marketCached) marketCached = neon(url);
+  return marketCached;
+}
+
+export async function mq<T extends Record<string, unknown> = Record<string, unknown>>(
+  text: string,
+  params: unknown[] = []
+): Promise<T[]> {
+  const rows = await marketDb().query(text, params);
+  return rows as T[];
+}
+
 export async function q<T extends Record<string, unknown> = Record<string, unknown>>(
   text: string,
   params: unknown[] = []

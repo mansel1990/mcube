@@ -142,6 +142,7 @@ export class MliveKite {
     qty: number;
     price: number;
     tag: string;
+    product?: "CNC" | "MIS";
   }): Promise<Placed> {
     if (this.dryRun) return { orderId: `DRY-${params.tag}`, dryRun: true };
     const kc = await this.client();
@@ -150,7 +151,7 @@ export class MliveKite {
       tradingsymbol: params.symbol,
       transaction_type: params.side,
       quantity: params.qty,
-      product: "CNC",
+      product: params.product ?? "CNC",
       order_type: "LIMIT",
       price: params.price,
       validity: "DAY",
@@ -231,6 +232,61 @@ export class MliveKite {
       return null;
     }
   }
+
+  async accessToken(): Promise<string> {
+    const tokenKey = process.env.MLIVE_TOKEN_KEY;
+    if (!tokenKey) throw new Error("MLIVE_TOKEN_KEY is not set");
+    const rows = await q<{ access_token_enc: string; token_date: unknown }>(
+      `SELECT access_token_enc, token_date::text AS token_date FROM mlive.mlive_kite_sessions ORDER BY connected_at DESC LIMIT 1`
+    );
+    const row = rows[0];
+    if (!row || asDate(row.token_date) !== todayIst()) throw new Error("no Kite session for today");
+    return decryptToken(row.access_token_enc, tokenKey);
+  }
+
+  async historical(
+    token: number,
+    interval: "minute" | "day" | "5minute",
+    from: string,
+    to: string
+  ): Promise<Array<{ date: string; open: number; high: number; low: number; close: number; volume: number }>> {
+    const kc = await this.client();
+    const rows = await kc.getHistoricalData(token, interval, from, to, false, false);
+    return rows.map((row) => ({
+      date: candleStamp(row.date, interval),
+      open: Number(row.open),
+      high: Number(row.high),
+      low: Number(row.low),
+      close: Number(row.close),
+      volume: Number(row.volume),
+    }));
+  }
+
+  async instruments(): Promise<Array<{ token: number; symbol: string; tick: number; type: string }>> {
+    const kc = await this.client();
+    const rows = await kc.getInstruments("NSE");
+    return rows.map((row) => ({
+      token: Number(row.instrument_token),
+      symbol: String(row.tradingsymbol),
+      tick: Number(row.tick_size),
+      type: String(row.instrument_type),
+    }));
+  }
+}
+
+/** Daily Kite candles are midnight IST. UTC ISO dates store the previous day. */
+export function candleStamp(value: Date | string, interval: "minute" | "day" | "5minute"): string {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  if (interval !== "day") return date.toISOString();
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
 export type ContractCharges = {

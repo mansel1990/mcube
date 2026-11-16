@@ -2,9 +2,10 @@ import { readFileSync } from "fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { todayIst } from "@/lib/mlive/calendar";
 
-const { getMargins, getInstruments, q, audit, raiseAlert } = vi.hoisted(() => ({
+const { getMargins, getInstruments, getHistoricalData, q, audit, raiseAlert } = vi.hoisted(() => ({
   getMargins: vi.fn(),
   getInstruments: vi.fn(),
+  getHistoricalData: vi.fn(),
   q: vi.fn(),
   audit: vi.fn(),
   raiseAlert: vi.fn(),
@@ -15,6 +16,7 @@ vi.mock("kiteconnect", () => ({
     setAccessToken: vi.fn(),
     getMargins,
     getInstruments,
+    getHistoricalData,
   })),
 }));
 
@@ -57,6 +59,7 @@ describe("Kite equity cash", () => {
     process.env.MLIVE_TOKEN_KEY = "test-token-key";
     getMargins.mockReset();
     getInstruments.mockReset();
+    getHistoricalData.mockReset();
     q.mockReset();
     q.mockResolvedValue([{ access_token_enc: "enc", token_date: todayIst() }]);
   });
@@ -81,6 +84,24 @@ describe("Kite equity cash", () => {
     clearTickCache();
     getInstruments.mockRejectedValueOnce({ message: "Invalid session", error_type: "TokenException" });
     await expect(new MliveKite(false).tickSize("INFY")).resolves.toBeNull();
+  });
+
+  it("stores a daily candle on the IST date and keeps an intraday instant", async () => {
+    const { MliveKite, candleStamp } = await import("./kite");
+    expect(candleStamp("2026-11-16T00:00:00+05:30", "day")).toBe("2026-11-16");
+    expect(candleStamp(new Date("2026-11-16T00:00:00+05:30"), "day")).toBe("2026-11-16");
+    const instant = new Date("2026-11-16T03:45:00.000Z");
+    expect(candleStamp(instant, "5minute")).toBe(instant.toISOString());
+    getHistoricalData.mockResolvedValueOnce([
+      { date: new Date("2026-11-16T00:00:00+05:30"), open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 },
+    ]);
+    const daily = await new MliveKite(false).historical(1, "day", "2026-11-16 00:00:00", "2026-11-16 23:59:59");
+    expect(daily[0]?.date).toBe("2026-11-16");
+    getHistoricalData.mockResolvedValueOnce([
+      { date: instant, open: 1, high: 1, low: 1, close: 1, volume: 1 },
+    ]);
+    const intra = await new MliveKite(false).historical(1, "5minute", "2026-11-16 00:00:00", "2026-11-16 23:59:59");
+    expect(intra[0]?.date).toBe("2026-11-16T03:45:00.000Z");
   });
 
   it("reads the virtual contract breakdown", async () => {

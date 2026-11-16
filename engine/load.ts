@@ -19,7 +19,7 @@ export type MliveSettings = {
   chasePct: number;
   limitOffset: number;
   exclude: string[];
-  strategies: Array<"rs" | "ema">;
+  strategies: string[];
   dryRun: boolean;
   exitRs: ExitParams;
   exitEma: ExitParams;
@@ -27,6 +27,14 @@ export type MliveSettings = {
   reviewAnchor: string;
   loginReminder: boolean;
   charges: ChargeRates;
+  swingHalfSize: boolean;
+  intradayCapital: number;
+  intradayRiskPct: number;
+  intradayDayLossPct: number;
+  intradayMaxTrades: number;
+  intradayExitTime: string;
+  intradayShort: boolean;
+  intradayLeverage: number;
 };
 
 export type MliveState = {
@@ -47,9 +55,10 @@ function asExit(value: unknown, fallback: ExitParams): ExitParams {
 export async function loadSettings(): Promise<MliveSettings> {
   const rows = await q<{ key: string; value: unknown }>(`SELECT key, value FROM mlive.mlive_settings`);
   const map = new Map(rows.map((row) => [row.key, jsonValue(row.value)]));
+  const known = new Set(["rs", "ema", "trend_breakout", "rsi2", "momentum", "ema_v2", "orb", "vwap"]);
   const strategies = Array.isArray(map.get("strategies_enabled"))
-    ? (map.get("strategies_enabled") as string[]).filter((s): s is "rs" | "ema" => s === "rs" || s === "ema")
-    : (["rs", "ema"] as const);
+    ? (map.get("strategies_enabled") as string[]).filter((name) => known.has(name))
+    : ["rs", "ema"];
   const chargesRaw = map.get("charges");
   return {
     riskPct: num(map.get("risk_pct") ?? 0.01),
@@ -76,6 +85,14 @@ export async function loadSettings(): Promise<MliveSettings> {
     reviewAnchor: String(map.get("review_anchor_date") ?? "2026-11-05"),
     loginReminder: map.get("login_reminder") !== false,
     charges: { ...DEFAULT_CHARGE_RATES, ...(chargesRaw && typeof chargesRaw === "object" ? (chargesRaw as ChargeRates) : {}) },
+    swingHalfSize: map.get("swing_half_size") === true,
+    intradayCapital: num(map.get("intraday_capital_inr") ?? 20000),
+    intradayRiskPct: num(map.get("intraday_risk_pct") ?? 0.01),
+    intradayDayLossPct: num(map.get("intraday_day_loss_pct") ?? 0.02),
+    intradayMaxTrades: num(map.get("intraday_max_trades") ?? 4),
+    intradayExitTime: String(map.get("intraday_exit_time") ?? "15:10"),
+    intradayShort: map.get("intraday_short") !== false,
+    intradayLeverage: 1,
   };
 }
 
