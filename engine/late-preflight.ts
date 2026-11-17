@@ -2,7 +2,7 @@ import { istMinutes, todayIst } from "@/lib/mlive/calendar";
 import { audit } from "./audit";
 import { q } from "./db";
 import { runSessionPreflight } from "./jobs/preflight";
-import { MliveKite } from "./kite";
+import { MliveKite, type KiteHolding } from "./kite";
 import { fundBalance, loadSettings, loadState } from "./load";
 
 /** Buys still go out through 10:00 IST. A later login does not open a new morning draft. */
@@ -44,7 +44,7 @@ export async function runLatePreflight(runId: number): Promise<void> {
   const settings = await loadSettings();
   const state = await loadState();
   const kite = new MliveKite(settings.dryRun);
-  let holdings: { tradingsymbol: string; quantity: number }[] = [];
+  let holdings: KiteHolding[] = [];
   let reconcile = false;
   let kiteCash = 0;
   let alertCash = false;

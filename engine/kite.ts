@@ -4,7 +4,7 @@ import { kiteAvailableCash, kiteErrorMessage } from "@/lib/mlive/rules";
 import { todayIst } from "@/lib/mlive/calendar";
 import { asDate, q } from "./db";
 
-export type KiteHolding = { tradingsymbol: string; quantity: number };
+export type KiteHolding = { tradingsymbol: string; settled: number; t1: number; quantity: number };
 export type KiteOrder = {
   order_id: string;
   status: string;
@@ -70,7 +70,11 @@ export class MliveKite {
   async holdings(): Promise<KiteHolding[]> {
     const kc = await this.client();
     const rows = await readRetry("holdings", () => kc.getHoldings());
-    return rows.map((row) => ({ tradingsymbol: row.tradingsymbol, quantity: row.quantity }));
+    return rows.map((row) => {
+      const settled = shareCount(row.quantity);
+      const t1 = shareCount(row.t1_quantity);
+      return { tradingsymbol: row.tradingsymbol, settled, t1, quantity: settled + t1 };
+    });
   }
 
   /** NSE equity tick from the instrument dump. Null means no order is sent. */
@@ -272,6 +276,11 @@ export class MliveKite {
       type: String(row.instrument_type),
     }));
   }
+}
+
+function shareCount(value: unknown): number {
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : 0;
 }
 
 /** Daily Kite candles are midnight IST. UTC ISO dates store the previous day. */

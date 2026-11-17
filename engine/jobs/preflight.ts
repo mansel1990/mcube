@@ -27,7 +27,7 @@ import { audit } from "../audit";
 import { raiseAlert } from "../alerts";
 import { buyPace, openCost, openPositions, pendingBuyValue, saveDeployBaseline } from "../book";
 import { jsonValue, num, q } from "../db";
-import { MliveKite } from "../kite";
+import { MliveKite, type KiteHolding } from "../kite";
 import { fundBalance, holidaySet, loadSettings, loadState, setState } from "../load";
 import { bhavcopyPresent, livePrice, loadBars, previousClose, yahooPreviousClose } from "../market";
 import { runJob } from "../run";
@@ -63,7 +63,7 @@ export async function preflight(): Promise<void> {
     }
     const kite = new MliveKite(settings.dryRun);
     const session = await kite.sessionOk();
-    let holdings: { tradingsymbol: string; quantity: number }[] = [];
+    let holdings: KiteHolding[] = [];
     let holdingsReadable = false;
     let marginsReadable = false;
     let kiteCash = 0;
@@ -154,7 +154,7 @@ export async function preflight(): Promise<void> {
 export type SessionPreflightInput = {
   settings: Awaited<ReturnType<typeof loadSettings>>;
   state: Awaited<ReturnType<typeof loadState>>;
-  holdings: { tradingsymbol: string; quantity: number }[];
+  holdings: KiteHolding[];
   kiteCash: number;
   fund: number;
   reconcile: boolean;
@@ -167,14 +167,17 @@ export async function runSessionPreflight(runId: number, input: SessionPreflight
   const { settings, state, holdings, kiteCash, fund } = input;
   const today = todayIst();
   const positions = await openPositions(settings.dryRun);
-    const kiteQty = new Map(holdings.map((row) => [row.tradingsymbol.toUpperCase(), row.quantity]));
+    const kiteBook = new Map(holdings.map((row) => [row.tradingsymbol.toUpperCase(), row]));
     if (input.reconcile) {
     for (const position of positions) {
-      const have = kiteQty.get(position.symbol) ?? 0;
+      const holding = kiteBook.get(position.symbol);
+      const settled = holding?.settled ?? 0;
+      const t1 = holding?.t1 ?? 0;
+      const have = holding?.quantity ?? 0;
       const result = reconcile(position.qty, have);
       await q(
-        `INSERT INTO mlive.mlive_reconciliations (run_id, symbol, system_qty, kite_qty, result) VALUES ($1, $2, $3, $4, $5)`,
-        [runId, position.symbol, position.qty, have, result]
+        `INSERT INTO mlive.mlive_reconciliations (run_id, symbol, system_qty, kite_qty, kite_t1_qty, result) VALUES ($1, $2, $3, $4, $5, $6)`,
+        [runId, position.symbol, position.qty, settled, t1, result]
       );
       if (result === "missing") {
         await q(`UPDATE mlive.mlive_positions SET frozen = true WHERE id = $1`, [position.id]);
@@ -182,9 +185,22 @@ export async function runSessionPreflight(runId: number, input: SessionPreflight
           level: "needs_you",
           code: "position_missing_in_kite",
           symbol: position.symbol,
-          message: `${position.symbol} is frozen. Kite has ${have}, the system has ${position.qty}.`,
+          message: `${position.symbol} is frozen. Kite has ${settled} settled and ${t1} unsettled; the system has ${position.qty}.`,
           runId,
         });
+      } else if (result === "ok" && position.frozen) {
+        await q(`UPDATE mlive.mlive_positions SET frozen = false WHERE id = $1`, [position.id]);
+        await audit({
+          actor: "engine",
+          action: "position.unfrozen",
+          symbol: position.symbol,
+          reason: `Kite now shows ${have} shares`,
+          runId,
+        });
+        await q(
+          `UPDATE mlive.mlive_alerts SET seen_at = now() WHERE seen_at IS NULL AND code = 'position_missing_in_kite' AND symbol = $1`,
+          [position.symbol]
+        );
       }
     }
     await audit({ actor: "engine", action: "reconcile", after: { positions: positions.length }, runId });
@@ -240,7 +256,7 @@ export async function runSessionPreflight(runId: number, input: SessionPreflight
         volume: last?.volume ?? null,
         corporateAction: false,
       });
-      const kiteHave = kiteQty.get(symbol) ?? 0;
+      const kiteHave = kiteBook.get(symbol)?.quantity ?? 0;
       const systemQty = positions.find((row) => row.symbol === symbol)?.qty ?? 0;
       const instrument = await q<{ is_etf: boolean }>(`SELECT is_etf FROM mlive.mlive_instruments WHERE symbol = $1`, [symbol]);
       const stop = idea.initial_stop == null ? null : num(idea.initial_stop);
