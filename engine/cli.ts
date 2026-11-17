@@ -1,3 +1,5 @@
+import { spawnSync } from "node:child_process";
+import v8 from "node:v8";
 import { loadEnv } from "./db";
 import { approvals } from "./jobs/approvals";
 import { buys } from "./jobs/buys";
@@ -15,6 +17,7 @@ import { marketBackfill, marketDaily, parseMarketArgs } from "./jobs/market";
 import { marketCheck } from "./jobs/market-check";
 import { quotes } from "./jobs/quotes";
 import { researchJob } from "./jobs/research";
+import { researchQueue } from "./jobs/research-queue";
 import { sync } from "./jobs/sync";
 import { swingSwitch } from "./jobs/swing-switch";
 
@@ -37,7 +40,8 @@ const jobs: Record<string, () => Promise<void>> = {
   "market-backfill": marketBackfill,
   "market-daily": marketDaily,
   "market-check": marketCheck,
-  research: researchJob,
+  research: () => researchJob(process.argv.slice(3)),
+  "research-queue": researchQueue,
   quotes,
   intraday,
   "swing-switch": swingSwitch,
@@ -50,9 +54,20 @@ if (!job) {
   process.exit(1);
 }
 
-if (name !== "market-backfill" && process.argv.length > 3) {
+const withOptions = name === "market-backfill" || name === "research";
+if (!withOptions && process.argv.length > 3) {
   console.error(`${name} does not take options`);
   process.exit(1);
+}
+
+if ((name === "research" || name === "research-queue") && process.env.MLIVE_RESEARCH_HEAP !== "1") {
+  if (v8.getHeapStatistics().heap_size_limit < 560 * 1024 * 1024) {
+    const child = spawnSync(process.execPath, process.argv.slice(1), {
+      stdio: "inherit",
+      env: { ...process.env, NODE_OPTIONS: "--max-old-space-size=600", MLIVE_RESEARCH_HEAP: "1" },
+    });
+    process.exit(child.status ?? 1);
+  }
 }
 
 let run: () => Promise<void> = job;

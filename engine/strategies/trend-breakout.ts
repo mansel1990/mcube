@@ -1,30 +1,44 @@
-import { sma, type Bar, type ClosedTrade } from "./math";
+import { smaAt } from "./indicators";
+import type { Signal, StrategyDef } from "./types";
 
-/** Minervini-style breakout. A signal uses only bars closed before the entry day. */
-export function trendBreakout(bars: Bar[], strong: boolean[]): ClosedTrade[] {
-  const closes = bars.map((bar) => bar.c);
-  const trades: ClosedTrade[] = [];
-  let open: { i: number } | null = null;
-  for (let i = 252; i < bars.length - 1; i++) {
-    if (open) {
-      const avg = sma(closes, i, 21);
-      if (avg != null && bars[i].c < avg) {
-        trades.push({ entry: bars[open.i].t, exit: bars[i + 1].t, side: "long", entryPx: bars[open.i].o, exitPx: bars[i + 1].o });
-        open = null;
-      }
-      continue;
+/** Minervini-style breakout. A signal uses only bars closed on or before `at`. */
+export const trendBreakout: StrategyDef = {
+  name: "trend_breakout",
+  book: "swing",
+  params: {
+    volMult: { default: 1.5, grid: [1.2, 1.5, 2] },
+    nearHigh: { default: 0.75, grid: [0.7, 0.75, 0.8] },
+  },
+  signals(ctx) {
+    const { bars, params } = ctx;
+    const closes = bars.map((bar) => bar.c);
+    const volumes = bars.map((bar) => bar.v);
+    const out: Signal[] = [];
+    for (let i = 252; i < bars.length - 1; i++) {
+      let high52 = bars[i - 251].h;
+      for (let k = i - 250; k <= i; k++) if (bars[k].h > high52) high52 = bars[k].h;
+      const avg50 = smaAt(closes, i, 50);
+      const avg150 = smaAt(closes, i, 150);
+      const avg200 = smaAt(closes, i, 200);
+      const avgVol = smaAt(volumes, i, 20);
+      let priorHigh = bars[i - 20].h;
+      for (let k = i - 19; k < i; k++) if (bars[k].h > priorHigh) priorHigh = bars[k].h;
+      if (avg50 == null || avg150 == null || avg200 == null || avgVol == null) continue;
+      const nearHigh = bars[i].c >= high52 * params.nearHigh && bars[i].c <= high52;
+      const stacked = bars[i].c > avg50 && avg50 > avg150 && avg150 > avg200;
+      const breakout = bars[i].c > priorHigh && bars[i].v >= avgVol * params.volMult;
+      const strong = Number.isFinite(ctx.rank[i]) && ctx.rank[i] >= 0.7;
+      if (!nearHigh || !stacked || !breakout || !strong) continue;
+      let stop = bars[i].l;
+      for (let k = i - 9; k < i; k++) if (k >= 0 && bars[k].l < stop) stop = bars[k].l;
+      if (!(stop > 0) || stop >= bars[i].c) continue;
+      out.push({ at: i, side: "long", score: bars[i].c / high52, stop });
     }
-    const high52 = Math.max(...bars.slice(i - 251, i + 1).map((bar) => bar.h));
-    const avg50 = sma(closes, i, 50);
-    const avg150 = sma(closes, i, 150);
-    const avg200 = sma(closes, i, 200);
-    const avgVol = sma(bars.map((bar) => bar.v), i, 20);
-    const priorHigh = Math.max(...bars.slice(i - 20, i).map((bar) => bar.h));
-    if (avg50 == null || avg150 == null || avg200 == null || avgVol == null) continue;
-    const nearHigh = bars[i].c >= high52 * 0.75 && bars[i].c <= high52;
-    const stacked = bars[i].c > avg50 && avg50 > avg150 && avg150 > avg200;
-    const breakout = bars[i].c > priorHigh && bars[i].v >= avgVol * 1.5;
-    if (nearHigh && stacked && breakout && strong[i]) open = { i: i + 1 };
-  }
-  return trades;
-}
+    return out;
+  },
+  afterClose(ctx, i) {
+    const closes = ctx.bars.map((bar) => bar.c);
+    const avg = smaAt(closes, i, 21);
+    return { exit: avg != null && ctx.bars[i].c < avg, stop: ctx.stop };
+  },
+};

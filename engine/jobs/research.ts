@@ -1,11 +1,7 @@
-import { research } from "../research";
-import { runJob } from "../run";
-import { swingSwitch } from "./swing-switch";
+import { parseResearchArgs } from "../backtest/args";
+import { runResearch } from "../backtest/run";
 
-export async function researchJob(): Promise<void> {
-  await runJob("research", async () => {
-    await research();
-    await swingSwitch();
-    return { job: "research" };
-  });
+/** A backtest. It does not take the trading lock and it does not change live settings. */
+export async function researchJob(argv: string[] = []): Promise<void> {
+  await runResearch(parseResearchArgs(argv));
 }
