@@ -161,9 +161,11 @@ export function toCsv(headers: string[], rows: (string | number | null)[][]): st
 }
 
 export function downloadCsv(name: string, csv: string): void {
+  const doc = (globalThis as { document?: { createElement: (tag: string) => { href: string; download: string; click: () => void } } }).document;
+  if (!doc) return;
   const blob = new Blob([csv], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
+  const link = doc.createElement("a");
   link.href = url;
   link.download = name;
   link.click();
