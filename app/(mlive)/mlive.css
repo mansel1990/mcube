@@ -922,14 +922,11 @@
 .mlive .long-stress-grid strong { display: block; margin-top: 10px; font-size: 23px; font-variant-numeric: tabular-nums; }
 .mlive .long-stress-grid strong small { color: var(--ink3); font-size: 11px; font-weight: 600; }
 .mlive .long-stress-grid p { margin: 8px 0 0; color: var(--ink2); font-size: 13px; }
-.mlive .long-detail-grid { display: grid; grid-template-columns: 1.25fr 1fr; gap: 16px; align-items: start; }
-.mlive .long-events, .mlive .long-sources { list-style: none; margin: 0; padding: 0; }
+.mlive .long-events { list-style: none; margin: 0; padding: 0; }
 .mlive .long-events li { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 12px; padding: 11px 0; border-top: 1px solid var(--row-line); }
 .mlive .long-events time { color: var(--ink3); font-size: 12px; }
 .mlive .long-events b { font-size: 13px; }
 .mlive .long-events p { margin: 3px 0 0; color: var(--ink2); font-size: 13px; line-height: 1.4; }
-.mlive .long-sources li { display: grid; gap: 3px; padding: 11px 0; border-top: 1px solid var(--row-line); }
-.mlive .long-sources span { color: var(--ink2); font-size: 12px; overflow-wrap: anywhere; }
 .mlive .long-about { margin-top: 16px; }
 .mlive .more-pop a:has(svg) { gap: 9px; }
 
@@ -945,7 +942,7 @@
   .mlive .long-target-legend { grid-column: 1; }
   .mlive .long-target-bar { min-width: 0; }
   .mlive .long-variants { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
-  .mlive .long-metrics, .mlive .long-chart-grid, .mlive .long-check-grid, .mlive .long-stress-grid, .mlive .long-detail-grid { grid-template-columns: 1fr; }
+  .mlive .long-metrics, .mlive .long-chart-grid, .mlive .long-check-grid, .mlive .long-stress-grid { grid-template-columns: 1fr; }
   .mlive .long-chart-grid > :first-child { grid-column: 1; }
   .mlive button.long-variant { padding: 16px; }
   .mlive .long-chart { padding: 16px 10px 14px; }

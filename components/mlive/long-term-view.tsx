@@ -314,7 +314,6 @@ function Acceptance({ comparisons, results }: { comparisons: Comparison[]; resul
 function ResearchDetail({ result, run }: { result: Result; run: Run }) {
   const stress = result.stresses;
   const events = result.events.map(recordOf).filter((row) => Object.keys(row).length).slice(-8).reverse();
-  const provenance = result.provenance.map(recordOf).filter((row) => Object.keys(row).length);
   const sample = objectAt(result.metrics, "sample");
   const identity = objectAt(result.metrics, "runIdentity");
   const assumptions = arrayOf(identity.assumptions).map(String);
@@ -342,7 +341,7 @@ function ResearchDetail({ result, run }: { result: Result; run: Run }) {
         </div>
       </section>
 
-      <section className="long-detail-grid sec">
+      <section className="sec">
         <article className="card">
           <div className="card-h"><h2>Recent research events</h2><p className="sub">Signals and simulated executions only.</p></div>
           {events.length ? <ul className="long-events">
@@ -353,19 +352,6 @@ function ResearchDetail({ result, run }: { result: Result; run: Run }) {
               </li>
             ))}
           </ul> : <p className="sub">No simulated events were saved.</p>}
-        </article>
-
-        <article className="card">
-          <div className="card-h"><h2>Data provenance</h2><p className="sub">Sources behind this variant.</p></div>
-          {provenance.length ? <ul className="long-sources">
-            {provenance.map((source, index) => (
-              <li key={`${String(source.seriesKey)}-${index}`}>
-                <b>{words(String(source.seriesKey ?? "source"))}</b>
-                <span>{String(source.rawFrom ?? "—")} to {String(source.rawTo ?? "—")} · {Number(source.points ?? 0).toLocaleString("en-IN")} points</span>
-                <span>{String(source.sourceId ?? source.sourceUrl ?? "Source not recorded")}</span>
-              </li>
-            ))}
-          </ul> : <p className="sub">No provenance rows were saved.</p>}
         </article>
       </section>
 
