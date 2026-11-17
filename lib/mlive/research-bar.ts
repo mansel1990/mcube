@@ -51,6 +51,12 @@ export function heldbackBlock(already: readonly string[], requested: readonly st
   return `Held-back already used for ${hit.join(", ")}. Pass --force to run it again.`;
 }
 
+/** Variant runs are once per variant. Other runs are once per strategy. */
+export function heldbackSubjects(strategies: readonly string[], variants?: readonly string[]): string[] {
+  if (variants && variants.length > 0) return [...variants];
+  return [...strategies];
+}
+
 export function windowYears(from: string, to: string): number {
   const start = Date.parse(`${from}T00:00:00Z`);
   const end = Date.parse(`${to}T00:00:00Z`);
@@ -205,8 +211,9 @@ export function equityPeriods(
   return out;
 }
 
-export function assertBuildingWindow(sample: string, window: { from: string; to: string }): void {
+export function assertBuildingWindow(sample: string, window: { from: string; to: string }, confirmHeldback = false): void {
   if (sample === "building" && window.from === "2019-01-01" && window.to === "2023-12-31") return;
+  if (sample === "heldback" && confirmHeldback && window.from === "2024-01-01" && window.to >= window.from) return;
   throw new Error(`Refusing research sample ${sample} window ${window.from} through ${window.to}. The building window is 2019-01-01 through 2023-12-31.`);
 }
 

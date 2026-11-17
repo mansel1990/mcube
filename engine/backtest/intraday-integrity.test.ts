@@ -3,7 +3,9 @@ import { seriesPlans } from "../jobs/market";
 import { vwapStrategy } from "../strategies/vwap";
 import type { Bar } from "../strategies/math";
 import { defaultParams, emptyContext, type StrategyDef } from "../strategies/types";
-import { simulateIntraday } from "./intraday";
+import { intradayWarmup, intradayWarmupNote, simulateIntraday } from "./intraday";
+import { shiftDays } from "./session";
+import { orbStrategy } from "../strategies/orb";
 import { selectIntraday, walkSession, type SessionTrade } from "./intraday-sim";
 
 describe("intraday backtest integrity", () => {
@@ -135,7 +137,112 @@ describe("intraday backtest integrity", () => {
         : stock,
     })).rejects.toThrow(/selected-session coverage 0%/);
   });
+
+  it("starts ORB coverage after 20 sessions from the first 5-minute file", async () => {
+    const days = sessions("2024-11-18", 25);
+    const readFrom = shiftDays(days[0], -40);
+    const warmup = intradayWarmup({ observedDays: days, windowDays: days, readFrom });
+    expect(warmup.alreadyWarm).toBe(false);
+    expect(warmup.firstFileDay).toBe("2024-11-18");
+    expect(warmup.firstTradeDay).toBe(days[20]);
+    expect(warmup.tradeDays).toEqual(days.slice(20));
+    expect(intradayWarmupNote("ORB", warmup)).toMatch(/first 5-minute file day 2024-11-18/);
+    expect(intradayWarmupNote("ORB", warmup)).toMatch(new RegExp(days[20]));
+
+    const result = await simulateIntraday({
+      strategies: [orbStrategy],
+      grid: false,
+      sample: "building",
+      window: { from: days[0], to: days[24] },
+      rules: rules(),
+      slip: 0.001,
+      tick: new Map([["AAA", 0.05]]),
+      exitTime: "15:15",
+      entryAfter: "09:20",
+      stream: async (_symbol, _kind, _from, _to, visit) => {
+        for (const day of days) visit(day, sessionBars(day));
+      },
+      orbSymbols: ["AAA"],
+      vwapSymbols: [],
+      daily: async () => days.map((day) => ({ t: day, o: 100, h: 101, l: 99, c: 100, v: 1 })),
+    });
+    expect(result.note).toMatch(/first trade day/);
+    expect(result.scored.length).toBeGreaterThan(0);
+  });
+
+  it("does not treat the first ORB file day as a coverage failure", async () => {
+    const days = sessions("2024-11-18", 5);
+    await expect(simulateIntraday({
+      strategies: [orbStrategy],
+      grid: false,
+      sample: "building",
+      window: { from: days[0], to: days[4] },
+      rules: rules(),
+      slip: 0.001,
+      tick: new Map([["INFY", 0.05]]),
+      exitTime: "15:15",
+      entryAfter: "09:20",
+      stream: async (_symbol, _kind, _from, _to, visit) => {
+        for (const day of days) visit(day, sessionBars(day));
+      },
+      orbSymbols: ["INFY"],
+      vwapSymbols: [],
+      daily: async () => days.map((day) => ({ t: day, o: 100, h: 101, l: 99, c: 100, v: 1 })),
+    })).rejects.toThrow(/warm-up/);
+  });
+
+  it("keeps a later intraday sample when the warm-up was already loaded", () => {
+    const windowDays = sessions("2026-05-01", 10);
+    const observed = sessions("2026-03-22", 50);
+    const warmup = intradayWarmup({ observedDays: observed, windowDays, readFrom: "2026-03-22" });
+    expect(warmup.alreadyWarm).toBe(true);
+    expect(warmup.tradeDays).toEqual(windowDays);
+    expect(intradayWarmupNote("VWAP", { ...warmup, alreadyWarm: true })).toMatch(/already in the data/);
+  });
+
+  it("starts VWAP ranking coverage after 20 daily sessions", async () => {
+    const days = sessions("2024-11-18", 25);
+    const result = await simulateIntraday({
+      strategies: [vwapStrategy],
+      grid: false,
+      sample: "building",
+      window: { from: days[0], to: days[24] },
+      rules: rules(),
+      slip: 0.001,
+      tick: new Map([["AAA", 0.05]]),
+      exitTime: "15:00",
+      entryAfter: "09:20",
+      stream: async (_symbol, _kind, _from, _to, visit) => {
+        for (const day of days) visit(day, sessionBars(day));
+      },
+      orbSymbols: [],
+      vwapSymbols: ["AAA"],
+      daily: async (symbol) => symbol === "NIFTY 50"
+        ? days.map((day) => ({ t: day, o: 100, h: 101, l: 99, c: 100, v: 1 }))
+        : days.map((day, index) => ({ t: day, o: 100, h: 101, l: 99, c: 100 + index, v: 1_000_000 })),
+    });
+    expect(result.note).toMatch(/first daily file day 2024-11-18/);
+    expect(result.note).toContain(days[20]);
+    expect(result.scored.length).toBeGreaterThan(0);
+  });
 });
+
+function sessions(start: string, count: number): string[] {
+  const days = [start];
+  for (let i = 1; i < count; i++) days.push(shiftDays(days[i - 1], 1));
+  return days;
+}
+
+function sessionBars(day: string): Bar[] {
+  return [15, 20, 25, 30].map((minute) => ({
+    t: `${day} 09:${String(minute).padStart(2, "0")}:00`,
+    o: 100,
+    h: 101,
+    l: 99,
+    c: 100,
+    v: 1000,
+  }));
+}
 
 function minuteBars(closes: number[]): Bar[] {
   return closes.map((close, index) => {

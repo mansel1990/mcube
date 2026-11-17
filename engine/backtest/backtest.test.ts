@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { estimateCharges } from "@/lib/mlive/charges";
-import { heldbackBlock, profitablePeriods, profitFactor, scoreResearch, worstDrawdownPct } from "@/lib/mlive/research-bar";
+import { heldbackBlock, heldbackSubjects, profitablePeriods, profitFactor, scoreResearch, worstDrawdownPct } from "@/lib/mlive/research-bar";
 import { STRATEGIES } from "../strategies";
 import type { Bar } from "../strategies/math";
 import { orbStrategy } from "../strategies/orb";
@@ -355,14 +355,30 @@ describe("research backtest", () => {
     expect(heldbackBlock(["ema_v2"], ["ema_v2", "rsi2"], false)).toMatch(/ema_v2/);
     expect(heldbackBlock(["ema_v2"], ["ema_v2"], true)).toBeNull();
     expect(heldbackBlock([], ["ema_v2"], false)).toBeNull();
+    expect(heldbackSubjects(["momentum"], ["M10-6"])).toEqual(["M10-6"]);
+    expect(heldbackBlock(["M10-8"], heldbackSubjects(["momentum"], ["M10-6"]), false)).toBeNull();
+    expect(heldbackBlock(["M10-6"], heldbackSubjects(["momentum"], ["M10-6"]), false)).toMatch(/M10-6/);
+    expect(heldbackBlock(["M10-6"], heldbackSubjects(["momentum"], ["M10-6"]), true)).toBeNull();
     expect(parseResearchArgs(["--book", "intraday", "--heldback", "--no-grid", "--only", "infy,tcs", "--strategy", "orb"])).toEqual({
       book: "intraday",
       strategies: ["orb"],
+      variants: undefined,
       sample: "heldback",
+      confirmHeldback: false,
       force: false,
       grid: false,
       only: ["INFY", "TCS"],
       anytime: false,
+    });
+    expect(parseResearchArgs([
+      "--book", "swing", "--variant", "M10-6", "--heldback", "--confirm-heldback", "--no-grid",
+    ])).toMatchObject({
+      book: "swing",
+      variants: ["M10-6"],
+      sample: "heldback",
+      confirmHeldback: true,
+      force: false,
+      grid: false,
     });
   });
 
@@ -392,6 +408,7 @@ describe("research backtest", () => {
     });
     expect(() => parseResearchArgs(["--book", "longterm", "--variant", "RADAR-SMALL", "--no-grid"])).toThrow(/Unknown longterm variant/);
     expect(() => parseResearchArgs(["--book", "longterm", "--heldback", "--no-grid"])).toThrow(/held-back data is locked/);
+    expect(() => parseResearchArgs(["--book", "longterm", "--heldback", "--confirm-heldback", "--no-grid"])).toThrow(/held-back data is locked/);
     expect(() => parseResearchArgs(["--book", "longterm"])).toThrow(/requires --no-grid/);
   });
 
@@ -406,10 +423,11 @@ describe("research backtest", () => {
       book: "swing",
       strategies: ["ema"],
       sample: "building",
+      confirmHeldback: true,
       force: true,
       grid: true,
       anytime: true,
-    }).anytime).toBe(false);
+    })).toMatchObject({ anytime: false, confirmHeldback: true });
   });
 
   it("starts only with 60 minutes left and stops at the trading window", () => {

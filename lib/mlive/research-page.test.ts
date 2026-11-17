@@ -11,6 +11,7 @@ import {
   passRows,
   progressLine,
   queueBlock,
+  heldbackQueueBlock,
   identityFromRun,
   isLiveStrategy,
   readIdentity,
@@ -137,6 +138,12 @@ describe("research page copy", () => {
     expect(verdict.text).toBe(
       "No strategy has passed yet. Closest: Trend breakout (fails 1 of 5 tests) and RS Resilience (fails 2 of 5 tests).",
     );
+  });
+
+  it("asks for the same held-back confirmation the engine requires", () => {
+    expect(heldbackQueueBlock("building", false)).toBeNull();
+    expect(heldbackQueueBlock("heldback", true)).toBeNull();
+    expect(heldbackQueueBlock("heldback", false)).toMatch(/Confirm held-back/);
   });
 
   it("points a pass at the held-back test and stays quiet before the first run", () => {

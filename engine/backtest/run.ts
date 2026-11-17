@@ -11,6 +11,7 @@ import {
 } from "@/lib/mlive/research-page";
 import {
   heldbackBlock,
+  heldbackSubjects,
   lossDayOverlap,
   sampleWindow,
   assertBuildingWindow,
@@ -145,12 +146,13 @@ async function execute(runId: number, args: ResearchArgs & { strategies: string[
   const window = sampleWindow(args.book, args.sample, last);
   if (args.book === "swing") {
     console.log(`research sample ${args.sample} window ${window.from} through ${window.to}`);
-    assertBuildingWindow(args.sample, window);
+    assertBuildingWindow(args.sample, window, args.confirmHeldback);
   }
   const quarters = byQuarter(args.book, window.from, window.to);
   if (args.sample === "heldback") {
-    const used = await heldbackUsed(args.book, args.strategies);
-    const blocked = heldbackBlock(used, args.strategies, args.force);
+    const subjects = heldbackSubjects(args.strategies, args.variants);
+    const used = await heldbackUsed(args.book, subjects);
+    const blocked = heldbackBlock(used, subjects, args.force);
     if (blocked) throw new Error(blocked);
   }
   const params = {
@@ -200,6 +202,7 @@ async function execute(runId: number, args: ResearchArgs & { strategies: string[
   let scored: ScoredRun[] = [];
   let limitNote = "";
   let cleaningNote = "";
+  let intradayNote = "";
   if (args.book === "swing") {
     try {
       const count = await syncUniverse();
@@ -330,7 +333,7 @@ async function execute(runId: number, args: ResearchArgs & { strategies: string[
       short: capital.short,
       rates: capital.rates,
     };
-    scored = await simulateIntraday({
+    const intradayRun = await simulateIntraday({
       strategies: strategiesFor("intraday", args.strategies),
       grid: args.grid,
       sample: args.sample,
@@ -355,9 +358,12 @@ async function execute(runId: number, args: ResearchArgs & { strategies: string[
         console.log(`research intraday ${label}`);
       },
     });
+    scored = intradayRun.scored;
+    intradayNote = intradayRun.note;
+    if (intradayNote) console.log(intradayNote);
   }
   noteRss();
-  const note = buildNote(args, capital, window, quarters, niftyOk, scored, limitNote, cleaningNote);
+  const note = buildNote(args, capital, window, quarters, niftyOk, scored, limitNote, cleaningNote, intradayNote);
   const data = {
     universe: args.book === "swing" ? "nifty500" : "nifty200+nifty100",
     survivorship: SURVIVORSHIP,
@@ -559,7 +565,8 @@ function buildNote(
   niftyOk: boolean,
   scored: ScoredRun[],
   limitNote = "",
-  cleaningNote = ""
+  cleaningNote = "",
+  warmupNote = ""
 ): string {
   const fund = `₹${capital.capital.toLocaleString("en-IN")}`;
   const cost = args.book === "swing"
@@ -583,6 +590,7 @@ function buildNote(
     : "";
   return [
     `${args.sample === "heldback" ? "Held-back" : "Building"} sample ${window.from} to ${window.to}.`,
+    warmupNote,
     SURVIVORSHIP,
     args.book === "swing" ? JOIN_DATES : "",
     cost,
@@ -785,7 +793,7 @@ export async function createQueuedRun(input: {
     const blocked = heldbackBlock(await heldbackUsed(input.book, names), names, input.force);
     if (blocked) throw new Error(blocked);
   }
-  return insertRun({ book: input.book, strategies: names, sample: input.sample, force: input.force, grid: true, anytime: false }, names, "queued", input.requestedBy);
+  return insertRun({ book: input.book, strategies: names, sample: input.sample, confirmHeldback: false, force: input.force, grid: true, anytime: false }, names, "queued", input.requestedBy);
 }
 
 function isSwingVariantName(value: ResearchVariantName): value is SwingVariantName {
@@ -794,15 +802,25 @@ function isSwingVariantName(value: ResearchVariantName): value is SwingVariantNa
 
 async function heldbackUsed(book: string, names: string[]): Promise<string[]> {
   if (names.length === 0) return [];
-  const rows = await q<{ strategy: string }>(
-    `SELECT DISTINCT r.strategy
+  const rows = await q<{ subject: string }>(
+    `SELECT DISTINCT CASE
+              WHEN COALESCE(r.params->>'variant', '') <> '' THEN r.params->>'variant'
+              ELSE r.strategy
+            END AS subject
        FROM mlive.mlive_research_results r
        JOIN mlive.mlive_research_runs u ON u.id = r.run_id
-      WHERE u.book = $1 AND u.sample = 'heldback' AND u.status = 'ok' AND r.is_default
-        AND r.strategy = ANY($2::text[])`,
+      WHERE u.book = $1 AND u.sample = 'heldback' AND u.status = 'ok'
+        AND (
+          r.params->>'variant' = ANY($2::text[])
+          OR (
+            COALESCE(r.params->>'variant', '') = ''
+            AND r.is_default
+            AND r.strategy = ANY($2::text[])
+          )
+        )`,
     [book, names]
   );
-  return rows.map((row) => row.strategy);
+  return rows.map((row) => row.subject);
 }
 
 async function otherRunning(runId: number): Promise<boolean> {

@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import v8 from "node:v8";
 import { loadEnv } from "./db";
+import { researchRespawnArgv } from "./research-spawn";
 import { approvals } from "./jobs/approvals";
 import { buys } from "./jobs/buys";
 import { cancel } from "./jobs/cancel";
@@ -66,7 +67,7 @@ if (!withOptions && process.argv.length > 3) {
 
 if ((name === "research" || name === "research-queue") && process.env.MLIVE_RESEARCH_HEAP !== "1") {
   if (v8.getHeapStatistics().heap_size_limit < 560 * 1024 * 1024) {
-    const child = spawnSync(process.execPath, process.argv.slice(1), {
+    const child = spawnSync(process.execPath, researchRespawnArgv(process.execArgv, process.argv), {
       stdio: "inherit",
       env: { ...process.env, NODE_OPTIONS: "--max-old-space-size=600", MLIVE_RESEARCH_HEAP: "1" },
     });

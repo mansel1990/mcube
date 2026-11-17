@@ -9,6 +9,8 @@ export type ResearchArgs = {
   strategies?: string[];
   variants?: ResearchVariantName[];
   sample: ResearchSample;
+  /** With --heldback, allows the held-back window. Once per strategy or variant unless --force. */
+  confirmHeldback: boolean;
   force: boolean;
   grid: boolean;
   only?: string[];
@@ -21,6 +23,7 @@ export function parseResearchArgs(argv: readonly string[]): ResearchArgs {
   let strategies: string[] | undefined;
   let requestedVariants: string[] | undefined;
   let sample: ResearchSample = "building";
+  let confirmHeldback = false;
   let force = false;
   let grid = true;
   let only: string[] | undefined;
@@ -28,6 +31,7 @@ export function parseResearchArgs(argv: readonly string[]): ResearchArgs {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--heldback") sample = "heldback";
+    else if (arg === "--confirm-heldback") confirmHeldback = true;
     else if (arg === "--sample") sample = readSample(argv[++i], arg);
     else if (arg === "--force") force = true;
     else if (arg === "--anytime") anytime = true;
@@ -58,7 +62,7 @@ export function parseResearchArgs(argv: readonly string[]): ResearchArgs {
     if (only?.length) throw new Error("Long Game does not support --only");
     variants ??= [...LONGTERM_VARIANT_NAMES];
   }
-  return { book, strategies, variants, sample, force, grid, only, anytime };
+  return { book, strategies, variants, sample, confirmHeldback, force, grid, only, anytime };
 }
 
 /** The overnight queue keeps the trading-hour window, even if a payload asks to skip it. */
@@ -68,6 +72,7 @@ export function queueResearchArgs(args: Omit<ResearchArgs, "anytime"> & { anytim
     strategies: args.strategies,
     variants: args.variants,
     sample: args.sample,
+    confirmHeldback: args.confirmHeldback,
     force: args.force,
     grid: args.grid,
     only: args.only,

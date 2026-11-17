@@ -79,8 +79,11 @@ describe("backtest integrity", () => {
   });
 
   it("refuses a window that is not the 2019-2023 building sample", () => {
-    expect(() => assertBuildingWindow("heldback", { from: "2024-01-01", to: "2026-01-01" })).toThrow(/building/);
+    expect(() => assertBuildingWindow("heldback", { from: "2024-01-01", to: "2026-11-17" })).toThrow(/building/);
     expect(() => assertBuildingWindow("building", { from: "2019-01-01", to: "2023-12-31" })).not.toThrow();
+    expect(() => assertBuildingWindow("heldback", { from: "2024-01-01", to: "2026-11-17" }, true)).not.toThrow();
+    expect(() => assertBuildingWindow("building", { from: "2024-01-01", to: "2026-11-17" }, true)).toThrow(/building/);
+    expect(() => assertBuildingWindow("other", { from: "2024-01-01", to: "2026-11-17" }, true)).toThrow(/building/);
   });
 
   it("scores half-years from equity endpoints, including a flat period", () => {

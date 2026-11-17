@@ -12,6 +12,7 @@ import {
   changeNote,
   dayMonth,
   duplicateBlock,
+  heldbackQueueBlock,
   identityFromRun,
   isLiveStrategy,
   makeIdentity,
@@ -105,6 +106,7 @@ export function ResearchView() {
   const [open, setOpen] = useState(false);
   const [picked, setPicked] = useState<string[]>([...RESEARCH_STRATEGIES.swing]);
   const [sample, setSample] = useState<ResearchSample>("building");
+  const [confirmHeldback, setConfirmHeldback] = useState(false);
   const [grid, setGrid] = useState(true);
   const [busy, setBusy] = useState(false);
   const [runLoading, setRunLoading] = useState(false);
@@ -122,6 +124,7 @@ export function ResearchView() {
   useEffect(() => {
     setPicked([...RESEARCH_STRATEGIES[book]]);
     setSample("building");
+    setConfirmHeldback(false);
     setGrid(true);
     setStrategy(null);
     setOpen(false);
@@ -207,7 +210,7 @@ export function ResearchView() {
   const duplicate = proposal ? duplicateBlock(proposal, stored, false) : null;
   const queuedSame = proposal ? queueBlock(proposal, stored) : null;
   const changed = proposal && !duplicate ? changeNote(proposal, stored) : null;
-  const blockReason = duplicate || queuedSame || (picked.length === 0 ? "Pick at least one strategy." : null);
+  const blockReason = duplicate || queuedSame || (picked.length === 0 ? "Pick at least one strategy." : null) || heldbackQueueBlock(sample, confirmHeldback);
   const minutes = istMinutes();
   const moving = active ? progressLine(active.status, progressOf(active.data), minutes) : null;
   const noCandles = payload?.run?.status === "ok" && Number(payload.run.data.symbols ?? 0) === 0;
@@ -277,7 +280,12 @@ export function ResearchView() {
 
   function chooseSample(next: ResearchSample) {
     setSample(next);
-    if (next === "heldback") setPicked((current) => current.filter((name) => !held.has(name)));
+    if (next === "heldback") {
+      setConfirmHeldback(false);
+      setPicked((current) => current.filter((name) => !held.has(name)));
+      return;
+    }
+    setConfirmHeldback(false);
   }
 
   async function startRun() {
@@ -286,7 +294,7 @@ export function ResearchView() {
     const res = await fetch("/api/mlive/research", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ book, strategies: picked, sample, grid }),
+      body: JSON.stringify({ book, strategies: picked, sample, grid, confirmHeldback: sample === "heldback" && confirmHeldback }),
     });
     const body = (await res.json()) as { error?: string; id?: number };
     setBusy(false);
@@ -364,6 +372,12 @@ export function ResearchView() {
             <button type="button" aria-pressed={sample === "building"} onClick={() => chooseSample("building")}>Building</button>
             <button type="button" aria-pressed={sample === "heldback"} onClick={() => chooseSample("heldback")}>Held-back</button>
           </div>
+          {sample === "heldback" && (
+            <label className="run-checks">
+              <input type="checkbox" checked={confirmHeldback} onChange={() => setConfirmHeldback((value) => !value)} />
+              Confirm held-back
+            </label>
+          )}
           <div className="run-checks">
             {RESEARCH_STRATEGIES[book].map((name) => {
               const used = sample === "heldback" ? held.get(name) : undefined;
@@ -381,6 +395,11 @@ export function ResearchView() {
               );
             })}
           </div>
+          {[...held.entries()]
+            .filter(([name]) => !(RESEARCH_STRATEGIES[book] as readonly string[]).includes(name))
+            .map(([name, at]) => (
+              <p key={name} className="sub">{variantName(name)} · Held-back used on {dayMonth(at)}</p>
+            ))}
           <label className="run-checks">
             <input type="checkbox" checked={grid} onChange={() => setGrid((value) => !value)} />
             Settings range
@@ -441,6 +460,9 @@ export function ResearchView() {
                   <div>
                     <b>{row.name}</b>
                     {row.variantId && <div className="muted">{row.variantId}</div>}
+                    {runSample === "heldback" && (payload?.run?.finishedAt || payload?.run?.requestedAt) && (
+                      <div className="muted">Held-back used on {dayMonth(payload.run.finishedAt ?? payload.run.requestedAt)}</div>
+                    )}
                     <div className="idea">{strategyIdea(row.strategy)}</div>
                   </div>
                   <div className="research-pills">

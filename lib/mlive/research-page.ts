@@ -236,6 +236,11 @@ export function progressLine(status: string, progress: { done: number; total: nu
   return "Running";
 }
 
+export function heldbackQueueBlock(sample: ResearchSample, confirmed: boolean): string | null {
+  if (sample !== "heldback" || confirmed) return null;
+  return "Confirm held-back before queueing. It can be used once per strategy or variant.";
+}
+
 export function dayMonth(value: string | null): string {
   if (!value) return "an earlier date";
   const date = new Date(value);

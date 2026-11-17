@@ -52,6 +52,7 @@ export async function researchQueue(): Promise<void> {
     strategies: payload.strategies,
     variants: payload.variants,
     sample: payload.sample,
+    confirmHeldback: payload.confirmHeldback,
     force: payload.force,
     grid: payload.grid,
   });
@@ -89,9 +90,9 @@ function done(id: string): Promise<unknown> {
   return q(`UPDATE mlive.mlive_requests SET done_at = now() WHERE id = $1 AND done_at IS NULL`, [id]);
 }
 
-function asPayload(value: unknown): { runId: number; book: ResearchBook; strategies: string[]; variants?: ResearchVariantName[]; sample: ResearchSample; force: boolean; grid: boolean } | null {
+function asPayload(value: unknown): { runId: number; book: ResearchBook; strategies: string[]; variants?: ResearchVariantName[]; sample: ResearchSample; confirmHeldback: boolean; force: boolean; grid: boolean } | null {
   if (!value || typeof value !== "object") return null;
-  const row = value as { runId?: unknown; book?: unknown; strategies?: unknown; variants?: unknown; sample?: unknown; force?: unknown; grid?: unknown };
+  const row = value as { runId?: unknown; book?: unknown; strategies?: unknown; variants?: unknown; sample?: unknown; confirmHeldback?: unknown; force?: unknown; grid?: unknown };
   if ((row.book !== "swing" && row.book !== "intraday" && row.book !== "longterm") || (row.sample !== "building" && row.sample !== "heldback")) return null;
   if (row.book === "longterm" && row.sample === "heldback") return null;
   const runId = Number(row.runId);
@@ -101,5 +102,5 @@ function asPayload(value: unknown): { runId: number; book: ResearchBook; strateg
     ? row.variants.filter((item): item is ResearchVariantName => typeof item === "string"
       && (row.book === "longterm" ? (LONGTERM_VARIANT_NAMES as readonly string[]).includes(item) : isSwingVariant(item)))
     : undefined;
-  return { runId, book: row.book, strategies, variants, sample: row.sample, force: row.force === true, grid: row.grid !== false };
+  return { runId, book: row.book, strategies, variants, sample: row.sample, confirmHeldback: row.confirmHeldback === true, force: row.force === true, grid: row.grid !== false };
 }

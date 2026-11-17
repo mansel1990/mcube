@@ -68,11 +68,13 @@ export async function GET(request: NextRequest) {
          GROUP BY strategy
          ORDER BY strategy`,
       sql`
-        SELECT r.strategy, max(u.finished_at) AS finished_at
+        SELECT COALESCE(NULLIF(r.params->>'variant', ''), r.strategy) AS strategy,
+               max(u.finished_at) AS finished_at
           FROM mlive.mlive_research_results r
           JOIN mlive.mlive_research_runs u ON u.id = r.run_id
-         WHERE u.book = ${book} AND u.sample = 'heldback' AND u.status = 'ok' AND r.is_default
-         GROUP BY r.strategy`,
+         WHERE u.book = ${book} AND u.sample = 'heldback' AND u.status = 'ok'
+           AND (r.is_default OR NULLIF(r.params->>'variant', '') IS NOT NULL)
+         GROUP BY COALESCE(NULLIF(r.params->>'variant', ''), r.strategy)`,
       sql`
         SELECT DISTINCT ON (r.strategy) r.strategy, r.avg_net_pct
           FROM mlive.mlive_research_results r
@@ -129,15 +131,19 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = await requireMliveSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const body = (await request.json().catch(() => null)) as { book?: string; strategies?: string[]; sample?: string; force?: boolean; grid?: boolean } | null;
+  const body = (await request.json().catch(() => null)) as { book?: string; strategies?: string[]; sample?: string; confirmHeldback?: boolean; force?: boolean; grid?: boolean } | null;
   const book: ResearchBook = body?.book === "intraday" ? "intraday" : body?.book === "swing" ? "swing" : "swing";
   if (body?.book !== "swing" && body?.book !== "intraday") return NextResponse.json({ error: "Choose swing or intraday." }, { status: 400 });
   const allowed = new Set(RESEARCH_STRATEGIES[book]);
   const strategies = (body.strategies ?? []).filter((name) => allowed.has(name));
   if (strategies.length === 0) return NextResponse.json({ error: "Pick at least one strategy." }, { status: 400 });
   const sample: ResearchSample = body.sample === "heldback" ? "heldback" : "building";
+  const confirmHeldback = body.confirmHeldback === true;
   const force = body.force === true;
   const grid = body.grid !== false;
+  if (sample === "heldback" && !confirmHeldback) {
+    return NextResponse.json({ error: "Confirm held-back before queueing." }, { status: 400 });
+  }
   if (sample === "heldback") {
     const used = await sql`
       SELECT r.strategy, max(u.finished_at) AS finished_at
@@ -183,7 +189,7 @@ export async function POST(request: NextRequest) {
   const runId = Number(inserted[0]?.id);
   await sql`
     INSERT INTO mlive.mlive_requests (kind, by_user, payload)
-    VALUES ('research', ${session.user.id}, ${JSON.stringify({ runId, book, strategies, sample, force, grid })}::jsonb)`;
+    VALUES ('research', ${session.user.id}, ${JSON.stringify({ runId, book, strategies, sample, confirmHeldback, force, grid })}::jsonb)`;
   return NextResponse.json({ ok: true, id: runId });
 }
 
