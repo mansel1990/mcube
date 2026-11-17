@@ -2,6 +2,11 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ["web-push", "kiteconnect"],
+  async redirects() {
+    return [
+      { source: "/live-trade-mansel/ideas", destination: "/live-trade-mansel/swing", permanent: false },
+    ];
+  },
   async headers() {
     return [
       {

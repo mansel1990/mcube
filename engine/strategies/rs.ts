@@ -1,4 +1,5 @@
 import { atrSeries, emaSeries, rsiSeries, round2 } from "./indicators";
+import { indexAllows } from "./index-filter";
 import type { Signal, SignalContext, StrategyDef } from "./types";
 
 /**
@@ -13,6 +14,12 @@ export const rsResilience: StrategyDef = {
   book: "swing",
   params: {
     outperform: { default: 5, grid: [4, 5, 7] },
+    /** 0 keeps new buys free of this average. Open positions are not closed by it. */
+    indexDays: { default: 0, grid: [100, 150, 200] },
+    /** 1 switches the trail from 2.5 ATR to 1.5 ATR once the close is 10% above the fill. */
+    tight: { default: 0, grid: [] },
+    /** Above 0, sell half at the next open once the close reaches this many R. */
+    halfR: { default: 0, grid: [] },
   },
   signals(ctx) {
     const closes = ctx.bars.map((bar) => bar.c);
@@ -42,10 +49,11 @@ export const rsResilience: StrategyDef = {
       let lowBack = ctx.bars[i - 20].l;
       for (let k = i - 29; k <= i - 20; k++) if (k >= 0 && ctx.bars[k].l < lowBack) lowBack = ctx.bars[k].l;
       if (lowNow <= lowBack) continue;
+      if (!indexAllows(ctx.indexClose, i, ctx.params.indexDays ?? 0)) continue;
       if (!Number.isFinite(atr[i]) || atr[i] <= 0) continue;
       const stop = closes[i] - 2.5 * atr[i];
       if (!(stop > 0) || stop >= closes[i]) continue;
-      out.push({ at: i, side: "long", score: edge, stop });
+      out.push({ at: i, side: "long", score: edge, stop, useLimit: true });
     }
     return out;
   },
@@ -54,7 +62,9 @@ export const rsResilience: StrategyDef = {
     if (!Number.isFinite(atr[i])) return { exit: false, stop: ctx.stop };
     let highest = ctx.bars[ctx.entryAt].c;
     for (let k = ctx.entryAt; k <= i; k++) if (ctx.bars[k].c > highest) highest = ctx.bars[k].c;
-    const raw = highest - 2.5 * atr[i];
+    const gained = (ctx.entryPx ?? 0) > 0 && ctx.bars[i].c >= (ctx.entryPx ?? 0) * 1.1;
+    const mult = (ctx.params.tight ?? 0) > 0 && gained ? 1.5 : 2.5;
+    const raw = highest - mult * atr[i];
     const stop = Math.max(ctx.stop, raw);
     return { exit: ctx.bars[i].c < stop, stop };
   },

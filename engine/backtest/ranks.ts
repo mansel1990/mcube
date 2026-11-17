@@ -31,10 +31,11 @@ export function percentileRanks(values: Float64Array[]): { rank: Float64Array[];
   return { rank, n };
 }
 
-export function returns90(closes: Float64Array): Float64Array {
+export function returns90(closes: Float64Array, segments?: Int16Array): Float64Array {
   const out = new Float64Array(closes.length);
   out.fill(Number.NaN);
   for (let i = 90; i < closes.length; i++) {
+    if (segments && (segments[i] === 0 || segments[i] !== segments[i - 90])) continue;
     const base = closes[i - 90];
     const last = closes[i];
     if (base > 0 && Number.isFinite(last)) out[i] = last / base - 1;

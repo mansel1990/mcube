@@ -11,7 +11,7 @@ export type ChartPoint = HistoryPoint & {
 };
 
 export type StrategyPnl = {
-  strategy: "rs" | "ema";
+  strategy: string;
   pnl: number;
   trades: number;
   wins: number;
@@ -167,20 +167,25 @@ export function settleTrades(trades: TradeBook[], charges: ChargeRow[]): { strat
   }));
 }
 
-export function strategyFromBooks(trades: TradeBook[], charges: ChargeRow[]): StrategyPnl[] {
+export function strategyFromBooks(trades: TradeBook[], charges: ChargeRow[], keys?: readonly string[]): StrategyPnl[] {
   return strategyBoard(
     settleTrades(trades, charges).map((trade) => ({
       strategy: trade.strategy,
       pnl: trade.pnl,
       trades: trade.closed ? 1 : 0,
       wins: trade.closed && trade.pnl > 0 ? 1 : 0,
-    }))
+    })),
+    keys
   );
 }
 
-export function strategyBoard(rows: { strategy: string; pnl: number; trades: number; wins: number }[]): StrategyPnl[] {
-  return (["rs", "ema"] as const).map((strategy) => {
-    const matched = rows.filter((row) => (row.strategy.trim().toLowerCase() === "ema" ? "ema" : "rs") === strategy);
+export function strategyBoard(rows: { strategy: string; pnl: number; trades: number; wins: number }[], keys: readonly string[] = ["rs", "ema"]): StrategyPnl[] {
+  const classic = keys.length === 2 && keys[0] === "rs" && keys[1] === "ema";
+  return keys.map((strategy) => {
+    const matched = rows.filter((row) => {
+      const name = row.strategy.trim().toLowerCase();
+      return (classic ? (name === "ema" ? "ema" : "rs") : name) === strategy;
+    });
     return {
       strategy,
       pnl: matched.reduce((sum, row) => sum + row.pnl, 0),

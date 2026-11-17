@@ -1,9 +1,10 @@
 import { gzipSync } from "zlib";
 import path from "path";
 import { mkdir, rename, unlink, writeFile, access } from "fs/promises";
-import { addDays, istMinutes, todayIst } from "@/lib/mlive/calendar";
+import { addDays, istMinutes, previousTradingDay, todayIst } from "@/lib/mlive/calendar";
 import { mq } from "../db";
 import { MliveKite } from "../kite";
+import { holidaySet } from "../load";
 import { runJob } from "../run";
 
 const SIZE_GATE = 650 * 1024 * 1024;
@@ -20,7 +21,7 @@ export type StoreName = "neon" | "file";
 export type Candle = { date: string; open: number; high: number; low: number; close: number; volume: number };
 export type DateChunk = { from: string; to: string; label: string };
 export type InstrumentRow = { token: number; symbol: string; tick: number; type: string };
-export type MarketArgs = { only?: string[]; series?: SeriesId };
+export type MarketArgs = { only?: string[]; series?: SeriesId; refetchGaps?: boolean };
 
 type CandleTable = "candles_daily" | "candles_5m" | "candles_1m";
 
@@ -53,6 +54,7 @@ function isSeriesId(value: string): value is SeriesId {
 export function parseMarketArgs(argv: string[]): MarketArgs {
   const only: string[] = [];
   let series: SeriesId | undefined;
+  let refetchGaps = false;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--only" || arg.startsWith("--only=")) {
@@ -78,11 +80,13 @@ export function parseMarketArgs(argv: string[]): MarketArgs {
         throw new Error("--series needs daily, 5m-neon, 5m-files, or 1m-files");
       }
       series = value;
+    } else if (arg === "--refetch-gaps") {
+      refetchGaps = true;
     } else {
       throw new Error(`Unknown option ${arg}`);
     }
   }
-  return { only: only.length ? only : undefined, series };
+  return { only: only.length ? only : undefined, series, ...(refetchGaps ? { refetchGaps: true } : {}) };
 }
 
 export function seriesPlans(end: string): SeriesPlan[] {
@@ -141,7 +145,9 @@ export function seriesPlans(end: string): SeriesPlan[] {
       fileKind: "1m",
       where: "u.nifty100 = true",
       indexes: false,
-      from: addDays(end, -365),
+      // The VWAP building sample starts here; a shorter rolling window makes
+      // missing early files look like flat, no-trade history in research.
+      from: "2024-11-18",
       to: end,
       chunk: "month",
       span: 31,
@@ -150,11 +156,33 @@ export function seriesPlans(end: string): SeriesPlan[] {
   ];
 }
 
-function plansForRun(end: string, oneSession: boolean, series?: SeriesId): SeriesPlan[] {
+function plansForRun(end: string, oneSession: boolean, series?: SeriesId, sessionFrom = end): SeriesPlan[] {
   let plans = seriesPlans(end);
-  if (oneSession) plans = plans.filter((plan) => plan.store === "neon").map((plan) => ({ ...plan, from: end, to: end }));
+  if (oneSession) {
+    plans = plans.filter((plan) => plan.store === "neon").map((plan) => ({
+      ...plan,
+      // Keep each series inside its own window. A long gap still fills every day that series stores.
+      from: sessionFrom > plan.from ? sessionFrom : plan.from,
+      to: end,
+    }));
+  }
   if (series) plans = plans.filter((plan) => plan.id === series);
   return plans;
+}
+
+/** Day the evening job should start. A gap begins the day after the newest stored daily candle. */
+export function catchupFrom(end: string, lastStored: string | null, previous: string): string {
+  if (!lastStored || lastStored >= previous) return end;
+  const next = addDays(lastStored, 1);
+  return next < end ? next : end;
+}
+
+async function sessionStart(end: string): Promise<string> {
+  const holidays = await holidaySet();
+  const previous = previousTradingDay(end, holidays);
+  const rows = await mq<{ ts: string | null }>(`SELECT max(ts)::text AS ts FROM candles_daily`);
+  const last = rows[0]?.ts ? String(rows[0].ts).slice(0, 10) : null;
+  return catchupFrom(end, last, previous);
 }
 
 export function monthEnd(iso: string): string {
@@ -393,6 +421,7 @@ async function ensureSchema(): Promise<void> {
     nifty200 boolean NOT NULL DEFAULT false,
     nifty100 boolean NOT NULL DEFAULT false
   )`);
+  await mq(`ALTER TABLE universe ADD COLUMN IF NOT EXISTS industry text`);
 }
 
 async function databaseBytes(): Promise<number> {
@@ -400,37 +429,98 @@ async function databaseBytes(): Promise<number> {
   return Number(rows[0]?.bytes ?? 0);
 }
 
-async function niftySymbols(file: string): Promise<string[]> {
+export type NiftyMember = { symbol: string; industry: string };
+
+/** NSE index CSV. Industry is the second column and the symbol is the third. */
+export function parseNiftyList(text: string): NiftyMember[] {
+  const out: NiftyMember[] = [];
+  const lines = text.split(/\r?\n/);
+  for (let i = 1; i < lines.length; i++) {
+    const cols = splitCsv(lines[i] ?? "");
+    const symbol = cols[2]?.trim() ?? "";
+    if (!symbol || symbol === "Symbol") continue;
+    out.push({ symbol, industry: cols[1]?.trim() ?? "" });
+  }
+  return out;
+}
+
+function splitCsv(line: string): string[] {
+  const cols: string[] = [];
+  let cur = "";
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      quoted = !quoted;
+      continue;
+    }
+    if (ch === "," && !quoted) {
+      cols.push(cur);
+      cur = "";
+      continue;
+    }
+    cur += ch;
+  }
+  cols.push(cur);
+  return cols;
+}
+
+async function niftyMembers(file: string): Promise<NiftyMember[]> {
   const response = await fetch(`https://archives.nseindia.com/content/indices/${file}`);
   if (!response.ok) throw new Error(`Nifty list ${file} returned ${response.status}`);
-  const text = await response.text();
-  return text
-    .split(/\r?\n/)
-    .slice(1)
-    .map((line) => line.split(",")[2]?.replace(/"/g, "").trim())
-    .filter((symbol): symbol is string => Boolean(symbol) && symbol !== "Symbol");
+  return parseNiftyList(await response.text());
+}
+
+/** Missing session dates that sit on neighbouring NIFTY sessions become one fetch. */
+export function groupSessionRanges(missing: string[], calendar: string[]): Array<{ from: string; to: string }> {
+  const at = new Map(calendar.map((day, index) => [day, index]));
+  const days = missing.filter((day) => at.has(day)).sort();
+  const out: Array<{ from: string; to: string }> = [];
+  let from = "";
+  let to = "";
+  let prev = -2;
+  for (const day of days) {
+    const index = at.get(day) ?? -2;
+    if (from && index === prev + 1) to = day;
+    else {
+      if (from) out.push({ from, to });
+      from = day;
+      to = day;
+    }
+    prev = index;
+  }
+  if (from) out.push({ from, to });
+  return out;
 }
 
 async function loadUniverse(): Promise<Set<string>> {
   const [n500, n200, n100] = await Promise.all([
-    niftySymbols("ind_nifty500list.csv"),
-    niftySymbols("ind_nifty200list.csv"),
-    niftySymbols("ind_nifty100list.csv"),
+    niftyMembers("ind_nifty500list.csv"),
+    niftyMembers("ind_nifty200list.csv"),
+    niftyMembers("ind_nifty100list.csv"),
   ]);
-  const flags = new Map<string, { n500: boolean; n200: boolean; n100: boolean }>();
-  for (const symbol of n500) flags.set(symbol, { n500: true, n200: false, n100: false });
-  for (const symbol of n200) flags.set(symbol, { ...(flags.get(symbol) ?? { n500: false, n200: false, n100: false }), n200: true });
-  for (const symbol of n100) flags.set(symbol, { ...(flags.get(symbol) ?? { n500: false, n200: false, n100: false }), n100: true });
-  const rows = [...flags.entries()].map(([symbol, row]) => [symbol, row.n500, row.n200, row.n100]);
+  const flags = new Map<string, { n500: boolean; n200: boolean; n100: boolean; industry: string }>();
+  for (const row of n500) flags.set(row.symbol, { n500: true, n200: false, n100: false, industry: row.industry });
+  for (const row of n200) flags.set(row.symbol, { ...(flags.get(row.symbol) ?? { n500: false, n200: false, n100: false, industry: "" }), n200: true });
+  for (const row of n100) flags.set(row.symbol, { ...(flags.get(row.symbol) ?? { n500: false, n200: false, n100: false, industry: "" }), n100: true });
+  const rows = [...flags.entries()].map(([symbol, row]) => [symbol, row.n500, row.n200, row.n100, row.industry]);
   await insertBatched(
     (placeholders) =>
-      `INSERT INTO universe (symbol, nifty500, nifty200, nifty100) VALUES ${placeholders}
-       ON CONFLICT (symbol) DO UPDATE SET nifty500 = EXCLUDED.nifty500, nifty200 = EXCLUDED.nifty200, nifty100 = EXCLUDED.nifty100`,
+      `INSERT INTO universe (symbol, nifty500, nifty200, nifty100, industry) VALUES ${placeholders}
+       ON CONFLICT (symbol) DO UPDATE SET nifty500 = EXCLUDED.nifty500, nifty200 = EXCLUDED.nifty200, nifty100 = EXCLUDED.nifty100,
+         industry = CASE WHEN EXCLUDED.industry <> '' THEN EXCLUDED.industry ELSE universe.industry END`,
     rows,
-    4,
+    5,
     INSTRUMENT_BATCH
   );
   return new Set(flags.keys());
+}
+
+/** Refresh the Nifty lists and their industries. No Kite calls. */
+export async function syncUniverse(): Promise<number> {
+  await ensureSchema();
+  const names = await loadUniverse();
+  return names.size;
 }
 
 async function refreshInstruments(kite: MliveKite, universe: ReadonlySet<string>): Promise<void> {
@@ -535,13 +625,16 @@ async function runSeries(kite: MliveKite, plan: SeriesPlan, only: string[] | und
       `SELECT last_to::text AS last_to FROM download_progress WHERE symbol = $1 AND interval = $2 AND store = $3`,
       [item.symbol, plan.interval, plan.store]
     );
-    const cursor = progress[0]?.last_to ? addDays(progress[0].last_to.slice(0, 10), 1) : plan.from;
-    if (cursor > plan.to) {
+    const stored = progress[0]?.last_to ? addDays(progress[0].last_to.slice(0, 10), 1) : plan.from;
+    const catchingUp = oneSession && plan.from < plan.to;
+    let cursor = stored < plan.from ? plan.from : stored;
+    if (catchingUp) cursor = plan.from;
+    if (!catchingUp && cursor > plan.to) {
       finished += 1;
       console.log(`${plan.label} ${finished} of ${symbols.length}`);
       continue;
     }
-    if (oneSession && plan.table && (await sessionLoaded(plan.table, item.token, plan.to))) {
+    if (!catchingUp && oneSession && plan.table && (await sessionLoaded(plan.table, item.token, plan.to))) {
       await saveProgress(item.symbol, plan, plan.to);
       finished += 1;
       console.log(`${plan.label} ${finished} of ${symbols.length}`);
@@ -574,14 +667,93 @@ async function run(options: { oneSession: boolean; only?: string[]; series?: Ser
   const universe = await loadUniverse();
   await refreshInstruments(kite, universe);
   const end = todayIst();
-  const plans = plansForRun(end, options.oneSession, options.series);
+  const sessionFrom = options.oneSession ? await sessionStart(end) : end;
+  const plans = plansForRun(end, options.oneSession, options.series, sessionFrom);
   if (plans.length === 0) throw new Error("--series did not match a download");
   for (const plan of plans) await runSeries(kite, plan, options.only, options.oneSession);
   console.log(options.oneSession ? "market-daily finished" : "market-backfill finished");
 }
 
+async function gapDays(only?: string[]): Promise<Array<{ symbol: string; token: number; days: string[] }>> {
+  const rows = await mq<{ symbol: string; token: string; days: unknown }>(
+    `WITH calendar AS (
+       SELECT ts::date AS ts FROM candles_daily WHERE symbol = 'NIFTY 50'
+     ),
+     bounds AS (
+       SELECT d.symbol, min(d.ts)::date AS first_ts, max(d.ts)::date AS last_ts, min(i.token)::text AS token
+       FROM candles_daily d
+       JOIN instruments i ON i.symbol = d.symbol
+       WHERE d.symbol <> 'NIFTY 50'
+         AND ($1::text[] IS NULL OR d.symbol = ANY($1::text[]))
+       GROUP BY d.symbol
+     )
+     SELECT b.symbol, b.token,
+            array_agg(c.ts::text ORDER BY c.ts) AS days
+     FROM bounds b
+     JOIN calendar c ON c.ts BETWEEN b.first_ts AND b.last_ts
+     LEFT JOIN candles_daily d ON d.symbol = b.symbol AND d.ts = c.ts
+     WHERE d.ts IS NULL
+     GROUP BY b.symbol, b.token
+     ORDER BY b.symbol`,
+    [only?.length ? only : null]
+  );
+  return rows.map((row) => ({ symbol: row.symbol, token: Number(row.token), days: asDayList(row.days) }));
+}
+
+function asDayList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((item) => String(item).slice(0, 10));
+  const text = String(value ?? "");
+  if (text.startsWith("{") && text.endsWith("}")) {
+    return text
+      .slice(1, -1)
+      .split(",")
+      .map((item) => item.replace(/"/g, "").slice(0, 10))
+      .filter((item) => /^\d{4}-\d{2}-\d{2}$/.test(item));
+  }
+  return [];
+}
+
+/** Fetch only the daily sessions missing after each stock's own first candle. */
+export async function refetchGaps(only?: string[]): Promise<{ symbols: number; ranges: number; rows: number; failed: number }> {
+  const minutes = istMinutes();
+  if (minutes >= 9 * 60 + 15 && minutes <= 15 * 60 + 30) throw new Error("Market data does not run between 09:15 and 15:30 IST.");
+  await ensureSchema();
+  const calendar = (await mq<{ day: string }>(`SELECT ts::text AS day FROM candles_daily WHERE symbol = 'NIFTY 50' ORDER BY ts`)).map((row) =>
+    String(row.day).slice(0, 10)
+  );
+  const gaps = await gapDays(only);
+  console.log(`refetch-gaps: ${gaps.length} symbols with a hole after their own first candle`);
+  const kite = new MliveKite(false);
+  let ranges = 0;
+  let rows = 0;
+  let failed = 0;
+  for (const item of gaps) {
+    const spans = groupSessionRanges(item.days, calendar).flatMap((span) => spanChunks(span.from, span.to, 1800));
+    try {
+      for (const span of spans) {
+        ranges += 1;
+        const fetched = prepareRows(await fetchChunk(kite, item.token, "day", span.from, span.to), "day", span.from, span.to);
+        if (fetched.length) await insertCandles("candles_daily", item.token, item.symbol, fetched);
+        rows += fetched.length;
+      }
+      console.log(`refetch-gaps ${item.symbol}: ${item.days.length} missing, ${spans.length} fetches`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("session expired")) throw error;
+      failed += 1;
+      console.log(`refetch-gaps ${item.symbol} failed: ${message}`);
+    }
+  }
+  console.log(`refetch-gaps finished: ${ranges} fetches, ${rows} rows, ${failed} symbols failed`);
+  return { symbols: gaps.length, ranges, rows, failed };
+}
+
 export async function marketBackfill(args: MarketArgs = {}): Promise<void> {
   await runJob("market-backfill", async () => {
+    if (args.refetchGaps) {
+      const result = await refetchGaps(args.only);
+      return { job: "market-backfill", refetchGaps: true, ...result };
+    }
     await run({ oneSession: false, only: args.only, series: args.series });
     return { job: "market-backfill", only: args.only ?? null, series: args.series ?? "all" };
   });

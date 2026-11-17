@@ -18,6 +18,7 @@ export type SessionTrade = {
   stop: number;
   exitReason: string;
   barsHeld: number;
+  marks?: { ts: string; close: number }[];
 };
 
 export type SessionOptions = {
@@ -46,7 +47,7 @@ export function walkSession(strategy: StrategyDef, ctx: SignalContext, opts: Ses
   if (kept.length < 3) return [];
   const view = emptyContext(kept, ctx.params);
   view.atr = ctx.atr;
-  view.cache = new Map();
+  view.cache = new Map(ctx.cache ?? []);
   const at = new Map<number, Signal>();
   for (const signal of strategy.signals(view)) {
     if (signal.at < 0 || signal.at >= kept.length - 1) continue;
@@ -56,6 +57,7 @@ export function walkSession(strategy: StrategyDef, ctx: SignalContext, opts: Ses
   const trades: SessionTrade[] = [];
   let enterNext: Signal | null = null;
   let exitNext = false;
+  let reverseNext: Signal | null = null;
   let pos: OpenPos | null = null;
 
   const close = (index: number, exitPx: number, reason: string) => {
@@ -72,44 +74,63 @@ export function walkSession(strategy: StrategyDef, ctx: SignalContext, opts: Ses
       stop: pos.stop,
       exitReason: reason,
       barsHeld: Math.max(0, index - pos.entryIndex),
+      marks: kept.slice(pos.entryIndex, index + 1).map((bar) => ({ ts: bar.t, close: bar.c })),
     });
     pos = null;
     exitNext = false;
+  };
+
+  const opening = (signal: Signal, index: number): OpenPos | null => {
+    const bar = kept[index];
+    const entryPx = slipped(bar.o, signal.side, "entry", opts.slip, opts.tick);
+    const bracket = strategy.bracket ? strategy.bracket(entryPx, signal, view) : { stop: signal.stop, target: signal.target ?? null };
+    if (!(entryPx > 0) || !(bracket.stop > 0) || (signal.side === "long" ? bracket.stop >= entryPx : bracket.stop <= entryPx)) return null;
+    return { signal, entryIndex: index, entryPx, stop: bracket.stop, target: bracket.target };
   };
 
   for (let i = 0; i < kept.length; i++) {
     const bar = kept[i];
     const clock = barClock(bar.t);
     if (pos && clock >= opts.exitTime) {
-      const hit = hitBracket(bar, pos);
+      const hit = hitBracket(bar, pos, opts);
       if (hit) close(i, hit.price, hit.reason);
       else close(i, slipped(bar.c, pos.signal.side, "exit", opts.slip, opts.tick), "time");
       break;
     }
     if (exitNext && pos) {
-      const hit = hitBracket(bar, pos);
+      const hit = hitBracket(bar, pos, opts);
       if (hit && (pos.signal.side === "long" ? bar.o <= pos.stop : bar.o >= pos.stop)) close(i, hit.price, "stop");
       else close(i, slipped(bar.o, pos.signal.side, "exit", opts.slip, opts.tick), "rule");
+      const reversal = reverseNext;
+      reverseNext = null;
+      if (reversal && !pos && clock <= opts.entryAfter && clock < opts.exitTime) {
+        pos = opening(reversal, i);
+        if (pos) {
+          const reverseHit = hitBracket(bar, pos, opts);
+          if (reverseHit) close(i, reverseHit.price, reverseHit.reason);
+        }
+      }
     }
     if (enterNext && !pos) {
       if (clock <= opts.entryAfter) {
-        const signal = enterNext;
-        const entryPx = slipped(bar.o, signal.side, "entry", opts.slip, opts.tick);
-        const bracket = strategy.bracket ? strategy.bracket(entryPx, signal, view) : { stop: signal.stop, target: signal.target ?? null };
-        if (entryPx > 0 && bracket.stop > 0 && (signal.side === "long" ? bracket.stop < entryPx : bracket.stop > entryPx)) {
-          pos = { signal, entryIndex: i, entryPx, stop: bracket.stop, target: bracket.target };
-          const hit = hitBracket(bar, pos);
-          if (hit) close(i, hit.price, hit.reason);
+        pos = opening(enterNext, i);
+        if (pos) {
+          const entryHit = hitBracket(bar, pos, opts);
+          if (entryHit) close(i, entryHit.price, entryHit.reason);
         }
       }
       enterNext = null;
     }
     if (pos && i > pos.entryIndex) {
-      const hit = hitBracket(bar, pos);
+      const hit = hitBracket(bar, pos, opts);
       if (hit) close(i, hit.price, hit.reason);
       else {
         const decision = strategy.afterClose({ ...view, entryAt: pos.entryIndex, side: pos.signal.side, stop: pos.stop }, i);
-        if (decision.exit) exitNext = true;
+        if (decision.exit) {
+          exitNext = true;
+          const reversal = at.get(i);
+          reverseNext = reversal && reversal.side !== pos.signal.side ? reversal : null;
+        }
         else if (decision.stop > 0) pos.stop = decision.stop;
       }
     }
@@ -126,16 +147,16 @@ export function walkSession(strategy: StrategyDef, ctx: SignalContext, opts: Ses
   return trades;
 }
 
-function hitBracket(bar: Bar, pos: OpenPos): { price: number; reason: string } | null {
+function hitBracket(bar: Bar, pos: OpenPos, opts: Pick<SessionOptions, "slip" | "tick">): { price: number; reason: string } | null {
   const hitStop = pos.signal.side === "long" ? bar.l <= pos.stop : bar.h >= pos.stop;
   const hitTarget = pos.target == null ? false : pos.signal.side === "long" ? bar.h >= pos.target : bar.l <= pos.target;
   if (hitStop) {
     const gapped = pos.signal.side === "long" ? bar.o < pos.stop : bar.o > pos.stop;
-    return { price: gapped ? bar.o : pos.stop, reason: "stop" };
+    return { price: gapped ? slipped(bar.o, pos.signal.side, "exit", opts.slip, opts.tick) : pos.stop, reason: "stop" };
   }
   if (hitTarget && pos.target != null) {
     const gapped = pos.signal.side === "long" ? bar.o > pos.target : bar.o < pos.target;
-    return { price: gapped ? bar.o : pos.target, reason: "target" };
+    return { price: gapped ? slipped(bar.o, pos.signal.side, "exit", opts.slip, opts.tick) : pos.target, reason: "target" };
   }
   return null;
 }
@@ -150,7 +171,13 @@ export type DayRules = {
   rates?: ChargeRates;
 };
 
-type DayLot = { exitTs: string; notional: number; net: number };
+type DayLot = {
+  exitTs: string;
+  notional: number;
+  net: number;
+  candidate: SessionTrade;
+  qty: number;
+};
 
 export function selectIntraday(candidates: SessionTrade[], rules: DayRules, calendar: string[]): BookResult {
   const days = calendar.length ? calendar : [...new Set(candidates.map((candidate) => candidate.day))].sort();
@@ -165,9 +192,10 @@ export function selectIntraday(candidates: SessionTrade[], rules: DayRules, cale
   let exposureSum = 0;
   const trades: FilledTrade[] = [];
   const equity: { date: string; value: number }[] = [];
-  const buyingPower = rules.capital * rules.leverage;
 
   for (const day of days) {
+    const dayStart = equityValue;
+    const buyingPower = Math.max(0, dayStart * rules.leverage);
     const ordered = (byDay.get(day) ?? []).slice().sort((a, b) => a.entryTs.localeCompare(b.entryTs) || b.score - a.score);
     const open: DayLot[] = [];
     let used = 0;
@@ -181,20 +209,40 @@ export function selectIntraday(candidates: SessionTrade[], rules: DayRules, cale
       for (const lot of due) {
         dayPnl += lot.net;
         used -= lot.notional;
-        if (!halt.at && dayPnl <= -rules.capital * rules.dayLossPct + 1e-9) halt.at = lot.exitTs;
+        if (!halt.at && dayPnl <= -dayStart * rules.dayLossPct + 1e-9) halt.at = lot.exitTs;
       }
       open.length = 0;
       open.push(...keep);
     };
+    const markedPnl = (at: string) => {
+      let net = dayPnl;
+      for (const lot of open) {
+        let mark = lot.candidate.entryPx;
+        for (const point of lot.candidate.marks ?? []) {
+          if (point.ts > at) break;
+          mark = point.close;
+        }
+        net += roundTrip({
+          side: lot.candidate.side,
+          entryPx: lot.candidate.entryPx,
+          exitPx: mark,
+          qty: lot.qty,
+          intraday: true,
+          rates: rules.rates,
+        }).net;
+      }
+      return net;
+    };
     for (const candidate of ordered) {
       release(candidate.entryTs);
-      if (halt.at !== null && candidate.entryTs > halt.at) continue;
+      if (!halt.at && markedPnl(candidate.entryTs) <= -dayStart * rules.dayLossPct + 1e-9) halt.at = candidate.entryTs;
+      if (halt.at !== null && candidate.entryTs >= halt.at) continue;
       if (count >= rules.maxTrades) continue;
       if (candidate.side === "short" && !rules.short) continue;
       const room = buyingPower - used;
       if (room <= candidate.entryPx) continue;
       const sized = sizeOrder({
-        fund: rules.capital,
+        fund: dayStart,
         entry: candidate.entryPx,
         stop: candidate.stop,
         spendable: room,
@@ -223,7 +271,7 @@ export function selectIntraday(candidates: SessionTrade[], rules: DayRules, cale
       peakUsed = Math.max(peakUsed, used);
       count += 1;
       const risk = Math.abs(candidate.entryPx - candidate.stop) * qty;
-      open.push({ exitTs: candidate.exitTs, notional, net: money.net });
+      open.push({ exitTs: candidate.exitTs, notional, net: money.net, candidate, qty });
       trades.push({
         symbol: candidate.symbol,
         sector: candidate.symbol,
@@ -245,12 +293,12 @@ export function selectIntraday(candidates: SessionTrade[], rules: DayRules, cale
         exitReason: candidate.exitReason,
         barsHeld: candidate.barsHeld,
       });
-      minCash = Math.min(minCash, equityValue - used);
+      minCash = Math.min(minCash, dayStart - used);
     }
     release("99:99");
     equityValue += dayPnl;
     minCash = Math.min(minCash, equityValue);
-    exposureSum += peakUsed / rules.capital;
+    exposureSum += dayStart > 0 ? peakUsed / dayStart : 0;
     equity.push({ date: day, value: equityValue });
   }
 
@@ -259,5 +307,9 @@ export function selectIntraday(candidates: SessionTrade[], rules: DayRules, cale
     equity,
     exposurePct: days.length ? (exposureSum / days.length) * 100 : 0,
     minCash,
+    blocks: { candidates: 0, filled: trades.length, cappedBuys: 0, cappedOpen: 0, held: 0, sector: 0, deploy: 0, size: 0 },
+    openPositions: [],
+    unrealised: 0,
+    unrealisedIncludesExitCharges: false,
   };
 }

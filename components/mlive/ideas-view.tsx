@@ -370,7 +370,7 @@ export function IdeasView() {
           </div>
           <div className="seg" role="group" aria-label="Strategy">
             {(["all", "rs", "ema"] as const).map((item) => (
-              <button key={item} type="button" aria-pressed={strategy === item} onClick={() => setStrategy(item)}>
+              <button key={item} type="button" data-tone={item} aria-pressed={strategy === item} onClick={() => setStrategy(item)}>
                 {item === "all" ? "All" : item === "rs" ? "RS" : "EMA"}
               </button>
             ))}

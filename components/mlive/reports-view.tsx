@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { alertBody, alertSections, auditLabel, collapseAlerts, groupAuditByDay, ENGINE_GROUPS, type AuditView, type EngineGroupId } from "@/lib/mlive/rules";
 import { notifyAlertsChanged } from "./alert-count";
 import { inr } from "./format";
@@ -16,13 +17,7 @@ type AlertRow = { id: number; ts: string; level: string; code: string; message: 
 type AuditRow = { id: number; ts: string; actor: string; action: string; symbol: string | null; side: "BUY" | "SELL" | null; reason: string; repeat: number };
 type AuditPage = { rows: AuditRow[]; page: number; pageSize: number; total: number; groups: { id: EngineGroupId; count: number }[] };
 
-const TABS = [
-  { id: "pnl", label: "P&L" },
-  { id: "trades", label: "Trades" },
-  { id: "ledger", label: "Ledger" },
-  { id: "alerts", label: "Alerts" },
-  { id: "audit", label: "Audit" },
-] as const;
+type ReportTab = "pnl" | "trades" | "ledger" | "alerts" | "audit";
 
 function dayLabel(day: string): string {
   const [year, month, date] = day.split("-").map(Number);
@@ -39,8 +34,14 @@ const VIEWS: { id: AuditView; label: string }[] = [
   { id: "you", label: "You" },
 ];
 
-export function ReportsView() {
-  const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("pnl");
+export function ReportsView({ embedded = false, forced = "pnl" }: { embedded?: boolean; forced?: ReportTab }) {
+  const router = useRouter();
+  const params = useSearchParams();
+  const book = params.get("book") === "swing" || params.get("book") === "intraday" ? params.get("book")! : "all";
+  const query = params.get("q") ?? "";
+  const result = params.get("result") === "won" || params.get("result") === "lost" ? params.get("result")! : "all";
+  const requested = params.get("tab");
+  const tab: ReportTab = embedded ? forced : requested === "trades" ? "trades" : "pnl";
   const [pnl, setPnl] = useState<PnlModel | null>(null);
   const [trade, setTrade] = useState<PnlTrade | null>(null);
   const [view, setView] = useState<AuditView>("all");
@@ -54,26 +55,31 @@ export function ReportsView() {
   const [auditBusy, setAuditBusy] = useState(false);
   const auditRequest = useRef(0);
 
+  function replace(next: Record<string, string>) {
+    const url = new URLSearchParams(params.toString());
+    for (const [key, value] of Object.entries(next)) {
+      if (!value || value === "all") url.delete(key);
+      else url.set(key, value);
+    }
+    if (!url.get("tab") && !embedded) url.set("tab", tab);
+    router.replace(`${embedded ? "/live-trade-mansel/audit" : "/live-trade-mansel/reports"}?${url.toString()}`, { scroll: false });
+  }
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const params = new URLSearchParams(window.location.search);
-      const querySymbol = params.get("symbol") ?? "";
-      setSymbol(querySymbol);
-      const requested = params.get("tab");
-      if (querySymbol || requested === "audit") setTab("audit");
-      else if (requested === "alerts" || requested === "ledger" || requested === "trades" || requested === "pnl") setTab(requested);
+      setSymbol(new URLSearchParams(window.location.search).get("symbol") ?? "");
       setReady(true);
-      void fetch("/api/mlive/pnl?range=all&strategy=all", { cache: "no-store" }).then(async (res) => {
+      void fetch(`/api/mlive/pnl?range=all&strategy=all&book=${book}`, { cache: "no-store" }).then(async (res) => {
         if (res.ok) setPnl((await res.json()) as PnlModel);
       });
-      void fetch("/api/mlive/reports/ledger").then(async (res) => res.ok && setLedger(await res.json()));
+      void fetch(`/api/mlive/reports/ledger?book=${book}`).then(async (res) => res.ok && setLedger(await res.json()));
       void fetch("/api/mlive/reports/alerts?open=1").then(async (res) => res.ok && setAlerts(await res.json()));
     }, 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [book]);
 
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || tab !== "audit") return;
     const request = ++auditRequest.current;
     setAuditBusy(true);
     const params = new URLSearchParams({ page: String(page), view });
@@ -90,7 +96,7 @@ export function ReportsView() {
         });
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [ready, page, view, group, symbol]);
+  }, [ready, page, view, group, symbol, tab]);
 
   async function seen(ids: number[]) {
     const res = await fetch(`/api/mlive/alerts/${ids[0]}/seen`, { method: "POST" });
@@ -120,24 +126,47 @@ export function ReportsView() {
   const engineGroups = (audit?.groups ?? []).filter((item) => item.id === "all" || item.count > 0);
 
   return (
-    <section className="page">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <div>
-          <h1>Reports</h1>
-          <p className="sub">Profit and loss, the trades, the daily ledger, alerts, and the audit.</p>
+    <section className={embedded ? undefined : "page"}>
+      {!embedded && (tab === "pnl" || tab === "trades") && (
+        <>
+          <div className="page-head">
+            <div>
+              <h1>Reports</h1>
+              <div className="tabs" role="tablist">
+                <button type="button" role="tab" aria-selected={tab === "pnl"} onClick={() => replace({ tab: "pnl" })}>P&L</button>
+                <button type="button" role="tab" aria-selected={tab === "trades"} onClick={() => replace({ tab: "trades" })}>Trades</button>
+              </div>
+            </div>
+            <div className="sheet-tools">
+              <input className="search" value={query} onChange={(event) => replace({ q: event.target.value })} placeholder="Search stock" aria-label="Search stock" />
+              <div className="seg" role="group" aria-label="Result">
+                {(["all", "won", "lost"] as const).map((item) => (
+                  <button key={item} type="button" data-tone={item} aria-pressed={result === item} onClick={() => replace({ result: item })}>{item === "all" ? "All" : item === "won" ? "Won" : "Lost"}</button>
+                ))}
+              </div>
+              <div className="seg" role="group" aria-label="Book">
+                {(["all", "swing", "intraday"] as const).map((item) => (
+                  <button key={item} type="button" data-tone={item} aria-pressed={book === item} onClick={() => replace({ book: item })}>{item === "all" ? "All" : item === "swing" ? "Swing" : "Intraday"}</button>
+                ))}
+              </div>
+              <a className="btn" href={`/api/mlive/reports/csv?book=${book}`}>CSV</a>
+            </div>
+          </div>
+        </>
+      )}
+      {tab === "ledger" && (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+          <a className="btn" href={`/api/mlive/reports/csv?book=${book}`}>Download CSV</a>
         </div>
-        {tab === "ledger" && <a className="btn" href="/api/mlive/reports/csv">Download CSV</a>}
-      </div>
-      <div className="tabs" role="tablist">
-        {TABS.map((item) => (
-          <button key={item.id} type="button" role="tab" aria-selected={tab === item.id} onClick={() => setTab(item.id)}>
-            {item.label}
-          </button>
-        ))}
-      </div>
+      )}
 
-      {tab === "pnl" && (pnl ? <ReportsPnl pnl={pnl} onOpen={setTrade} /> : <p className="muted" role="status">Loading P&L…</p>)}
-      {tab === "trades" && (pnl ? <TradesTable pnl={pnl} onOpen={setTrade} /> : <p className="muted" role="status">Loading trades…</p>)}
+      {(tab === "pnl" || tab === "trades") && pnl?.empty && (
+        <div className="card empty-book">
+          <p>{book === "intraday" ? "No intraday trades yet. The book starts after a strategy passes the bar." : book === "swing" ? "No swing trades yet. The book starts after a strategy passes the bar." : "No trades yet. The book starts after a strategy passes the bar."}</p>
+        </div>
+      )}
+      {tab === "pnl" && (pnl ? (pnl.empty ? null : <ReportsPnl pnl={pnl} onOpen={setTrade} query={query} result={result === "won" || result === "lost" ? result : "all"} tradesHref={`/live-trade-mansel/reports?${new URLSearchParams({ ...Object.fromEntries(params.entries()), tab: "trades" }).toString()}`} />) : <p className="muted" role="status">Loading P&L…</p>)}
+      {tab === "trades" && (pnl ? (pnl.empty ? null : <TradesTable pnl={pnl} onOpen={setTrade} query={query} result={result === "won" || result === "lost" ? result : "all"} headerFilters />) : <p className="muted" role="status">Loading trades…</p>)}
 
       {tab === "ledger" && ledger && (
         <>

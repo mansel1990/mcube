@@ -301,8 +301,8 @@ function printReport(report: MarketCheckReport): void {
     }
   }
   console.log(`NIFTY 50 calendar: ${report.calendarDays} sessions`);
-  console.log(`sessions missing vs NIFTY 50: ${report.missingSessions.count}`);
-  for (const row of report.missingSessions.symbols.slice(0, 20)) {
+  console.log(`sessions missing after each stock's first candle, vs NIFTY 50: ${report.missingSessions.count} across ${report.missingSessions.symbols.length} stocks`);
+  for (const row of report.missingSessions.symbols) {
     console.log(`  ${row.symbol}: ${row.missing} (${row.sample.join(", ")})`);
   }
   const flagged = report.closeCheck.filter((row) => row.flagged);

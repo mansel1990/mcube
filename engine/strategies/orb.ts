@@ -76,7 +76,9 @@ export const orbStrategy: StrategyDef = {
       const at = indexOf.get(bars[i]);
       if (at == null) continue;
       const side = brokeUp ? "long" : "short";
-      return [{ at, side, score: bars[i].v, stop: side === "long" ? low : high, range: Math.max(0.01, high - low) } satisfies Signal];
+      const selected = Number(ctx.cache?.get("selectionScore"));
+      const score = Number.isFinite(selected) ? selected : bars[i].v;
+      return [{ at, side, score, stop: side === "long" ? low : high, range: Math.max(0.01, high - low) } satisfies Signal];
     }
     return [];
   },

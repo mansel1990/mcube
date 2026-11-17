@@ -1,4 +1,5 @@
 import { smaAt } from "./indicators";
+import { indexAllows } from "./index-filter";
 import type { Signal, StrategyDef } from "./types";
 
 /** Minervini-style breakout. A signal uses only bars closed on or before `at`. */
@@ -8,6 +9,8 @@ export const trendBreakout: StrategyDef = {
   params: {
     volMult: { default: 1.5, grid: [1.2, 1.5, 2] },
     nearHigh: { default: 0.75, grid: [0.7, 0.75, 0.8] },
+    /** 0 keeps new buys free of this average. Open positions are not closed by it. */
+    indexDays: { default: 0, grid: [100, 150, 200] },
   },
   signals(ctx) {
     const { bars, params } = ctx;
@@ -29,10 +32,11 @@ export const trendBreakout: StrategyDef = {
       const breakout = bars[i].c > priorHigh && bars[i].v >= avgVol * params.volMult;
       const strong = Number.isFinite(ctx.rank[i]) && ctx.rank[i] >= 0.7;
       if (!nearHigh || !stacked || !breakout || !strong) continue;
+      if (!indexAllows(ctx.indexClose, i, ctx.params.indexDays ?? 0)) continue;
       let stop = bars[i].l;
       for (let k = i - 9; k < i; k++) if (k >= 0 && bars[k].l < stop) stop = bars[k].l;
       if (!(stop > 0) || stop >= bars[i].c) continue;
-      out.push({ at: i, side: "long", score: bars[i].c / high52, stop });
+      out.push({ at: i, side: "long", score: bars[i].c / high52, stop, useLimit: true });
     }
     return out;
   },

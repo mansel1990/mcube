@@ -79,6 +79,7 @@ export async function sendReady(opts: SendOpts): Promise<Record<string, unknown>
     let qty = decision.sizing?.qty ?? 0;
     const limit = decision.sizing?.limit ?? 0;
     if (decision.side === "BUY") {
+      const rawStrategy = await ideaStrategyRaw(decision.ideaId);
       const sized = sizeOrder({
         fund,
         entry: limit,
@@ -87,6 +88,7 @@ export async function sendReady(opts: SendOpts): Promise<Record<string, unknown>
         riskPct: settings.riskPct,
         maxOrderPct: settings.maxOrderPct,
         minOrderInr: settings.minOrderInr,
+        half: settings.swingHalfSize && rawStrategy !== "rs" && rawStrategy !== "ema",
       });
       if (sized.reason !== "ok") {
         await skip(decision, sized.reason, sized.text, opts.runId);
@@ -230,10 +232,15 @@ async function kiteLimit(kite: MliveKite, symbol: string, price: number): Promis
   return floorToTick(price, tick);
 }
 
-async function ideaStrategy(ideaId: number | null): Promise<"rs" | "ema"> {
+async function ideaStrategyRaw(ideaId: number | null): Promise<string> {
   if (ideaId == null) return "rs";
   const rows = await q<{ strategy: string | null }>(`SELECT strategy FROM mlive.mlive_ideas WHERE id = $1`, [ideaId]);
-  return rows[0]?.strategy === "ema" ? "ema" : "rs";
+  return rows[0]?.strategy ?? "rs";
+}
+
+async function ideaStrategy(ideaId: number | null): Promise<"rs" | "ema"> {
+  const raw = await ideaStrategyRaw(ideaId);
+  return raw === "ema" ? "ema" : "rs";
 }
 
 async function decisionIsSent(decision: Decision, day: string): Promise<boolean> {

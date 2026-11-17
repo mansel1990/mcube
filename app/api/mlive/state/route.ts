@@ -16,11 +16,11 @@ export async function POST(request: Request) {
   let action = "state.change";
   if (body.pause) {
     status = "paused_by_user";
-    mode = "paused";
+    if (mode !== "approve" && mode !== "auto") mode = "approve";
     action = "pause";
   } else if (body.resume) {
     status = "active";
-    mode = mode === "paused" ? "approve" : mode;
+    if (mode !== "approve" && mode !== "auto") mode = "approve";
     action = "resume";
   } else if (body.mode === "approve" || body.mode === "auto" || body.mode === "paused") {
     mode = body.mode;

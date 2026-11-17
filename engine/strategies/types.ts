@@ -17,6 +17,12 @@ export type Signal = {
   target?: number | null;
   /** Skip the fill when the slipped entry is below this price. */
   minEntry?: number;
+  /** Live 09:45 limit at the signal close plus the configured offset. */
+  useLimit?: boolean;
+  /** False when `stop` is not a price exit. */
+  priceStop?: boolean;
+  /** Size to the order cap even when `stop` is a real price. Momentum never uses 1% risk. */
+  sizeToCap?: boolean;
   range?: number;
 };
 
@@ -40,6 +46,8 @@ export type ExitState = SignalContext & {
   entryAt: number;
   side: Side;
   stop: number;
+  /** Fill price. Present once the position is open. */
+  entryPx?: number;
 };
 
 export type StrategyDef = {
@@ -47,6 +55,11 @@ export type StrategyDef = {
   book: BookName;
   params: Record<string, ParamSpec>;
   signals(ctx: SignalContext): Signal[];
+  /**
+   * The signal stays on until the exit, and a skipped day can still be bought later
+   * in that spell. Used when a weekly list would otherwise be one entry date.
+   */
+  flexibleEntry?: boolean;
   /** After the close of bar `i`. Only bars at or before `i` are in the past. */
   afterClose(ctx: ExitState, i: number): { exit: boolean; stop: number };
   /** Intraday stop and target from the fill price. */

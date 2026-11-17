@@ -3,11 +3,13 @@ import { sql } from "@/lib/sql";
 import { requireMliveSession } from "@/lib/mlive/auth";
 import { kiteSessionStatus } from "@/lib/mlive/kite-session";
 import { cashPicture, reviewDate, settingsMap } from "@/lib/mlive/read";
-import { changeSetting, settingAllowed } from "@/lib/mlive/write";
+import { addDays, todayIst } from "@/lib/mlive/calendar";
+import { applyDueSettings, queueOrSave, settingAllowed } from "@/lib/mlive/write";
 
 export async function GET() {
   const session = await requireMliveSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  await applyDueSettings(todayIst(), session.user.id);
   const settings = await settingsMap();
   const anchor = String(settings.review_anchor_date ?? "2026-11-05").replace(/"/g, "");
   const days = Number(settings.review_every_days ?? 60);
@@ -33,10 +35,20 @@ export async function GET() {
 export async function POST(request: Request) {
   const session = await requireMliveSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const body = (await request.json()) as { key?: string; value?: unknown };
-  if (!body.key || !settingAllowed(body.key)) {
-    return NextResponse.json({ error: "That setting cannot be changed here" }, { status: 400 });
+  const body = (await request.json()) as { key?: string; value?: unknown; changes?: Record<string, unknown> };
+  const changes = body.changes ?? (body.key ? { [body.key]: body.value } : {});
+  const today = todayIst();
+  const nextDay = addDays(today, 1);
+  const queued: string[] = [];
+  for (const [key, value] of Object.entries(changes)) {
+    if (!settingAllowed(key)) return NextResponse.json({ error: "That setting cannot be changed here" }, { status: 400 });
+    try {
+      const when = await queueOrSave(key, value, session.user.id, nextDay);
+      if (when === "next") queued.push(key);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not save";
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
   }
-  await changeSetting(body.key, body.value, session.user.id);
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, queued });
 }

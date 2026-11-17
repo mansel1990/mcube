@@ -1,7 +1,7 @@
 import { istMinutes } from "@/lib/mlive/calendar";
 import type { ResearchBook, ResearchSample } from "@/lib/mlive/research-bar";
-import type { ResearchArgs } from "../backtest/args";
-import { runResearch } from "../backtest/run";
+import { queueResearchArgs } from "../backtest/args";
+import { duplicateIdentityError, researchIdentityFor, runResearch } from "../backtest/run";
 import { researchWindowOpen } from "../backtest/schedule";
 import { jsonValue, q } from "../db";
 
@@ -45,14 +45,34 @@ export async function researchQueue(): Promise<void> {
       return;
     }
   }
-  const args: ResearchArgs = {
+  const args = queueResearchArgs({
     book: payload.book,
     strategies: payload.strategies,
     sample: payload.sample,
     force: payload.force,
     grid: payload.grid,
-  };
+  });
   try {
+    if (!payload.force) {
+      const identity = await researchIdentityFor({
+        book: payload.book,
+        sample: payload.sample,
+        grid: payload.grid,
+        strategies: payload.strategies,
+      });
+      const blocked = await duplicateIdentityError(identity, payload.runId);
+      if (blocked) {
+        await q(
+          `UPDATE mlive.mlive_research_runs
+              SET status = 'error', finished_at = now(), error = $2,
+                  params = jsonb_set(COALESCE(params, '{}'::jsonb), '{identity}', $3::jsonb, true)
+            WHERE id = $1 AND status IN ('queued', 'running')`,
+          [payload.runId, blocked, JSON.stringify(identity)]
+        );
+        console.log(`research-queue: ${blocked}`);
+        return;
+      }
+    }
     await runResearch(args, { runId: payload.runId, requestedBy: request.by_user });
   } catch (error) {
     console.error(error instanceof Error ? error.message : error);

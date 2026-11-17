@@ -12,6 +12,7 @@ import {
   type PnlLedgerRow,
   type PnlModel,
   type PnlPosition,
+  type PnlBook,
   type PnlRange,
   type PnlStrategyFilter,
 } from "./pnl";
@@ -70,12 +71,12 @@ async function chargeItemRows(includeDry: boolean) {
 type FillRow = PnlFill & { symbol: string; dryRun: boolean; at: number };
 type PositionRow = PnlPosition & { at: number; closedMs: number | null };
 
-export async function pnlPayload(range: PnlRange, strategy: PnlStrategyFilter): Promise<PnlModel> {
+export async function pnlPayload(range: PnlRange, strategy: PnlStrategyFilter, book: PnlBook = "all"): Promise<PnlModel> {
   const settings = await settingsMap();
   const includeDry = settings.dry_run !== false;
   const today = todayIst();
   const [positionRows, fillRows, itemRows, ledgerRows, equityRows, gttRows, decisionRows, auditRows] = await Promise.all([
-    sql`SELECT id, symbol, strategy, qty, avg_price, opened_at, closed_at, trend_stop, realised_pnl, charges, dry_run
+    sql`SELECT id, symbol, strategy, qty, avg_price, opened_at, closed_at, trend_stop, realised_pnl, charges, dry_run, book, side
           FROM mlive.mlive_positions
          WHERE (${includeDry}::boolean OR dry_run = false)`,
     sql`SELECT f.id, f.order_id, f.qty, f.price, f.ts, o.symbol, o.side, o.kind, o.dry_run
@@ -90,7 +91,7 @@ export async function pnlPayload(range: PnlRange, strategy: PnlStrategyFilter): 
     sql`SELECT position_id, trigger_price, status, history, dry_run
           FROM mlive.mlive_gtts
          WHERE (${includeDry}::boolean OR dry_run = false)`,
-    sql`SELECT id, position_id, symbol, side, reason_code, reason_text, sizing, trade_date::text AS trade_date, dry_run
+    sql`SELECT id, position_id, symbol, side, reason_code, reason_text, sizing, trade_date::text AS trade_date, dry_run, book
           FROM mlive.mlive_decisions
          WHERE (${includeDry}::boolean OR dry_run = false)`,
     sql`SELECT id, symbol, ts FROM mlive.mlive_audit_log WHERE symbol IS NOT NULL ORDER BY id`,
@@ -99,7 +100,9 @@ export async function pnlPayload(range: PnlRange, strategy: PnlStrategyFilter): 
   const positions: PositionRow[] = positionRows.map((row) => ({
     id: num(row.id),
     symbol: String(row.symbol),
-    strategy: row.strategy === "ema" ? "ema" : row.strategy === "rs" ? "rs" : null,
+    strategy: row.strategy == null ? null : String(row.strategy),
+    book: row.book === "intraday" ? "intraday" : "swing",
+    side: row.side === "short" ? "short" : "long",
     qty: num(row.qty),
     avgPrice: num(row.avg_price),
     openedAt: stamp(row.opened_at),
@@ -140,8 +143,9 @@ export async function pnlPayload(range: PnlRange, strategy: PnlStrategyFilter): 
   for (const position of positions) {
     const entry = day(position.openedAt);
     const exit = position.closedAt ? day(position.closedAt) : null;
-    const buy = decisionRows.find((row) => String(row.side) === "BUY" && String(row.symbol) === position.symbol && day(row.trade_date) === entry);
-    const sell = decisionRows.find((row) => String(row.side) === "SELL" && (num(row.position_id) === position.id || (String(row.symbol) === position.symbol && exit != null && day(row.trade_date) === exit)));
+    const sameBook = (row: Record<string, unknown>) => (row.book === "intraday" ? "intraday" : "swing") === position.book;
+    const buy = decisionRows.find((row) => sameBook(row) && String(row.side) === "BUY" && String(row.symbol) === position.symbol && day(row.trade_date) === entry);
+    const sell = decisionRows.find((row) => sameBook(row) && String(row.side) === "SELL" && (num(row.position_id) === position.id || (String(row.symbol) === position.symbol && exit != null && day(row.trade_date) === exit)));
     const sizing = buy?.sizing && typeof buy.sizing === "object" ? (buy.sizing as { stop?: number; text?: string }) : null;
     const history = gttRows
       .filter((row) => num(row.position_id) === position.id)
@@ -205,10 +209,11 @@ export async function pnlPayload(range: PnlRange, strategy: PnlStrategyFilter): 
     history: asArray(row.history) as PnlGtt["history"],
   }));
 
+  const wanted = new Set(positions.filter((position) => book === "all" || position.book === book).map((position) => position.id));
   return buildPnl({
-    positions,
-    fills: fills.filter((fill) => fill.positionId > 0),
-    chargeItems,
+    positions: positions.filter((position) => wanted.has(position.id)),
+    fills: fills.filter((fill) => wanted.has(fill.positionId)),
+    chargeItems: chargeItems.filter((item) => wanted.has(item.positionId)),
     ledger: ledgerRows.map((row) => ({
       id: num(row.id),
       kind: String(row.kind) as PnlLedgerRow["kind"],
@@ -220,7 +225,7 @@ export async function pnlPayload(range: PnlRange, strategy: PnlStrategyFilter): 
     })),
     equity: equityRows.map((row) => ({ date: day(row.trade_date), value: num(row.system_value) })),
     marks: Object.fromEntries(symbols.map((symbol) => [symbol, marks.get(symbol) ?? null])),
-    gtts,
+    gtts: gtts.filter((gtt) => wanted.has(gtt.positionId)),
     ohlcv: (bars as Record<string, unknown>[]).map((row): PnlBar => ({
       symbol: String(row.symbol),
       date: day(row.date),
@@ -231,6 +236,8 @@ export async function pnlPayload(range: PnlRange, strategy: PnlStrategyFilter): 
     today,
     range,
     strategy,
+    book,
+    intradayCapital: num(settings.intraday_capital_inr ?? 20000),
     dryRun: includeDry,
     breakerPct: num(settings.breaker_pct ?? 0.25),
     maxPositions: num(settings.max_open_positions ?? 6),

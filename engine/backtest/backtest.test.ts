@@ -5,11 +5,16 @@ import { STRATEGIES } from "../strategies";
 import type { Bar } from "../strategies/math";
 import { orbStrategy } from "../strategies/orb";
 import { defaultParams, emptyContext, type Signal, type SignalContext, type StrategyDef } from "../strategies/types";
-import { parseResearchArgs } from "./args";
+import { parseResearchArgs, queueResearchArgs } from "./args";
 import { selectIntraday, walkSession, type SessionTrade } from "./intraday-sim";
 import { roundTrip } from "./money";
 import { runSwingPortfolio, type Candidate } from "./portfolio";
-import { researchWindowEnded, researchWindowOpen } from "./schedule";
+import { walkSymbol } from "./walk";
+import { indexAllows } from "../strategies/index-filter";
+import { momentum } from "../strategies/momentum";
+import { rsResilience } from "../strategies/rs";
+import { weekdayUtc } from "../strategies/indicators";
+import { ANYTIME_ON_SERVER, guardResearchAnytime, researchWindowEnded, researchWindowOpen, shouldStopResearch } from "./schedule";
 
 function daily(count: number): Bar[] {
   const out: Bar[] = [];
@@ -125,6 +130,120 @@ describe("research backtest", () => {
     expect(result.minCash).toBeGreaterThanOrEqual(-0.01);
   });
 
+  it("measures exposure against that day's equity", () => {
+    const held = candidate("WIN", 1);
+    held.entryPx = 100;
+    held.exitPx = 200;
+    held.stop = 50;
+    held.marks = [
+      { date: "2024-01-02", close: 100 },
+      { date: "2024-01-03", close: 150 },
+      { date: "2024-01-04", close: 200 },
+    ];
+    const result = runSwingPortfolio([held], {
+      capital: 10_000,
+      riskPct: 1,
+      maxOrderPct: 1,
+      minOrderInr: 1,
+      cashReserve: 0,
+      maxNewBuys: 2,
+      maxOpen: 6,
+      maxPerSector: 2,
+      maxDailyDeployPct: 1,
+    }, ["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"]);
+    expect(result.trades).toHaveLength(1);
+    expect(result.minCash).toBeGreaterThanOrEqual(-0.01);
+    expect(result.exposurePct).toBeLessThanOrEqual(100);
+    expect(result.exposurePct).toBeGreaterThan(70);
+    expect(result.exposurePct).toBeLessThan(80);
+  });
+
+  it("buys a skipped momentum name on the next day and sizes it to the order cap", () => {
+    const first = capCandidate("BBB", 2, "2024-01-02");
+    const skipped = capCandidate("AAA", 1, "2024-01-02");
+    const later = capCandidate("AAA", 1, "2024-01-03");
+    const result = runSwingPortfolio([first, skipped, later], {
+      capital: 80_000,
+      riskPct: 0.01,
+      maxOrderPct: 0.25,
+      minOrderInr: 8_000,
+      cashReserve: 500,
+      maxNewBuys: 1,
+      maxOpen: 6,
+      maxPerSector: 2,
+      maxDailyDeployPct: 1,
+    }, ["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"]);
+    expect(result.trades.map((trade) => `${trade.symbol}:${trade.entryDate}`)).toEqual(["BBB:2024-01-02", "AAA:2024-01-03"]);
+    for (const trade of result.trades) expect(trade.qty * trade.entryPx).toBeGreaterThan(18_000);
+    expect(result.blocks).toMatchObject({ candidates: 3, filled: 2, cappedBuys: 1 });
+    expect(result.minCash).toBeGreaterThanOrEqual(-0.01);
+  });
+
+  it("rebalances momentum on the session before a Friday holiday and keeps the top N", () => {
+    const bars = daily(320);
+    const friday = bars.findIndex((bar, index) => index > 250 && weekdayUtc(bar.t) === 5);
+    const without = bars.filter((_, index) => index !== friday);
+    const ctx = contextFor(momentum, without, without);
+    const at = without.findIndex((bar) => bar.t === bars[friday - 1].t);
+    ctx.rank[at] = 1;
+    ctx.rankN[at] = 50;
+    ctx.indexUp[at] = 1;
+    expect(momentum.signals(ctx).some((signal) => signal.at === at)).toBe(true);
+    ctx.indexUp[at] = 0;
+    expect(momentum.signals(ctx).some((signal) => signal.at === at)).toBe(false);
+
+    const full = contextFor(momentum, bars, bars);
+    const kept = bars.findIndex((bar, index) => index > 250 && weekdayUtc(bar.t) === 5);
+    full.rank[kept] = 1;
+    full.rankN[kept] = 50;
+    full.indexUp[kept] = 1;
+    expect(momentum.signals(full).some((signal) => signal.at === kept)).toBe(true);
+    full.rank[kept] = 1 - 8 / 49;
+    full.rankN[kept] = 50;
+    expect(momentum.signals(full).some((signal) => signal.at === kept)).toBe(false);
+    full.rank[kept] = 1 - 7 / 49;
+    expect(momentum.signals(full).some((signal) => signal.at === kept)).toBe(true);
+
+    const walked = walkSymbol(momentum, contextFor(momentum, bars, bars), {
+      symbol: "AAA",
+      tick: 0.05,
+      slip: 0.0005,
+      from: bars[210].t,
+      to: bars[250].t,
+      gttGap: 0,
+    });
+    const rows = [...walked.trades, ...walked.opens];
+    const exits = new Map<string, number>();
+    for (const trade of rows) exits.set(trade.exitDate, (exits.get(trade.exitDate) ?? 0) + 1);
+    expect([...exits.values()].some((count) => count > 1)).toBe(true);
+    expect(rows.every((trade) => trade.priceStop === false)).toBe(true);
+  });
+
+  it("fills a daily limit only when the range contains it", () => {
+    const through = limitBars(99, 101, 98, 100);
+    const filled = walkSymbol(limitStrategy(90), emptyContext(through), walkOpts());
+    expect(filled.trades).toHaveLength(0);
+    expect(filled.opens).toHaveLength(1);
+    expect(filled.opens[0].entryPx).toBeCloseTo(100.5, 2);
+    expect(filled.opens[0].fill).toBe("daily");
+
+    const below = limitBars(99, 100.2, 98, 100);
+    expect(walkSymbol(limitStrategy(90), emptyContext(below), walkOpts()).opens).toHaveLength(0);
+
+    const chase = limitBars(106, 106, 90, 100);
+    const chased = walkSymbol(limitStrategy(90), emptyContext(chase), walkOpts());
+    expect(chased.trades).toHaveLength(0);
+    expect(chased.opens).toHaveLength(0);
+
+    const rested = limitBars(102, 103, 100, 101);
+    const limitFill = walkSymbol(limitStrategy(90), emptyContext(rested), walkOpts());
+    expect(limitFill.opens).toHaveLength(1);
+    expect(limitFill.opens[0].entryPx).toBeCloseTo(100.5, 2);
+
+    const close = limitBars(100.4, 101, 100, 100.6);
+    expect(walkSymbol(limitStrategy(100), emptyContext(close), walkOpts()).opens).toHaveLength(0);
+  });
+
   it("ignores bars after 15:15, flattens at the exit time, and stops the day after −2%", () => {
     const bars = fiveMinute("2024-11-18");
     bars[3] = { ...bars[3], h: bars[3].h + 2, c: bars[3].c + 1 };
@@ -205,7 +324,25 @@ describe("research backtest", () => {
       force: false,
       grid: false,
       only: ["INFY", "TCS"],
+      anytime: false,
     });
+  });
+
+  it("lets --anytime skip the window off the server and refuses it on mcube-server", () => {
+    expect(parseResearchArgs(["--book", "swing", "--anytime"])).toMatchObject({ book: "swing", anytime: true });
+    expect(shouldStopResearch(true, 10 * 60)).toBe(false);
+    expect(shouldStopResearch(false, 10 * 60)).toBe(true);
+    expect(() => guardResearchAnytime(true, "office-pc")).not.toThrow();
+    expect(() => guardResearchAnytime(false, "mcube-server")).not.toThrow();
+    expect(() => guardResearchAnytime(true, "mcube-server")).toThrow(ANYTIME_ON_SERVER);
+    expect(queueResearchArgs({
+      book: "swing",
+      strategies: ["ema"],
+      sample: "building",
+      force: true,
+      grid: true,
+      anytime: true,
+    }).anytime).toBe(false);
   });
 
   it("starts only with 60 minutes left and stops at the trading window", () => {
@@ -230,6 +367,129 @@ describe("research backtest", () => {
     expect(researchWindowEnded(7 * 60 + 59)).toBe(false);
     expect(researchWindowEnded(8 * 60)).toBe(true);
     expect(researchWindowEnded(15 * 60 + 59)).toBe(true);
+  });
+
+  it("blocks a new buy under the index average and leaves the exit alone", () => {
+    expect(indexAllows([10, 10, 10, 9], 3, 3)).toBe(false);
+    expect(indexAllows([10, 10, 10, 11], 3, 3)).toBe(true);
+    expect(indexAllows([11], 0, 0)).toBe(true);
+    const bars = daily(320);
+    const ctx = contextFor(momentum, bars, bars);
+    for (let i = 0; i < bars.length; i++) ctx.indexUp[i] = 1;
+    const open = momentum.signals(ctx).length;
+    expect(open).toBeGreaterThan(0);
+    for (let i = 0; i < bars.length; i++) ctx.indexClose[i] = i < 100 ? 100 : 50;
+    ctx.params.indexDays = 100;
+    expect(momentum.signals(ctx)).toHaveLength(0);
+    ctx.params.indexDays = 0;
+    expect(momentum.signals(ctx)).toHaveLength(open);
+    ctx.rank[110] = 0;
+    ctx.rankN[110] = 50;
+    ctx.params.exitTop = 25;
+    expect(momentum.afterClose({ ...ctx, entryAt: 100, side: "long", stop: 0, entryPx: 100 }, 110).exit).toBe(true);
+  });
+
+  it("sells a momentum gap through the 12% stop at the open", () => {
+    const bars = daily(320);
+    const ctx = contextFor(momentum, bars, bars);
+    for (let i = 0; i < bars.length; i++) ctx.indexUp[i] = 1;
+    ctx.params.stopPct = 0.12;
+    const at = momentum.signals(ctx)[0]?.at ?? -1;
+    expect(at).toBeGreaterThan(0);
+    const entry = at + 1;
+    const entryOpen = bars[entry].o;
+    bars[entry + 1].o = entryOpen * 0.8;
+    bars[entry + 1].h = entryOpen * 0.81;
+    bars[entry + 1].l = entryOpen * 0.79;
+    bars[entry + 1].c = entryOpen * 0.8;
+    const walked = walkSymbol(momentum, ctx, {
+      symbol: "AAA",
+      tick: 0.05,
+      slip: 0,
+      from: bars[entry].t,
+      to: bars[entry + 3].t,
+      gttGap: 0,
+      limitOffset: 0.005,
+      chasePct: 0.03,
+    });
+    const stopped = walked.trades.find((trade) => trade.entryDate === bars[entry].t);
+    expect(stopped?.exitReason).toBe("stop");
+    expect(stopped?.exitPx).toBeCloseTo(entryOpen * 0.8, 2);
+    expect(stopped?.sizeToCap).toBe(true);
+  });
+
+  it("tightens the RS trail after a 10% gain and still only lifts the stop", () => {
+    const bars = daily(80);
+    const ctx = contextFor(rsResilience, bars, bars);
+    ctx.params.tight = 1;
+    const close = bars[70].c;
+    const wide = rsResilience.afterClose({ ...ctx, entryAt: 60, side: "long", stop: 1, entryPx: close }, 70);
+    const tight = rsResilience.afterClose({ ...ctx, entryAt: 60, side: "long", stop: 1, entryPx: close / 1.1 }, 70);
+    expect(tight.stop).toBeGreaterThan(wide.stop);
+    const held = rsResilience.afterClose({ ...ctx, entryAt: 60, side: "long", stop: tight.stop + 5, entryPx: close / 1.1 }, 70);
+    expect(held.stop).toBe(tight.stop + 5);
+  });
+
+  it("charges both sells when half the position is taken off", () => {
+    const held = candidate("AAA", 1);
+    held.entryPx = 100;
+    held.exitPx = 140;
+    held.stop = 90;
+    held.scaleOut = { date: "2024-01-04", px: 130 };
+    held.exitDate = "2024-01-05";
+    held.marks = [
+      { date: "2024-01-02", close: 100 },
+      { date: "2024-01-03", close: 120 },
+      { date: "2024-01-04", close: 130 },
+    ];
+    const rules = {
+      capital: 100_000,
+      riskPct: 0.01,
+      maxOrderPct: 0.25,
+      minOrderInr: 1000,
+      cashReserve: 0,
+      maxNewBuys: 2,
+      maxOpen: 6,
+      maxPerSector: 2,
+      maxDailyDeployPct: 1,
+    };
+    const split = runSwingPortfolio([held], rules, ["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"]);
+    const whole = runSwingPortfolio([{ ...held, scaleOut: undefined }], rules, ["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"]);
+    expect(split.trades).toHaveLength(1);
+    expect(split.trades[0].charges).toBeGreaterThan(whole.trades[0].charges + 15);
+    expect(split.minCash).toBeGreaterThanOrEqual(-0.01);
+  });
+
+  it("caps each strategy at half the open slots and shares a real sector", () => {
+    const rules = {
+      capital: 100_000,
+      riskPct: 0.01,
+      maxOrderPct: 0.3,
+      minOrderInr: 1,
+      cashReserve: 0,
+      maxNewBuys: 5,
+      maxOpen: 2,
+      maxPerSector: 2,
+      maxPerStrategy: 1,
+      maxDailyDeployPct: 1,
+    };
+    const day = "2024-01-02";
+    const left = { ...candidate("AAA", 3), group: "rs", entryDate: day, priceStop: false, stop: 0 };
+    const again = { ...candidate("BBB", 2), group: "rs", entryDate: day, priceStop: false, stop: 0 };
+    const right = { ...candidate("CCC", 1), group: "momentum", entryDate: day, priceStop: false, stop: 0 };
+    const paired = runSwingPortfolio([left, again, right], rules, [day, "2024-01-03"]);
+    expect(paired.trades.map((trade) => trade.symbol).sort()).toEqual(["AAA", "CCC"]);
+
+    const banks = ["AAA", "BBB", "CCC"].map((symbol, index) => ({
+      ...candidate(symbol, 3 - index),
+      sector: "Banks",
+      entryDate: day,
+      priceStop: false as const,
+      stop: 0,
+    }));
+    const capped = runSwingPortfolio(banks, { ...rules, maxOpen: 6, maxPerStrategy: undefined, maxPerSector: 2 }, [day, "2024-01-03"]);
+    expect(capped.trades).toHaveLength(2);
+    expect(capped.blocks.sector).toBe(1);
   });
 });
 
@@ -269,6 +529,42 @@ function sessionTrade(symbol: string, entry: string, exit: string, entryPx: numb
     stop: 96,
     exitReason: "stop",
     barsHeld: 4,
+  };
+}
+
+function capCandidate(symbol: string, score: number, entry: string): Candidate {
+  const row = candidate(symbol, score);
+  return { ...row, symbol, score, sector: symbol, entryDate: entry, entryTs: entry, priceStop: false, stop: 0, entryPx: 100 };
+}
+
+function limitStrategy(stop: number): StrategyDef {
+  return {
+    name: "limit",
+    book: "swing",
+    params: {},
+    signals: () => [{ at: 0, side: "long", score: 1, stop, useLimit: true }],
+    afterClose: () => ({ exit: false, stop }),
+  };
+}
+
+function limitBars(open: number, high: number, low: number, close: number): Bar[] {
+  return [
+    { t: "2024-01-02", o: 100, h: 101, l: 99, c: 100, v: 1000 },
+    { t: "2024-01-03", o: open, h: high, l: low, c: close, v: 1000 },
+    { t: "2024-01-04", o: close, h: close + 0.2, l: close * 0.99, c: close, v: 1000 },
+  ];
+}
+
+function walkOpts() {
+  return {
+    symbol: "INFY",
+    tick: 0.05,
+    slip: 0.0005,
+    from: "2024-01-01",
+    to: "2024-12-31",
+    gttGap: 0.03,
+    limitOffset: 0.005,
+    chasePct: 0.03,
   };
 }
 

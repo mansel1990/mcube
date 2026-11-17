@@ -48,6 +48,12 @@ export const vwapStrategy: StrategyDef = {
   book: "intraday",
   params: {
     maxFlips: { default: 3, grid: [2, 3, 4] },
+    /** Establish the first regime without trading it; only a later cross can enter. */
+    warmupMinutes: { default: 15, grid: [] },
+    /** Neutral band around VWAP as a fraction of the prior daily ATR. */
+    bufferAtrFrac: { default: 0.05, grid: [] },
+    /** Stop distance as a fraction of the prior daily ATR. */
+    stopAtrFrac: { default: 0.25, grid: [] },
   },
   signals(ctx) {
     let pv = 0;
@@ -64,40 +70,66 @@ export const vwapStrategy: StrategyDef = {
       pv += typical * bar.v;
       vol += bar.v;
       const vwap = vol > 0 ? pv / vol : bar.c;
-      const next: Side = bar.c >= vwap ? "long" : "short";
+      if (minutesSinceOpen(clock) < ctx.params.warmupMinutes) continue;
+      const next = sideAt(bar.c, vwap, buffer(ctx));
+      if (!next) continue;
+      if (side == null) {
+        side = next;
+        continue;
+      }
       if (next === side) continue;
       if (flips >= maxFlips) break;
       const stop = next === "long" ? bar.c * 0.995 : bar.c * 1.005;
-      out.push({ at: i, side: next, score: vol, stop });
+      const selected = Number(ctx.cache?.get("selectionScore"));
+      out.push({ at: i, side: next, score: Number.isFinite(selected) ? selected : vol, stop });
       side = next;
       flips += 1;
     }
     return out;
   },
   afterClose(ctx, i) {
-    const wanted = vwapSide(ctx.bars, i);
+    const wanted = vwapSide(ctx, i);
     if (!wanted || wanted === ctx.side) return { exit: false, stop: ctx.stop };
     return { exit: true, stop: ctx.stop };
   },
-  bracket(entryPx, signal) {
-    const stop = signal.side === "long" ? entryPx * 0.995 : entryPx * 1.005;
+  bracket(entryPx, signal, ctx) {
+    const atrDistance = (ctx.atr ?? 0) * ctx.params.stopAtrFrac;
+    const distance = atrDistance > 0 ? atrDistance : entryPx * 0.005;
+    const stop = signal.side === "long" ? entryPx - distance : entryPx + distance;
     return { stop, target: null };
   },
 };
 
-function vwapSide(bars: Bar[], end: number): Side | null {
+function vwapSide(ctx: { bars: Bar[]; atr?: number; params: Record<string, number> }, end: number): Side | null {
   let pv = 0;
   let vol = 0;
   let side: Side | null = null;
   for (let i = 0; i <= end; i++) {
-    const clock = barClock(bars[i].t);
+    const clock = barClock(ctx.bars[i].t);
     if (clock < "09:15" || clock >= "15:15") continue;
-    const bar = bars[i];
+    const bar = ctx.bars[i];
     const typical = (bar.h + bar.l + bar.c) / 3;
     pv += typical * bar.v;
     vol += bar.v;
     const vwap = vol > 0 ? pv / vol : bar.c;
-    side = bar.c >= vwap ? "long" : "short";
+    if (minutesSinceOpen(clock) < ctx.params.warmupMinutes) continue;
+    side = sideAt(bar.c, vwap, buffer(ctx)) ?? side;
   }
   return side;
+}
+
+function buffer(ctx: { atr?: number; params: Record<string, number> }): number {
+  return Math.max(0, (ctx.atr ?? 0) * (ctx.params.bufferAtrFrac ?? 0));
+}
+
+function sideAt(close: number, vwap: number, band: number): Side | null {
+  if (close > vwap + band) return "long";
+  if (close < vwap - band) return "short";
+  return null;
+}
+
+function minutesSinceOpen(clock: string): number {
+  const hour = Number(clock.slice(0, 2));
+  const minute = Number(clock.slice(3, 5));
+  return hour * 60 + minute - (9 * 60 + 15);
 }

@@ -11,3 +11,16 @@ export function researchWindowEnded(minutes: number): boolean {
   const night = minutes >= 20 * 60 || minutes < 8 * 60;
   return !afternoon && !night;
 }
+
+export const ANYTIME_ON_SERVER = "Backtests on the server run only outside trading hours";
+
+/** `--anytime` skips the window. The server always refuses that flag. */
+export function guardResearchAnytime(anytime: boolean, hostname: string): void {
+  if (anytime && hostname === "mcube-server") throw new Error(ANYTIME_ON_SERVER);
+}
+
+/** False when a run may keep going. `--anytime` never stops for the window. */
+export function shouldStopResearch(anytime: boolean, minutes: number): boolean {
+  if (anytime) return false;
+  return researchWindowEnded(minutes);
+}

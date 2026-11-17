@@ -23,6 +23,8 @@ import {
   YAxis,
   ZAxis,
 } from "recharts";
+import { rebaseNifty } from "@/lib/mlive/benchmark";
+import { NIFTY_REASON_NOTE, type NiftyReason } from "@/lib/mlive/nifty-reason";
 import type { ExitReason, PnlModel, PnlTrade } from "@/lib/mlive/pnl";
 import { axisInr, chargeGroups, formatAvgDays, formatInr, formatProfitFactor, formatSample, formatWinRate, needsClosed, periodLabel, REASON_LABEL, shortDate } from "./pnl-ui";
 
@@ -193,15 +195,35 @@ export function ChartsBoard({ pnl, onOpen }: { pnl: PnlModel; onOpen?: (trade: P
   const closedTrades = useMemo(() => pnl.trades.filter((trade) => trade.status === "closed"), [pnl.trades]);
   const account = pnl.series.account;
   const start = pnl.capital.starting;
+  const [showNifty, setShowNifty] = useState(true);
+  const [closes, setCloses] = useState<{ date: string; close: number }[]>([]);
+  const [niftyReason, setNiftyReason] = useState<NiftyReason | null>(null);
+  useEffect(() => {
+    const from = account[0]?.date;
+    const to = account.at(-1)?.date;
+    if (!from || !to) return;
+    let cancel = false;
+    void fetch(`/api/mlive/nifty?from=${from}&to=${to}`, { cache: "no-store" }).then(async (res) => {
+      if (!res.ok || cancel) return;
+      const body = (await res.json()) as { closes?: { date: string; close: number }[]; reason?: NiftyReason | null };
+      if (cancel) return;
+      setCloses(body.closes ?? []);
+      setNiftyReason(body.reason ?? null);
+    });
+    return () => { cancel = true; };
+  }, [account]);
+  const nifty = useMemo(() => rebaseNifty(account.map((point) => ({ date: point.date, value: point.value })), closes), [account, closes]);
+  const niftyByDate = useMemo(() => new Map(nifty.map((point) => [point.date, point.value])), [nifty]);
   const yDomain = useMemo(() => {
     const values = account.map((point) => point.value);
+    if (showNifty) values.push(...nifty.map((point) => point.value));
     if (start) values.push(start);
     if (!values.length) return [0, 1];
     const min = Math.min(...values);
     const max = Math.max(...values);
     const pad = Math.max(400, (max - min) * 0.35);
     return [min - pad, max + pad];
-  }, [account, start]);
+  }, [account, start, showNifty, nifty]);
   const weeks = pnl.byPeriod.week;
   const byMonth = weeks.length >= 8;
   const periods = useMemo(() => (byMonth ? pnl.byPeriod.month : weeks).map((row) => ({
@@ -249,8 +271,13 @@ export function ChartsBoard({ pnl, onOpen }: { pnl: PnlModel; onOpen?: (trade: P
             rows={account.map((point) => [point.live ? `${shortDate(point.date)} live` : shortDate(point.date), money(point.value)])}
             height={280}
           >
+            <div className="chart-legend">
+              <span><i className="swatch profit" /> Mansel Live</span>
+              <button type="button" aria-pressed={showNifty} onClick={() => setShowNifty((on) => !on)}><i className="swatch nifty" /> Nifty 50</button>
+            </div>
+            {showNifty && niftyReason && <p className="muted">{NIFTY_REASON_NOTE[niftyReason]}</p>}
             <ResponsiveContainer width="100%" height={280}>
-              <AreaChart data={account.map((point) => ({ ...point, label: shortDate(point.date) }))}>
+              <AreaChart data={account.map((point) => ({ ...point, label: shortDate(point.date), nifty: showNifty ? niftyByDate.get(point.date) ?? null : null }))}>
                 <defs>
                   <linearGradient id="acct" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="var(--profit)" stopOpacity={0.35} />
@@ -265,7 +292,8 @@ export function ChartsBoard({ pnl, onOpen }: { pnl: PnlModel; onOpen?: (trade: P
                   <ReferenceLine y={start} stroke="var(--ink3)" strokeDasharray="4 4" label={{ value: `${money(start, start % 1 === 0 ? 0 : 2)} start`, position: "insideTopRight", fill: "var(--ink3)", fontSize: 11 }} />
                 )}
                 {live && <ReferenceDot x={shortDate(live.date)} y={live.value} r={5} fill="var(--profit)" />}
-                <Area type="monotone" dataKey="value" stroke="var(--profit)" fill="url(#acct)" strokeWidth={2} dot={account.length < 3} {...anim} />
+                <Area type="monotone" dataKey="value" name="Mansel Live" stroke="var(--profit)" fill="url(#acct)" strokeWidth={2} dot={account.length < 3} {...anim} />
+                {showNifty && <Area type="monotone" dataKey="nifty" name="Nifty 50" stroke="var(--open)" fill="transparent" strokeWidth={2} connectNulls dot={false} {...anim} />}
               </AreaChart>
             </ResponsiveContainer>
           </Shell>
@@ -390,14 +418,14 @@ export function ChartsBoard({ pnl, onOpen }: { pnl: PnlModel; onOpen?: (trade: P
       <section className="card sheet">
         <div className="sheet-h"><h2>Strategy face-off</h2></div>
         <div className="face">
-          {(["rs", "ema"] as const).map((key) => {
-            const block = pnl.byStrategy[key];
+          {pnl.strategies.map((block) => {
+            const key = block.key;
             const openRows = pnl.trades.filter((trade) => trade.strategy === key && trade.status === "open");
             const closedRows = pnl.trades.filter((trade) => trade.strategy === key && trade.status === "closed");
             const unrealised = openRows.reduce((sum, trade) => sum + trade.net, 0);
             return (
               <div key={key} className={`face-col accent accent-${key}${block.stats.trades === 0 && openRows.length === 0 ? " empty" : ""}`}>
-                <b className={key}>{key === "rs" ? "RS" : "EMA"}</b>
+                <b className={key}>{block.label}</b>
                 {block.stats.trades === 0 && openRows.length === 0 ? <p className="empty-mid">No trades yet</p> : (
                   <dl className="face-grid">
                     {block.stats.trades === 0 ? (

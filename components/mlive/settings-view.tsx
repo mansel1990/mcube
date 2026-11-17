@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { haltReasonText } from "@/lib/mlive/rules";
-import { inr } from "./format";
 
 type Settings = Record<string, unknown>;
 type Payload = {
@@ -11,71 +10,92 @@ type Payload = {
   nextReview: string;
   state: { status?: string; mode?: string; halt_reason?: string | null } | null;
   kite: { connected: boolean; connectedAt: string | null; kiteUserId: string | null } | null;
-  kiteFunds: { connected: boolean; cash: number | null; error?: string | null };
   tradingLimit: number;
-  engineCanUse: number;
-  cashNote: string;
   engine: { kind?: string; status?: string; finished_at?: string } | null;
 };
 
-function enabled(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map(String);
-  return ["rs", "ema"];
-}
+const PCT = new Set(["risk_pct", "max_order_pct", "max_daily_deploy_pct", "chase_pct", "breaker_pct", "intraday_risk_pct", "intraday_day_loss_pct"]);
 
-function val(settings: Settings, key: string): string {
+function num(settings: Settings, key: string, fallback: number): number {
   const raw = settings[key];
-  if (raw == null) return "";
-  return typeof raw === "string" ? raw : JSON.stringify(raw);
+  const value = typeof raw === "number" ? raw : Number(raw);
+  return Number.isFinite(value) ? value : fallback;
 }
 
-function Toggle({ on, label, onClick }: { on: boolean; label: string; onClick: () => void }) {
+function shown(settings: Settings, key: string, fallback: number): string {
+  const value = num(settings, key, fallback);
+  if (PCT.has(key)) return String(Math.round(value * 1000) / 10);
+  return String(value);
+}
+
+function stored(key: string, text: string): number | string | boolean {
+  if (key === "intraday_exit_time") return text;
+  const value = Number(text);
+  if (!Number.isFinite(value)) return text;
+  return PCT.has(key) ? value / 100 : value;
+}
+
+function Field({
+  label,
+  unit,
+  value,
+  onChange,
+}: {
+  label: string;
+  unit: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
   return (
-    <button type="button" className="switch" aria-pressed={on} aria-label={`${label}, ${on ? "on" : "off"}`} onClick={onClick}>
-      <span className="word">{on ? "On" : "Off"}</span>
-      <span className="knob" aria-hidden="true" />
-    </button>
+    <label className="field">
+      <div><b>{label}</b></div>
+      <span>
+        {unit ? <span className="unit">{unit}</span> : null}
+        <input className="n" value={value} onChange={(event) => onChange(event.target.value)} inputMode="decimal" />
+      </span>
+    </label>
   );
 }
-
-const NUMBER_FIELDS: { key: string; label: string; help: string }[] = [
-  { key: "risk_pct", label: "Risk per trade", help: "Fraction of the trading limit. 0.01 is 1%." },
-  { key: "max_order_pct", label: "Max of the trading limit per order", help: "0.25 is a quarter of the trading limit." },
-  { key: "min_order_inr", label: "Minimum order, ₹", help: "Skip a name that would be smaller than this." },
-  { key: "cash_reserve_inr", label: "Cash reserve, ₹", help: "Held back for a sell's charges and the next idea." },
-  { key: "max_buys_per_day", label: "Max buys a day", help: "Send cap. Includes partial fills of the same order as one." },
-  { key: "max_new_buys_per_day", label: "New buys a day", help: "Pacing. Default 2. The lower of this and the send cap wins." },
-  { key: "max_buys_per_strategy_per_day", label: "Buys per strategy a day", help: "Default 2. RS and EMA are counted apart." },
-  { key: "max_open_per_strategy", label: "Open positions per strategy", help: "Default 4." },
-  { key: "max_daily_deploy_pct", label: "Daily deploy", help: "0.5 means new buys may use half of Engine can use now, measured at the first buy step." },
-  { key: "max_sells_per_day", label: "Max sells a day", help: "A GTT stop does not use this slot." },
-  { key: "max_open_positions", label: "Max open positions", help: "One position per symbol." },
-  { key: "max_per_sector", label: "Max per sector", help: "Same Nifty 500 industry." },
-  { key: "breaker_pct", label: "Breaker drawdown", help: "0.25 pauses new trades at a 25% drop from peak." },
-  { key: "chase_pct", label: "Do not chase above", help: "0.03 skips a buy more than 3% above the signal close." },
-];
 
 export function SettingsView() {
   const kiteFlag = useSearchParams().get("kite");
   const [payload, setPayload] = useState<Payload | null>(null);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [limit, setLimit] = useState("");
+  const [shortOn, setShortOn] = useState(true);
+  const [remind, setRemind] = useState(true);
+  const [swingMore, setSwingMore] = useState(false);
+  const [dayMore, setDayMore] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [note, setNote] = useState("");
-  const [limitOpen, setLimitOpen] = useState(false);
-  const [amount, setAmount] = useState("");
-  const [connecting, setConnecting] = useState(false);
   const [confirmAuto, setConfirmAuto] = useState(false);
-  const [modeBusy, setModeBusy] = useState<"approve" | "auto" | "paused" | null>(null);
+  const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState(kiteFlag === "connected" ? "Kite is connected." : "");
-  const kiteError = kiteFlag === "error" ? "Kite login did not finish. Try reconnect." : "";
+
   async function load() {
     const res = await fetch("/api/mlive/settings");
     if (!res.ok) return;
-    setPayload(await res.json());
+    const body = (await res.json()) as Payload;
+    setPayload(body);
+    const settings = body.settings;
+    const next: Record<string, string> = {};
+    for (const key of ["breaker_pct", "max_order_pct", "risk_pct", "max_new_buys_per_day", "max_daily_deploy_pct", "min_order_inr", "cash_reserve_inr", "max_open_positions", "max_buys_per_strategy_per_day", "max_open_per_strategy", "max_per_sector", "max_sells_per_day", "chase_pct", "max_buys_per_day", "intraday_capital_inr", "intraday_risk_pct", "intraday_day_loss_pct", "intraday_max_trades", "intraday_watchlist", "intraday_freeze_days"]) {
+      next[key] = shown(settings, key, 0);
+    }
+    const window = settings.intraday_entry_window;
+    const entry = window && typeof window === "object" ? window as { before?: string; after?: string } : {};
+    next.intraday_entry_before = entry.before ?? "";
+    next.intraday_entry_after = entry.after ?? "";
+    next.intraday_exit_time = String(settings.intraday_exit_time ?? "15:10").replace(/"/g, "");
+    setDraft(next);
+    setLimit(String(Math.round(body.tradingLimit)));
+    setShortOn(settings.intraday_short !== false);
+    setRemind(settings.login_reminder !== false);
+    setDirty(false);
   }
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void load();
-    }, 0);
+    const timer = window.setTimeout(() => { void load(); }, 0);
     return () => window.clearTimeout(timer);
   }, []);
 
@@ -85,246 +105,173 @@ export function SettingsView() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
-  useEffect(() => {
-    if (!payload?.kite) return;
-    window.dispatchEvent(new CustomEvent("mlive-kite", { detail: { connected: payload.kite.connected } }));
-  }, [payload]);
+  function edit(key: string, value: string) {
+    setDraft((current) => ({ ...current, [key]: value }));
+    setDirty(true);
+  }
 
-  async function save(key: string, value: unknown) {
+  const modeNow = String(payload?.state?.mode ?? "approve").replace(/"/g, "");
+  const status = String(payload?.state?.status ?? "active");
+  const paused = status === "paused_by_user" || status === "paused_by_breaker" || modeNow === "paused";
+
+  async function commitMode(next: "approve" | "auto") {
+    setConfirmAuto(false);
+    setBusy(true);
+    try {
+      await fetch("/api/mlive/state", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: next }) });
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function save() {
+    if (!payload) return;
+    setBusy(true);
+    const changes: Record<string, unknown> = {};
+    for (const [key, text] of Object.entries(draft)) {
+      if (key === "intraday_entry_before" || key === "intraday_entry_after") continue;
+      changes[key] = key === "intraday_exit_time" ? text : stored(key, text);
+    }
+    changes.intraday_entry_window = { before: draft.intraday_entry_before ?? "", after: draft.intraday_entry_after ?? "" };
+    changes.intraday_short = shortOn;
+    changes.login_reminder = remind;
+    changes.intraday_leverage = 1;
     const res = await fetch("/api/mlive/settings", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ key, value }),
+      body: JSON.stringify({ changes }),
     });
-    setNote(res.ok ? "Saved. The next engine run uses it." : "Could not save");
+    const body = (await res.json().catch(() => null)) as { error?: string; queued?: string[] } | null;
+    const nextLimit = Number(limit);
+    if (res.ok && nextLimit > 0 && nextLimit !== Math.round(payload.tradingLimit)) {
+      const delta = nextLimit - payload.tradingLimit;
+      await fetch("/api/mlive/fund", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: delta > 0 ? "deposit" : "withdrawal", amount: Math.abs(delta), note: "Trading limit" }),
+      });
+    }
+    setNote(!res.ok ? body?.error || "Could not save" : body?.queued?.length ? "Saved. A looser limit starts the next market day." : "Saved.");
+    setBusy(false);
     await load();
   }
 
-  const modeNow = String(payload?.state?.mode ?? payload?.settings.mode ?? "approve").replace(/"/g, "");
-
-  async function commitMode(next: "approve" | "auto" | "paused") {
-    setConfirmAuto(false);
-    setModeBusy(next);
-    try {
-      const res = await fetch("/api/mlive/state", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mode: next }),
-      });
-      setNote(res.ok ? "" : "Could not change the mode.");
-      await load();
-    } finally {
-      setModeBusy(null);
-    }
-  }
-
-  function mode(next: "approve" | "auto" | "paused") {
-    if (modeBusy || next === modeNow) return;
-    if (modeNow === "approve" && next === "auto") {
-      setConfirmAuto(true);
-      return;
-    }
-    setConfirmAuto(false);
-    void commitMode(next);
-  }
-
-  function reconnect(event: { preventDefault: () => void }) {
-    event.preventDefault();
-    setConnecting(true);
-    window.setTimeout(() => {
-      window.location.assign("/api/mlive/kite/login");
-    }, 60);
-  }
-
-  async function changeLimit(kind: "deposit" | "withdrawal") {
-    const parsed = Number(amount);
-    if (!(parsed > 0)) return;
-    const res = await fetch("/api/mlive/fund", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ kind, amount: parsed, note: kind === "deposit" ? "Raise limit" : "Lower limit" }),
-    });
-    const body = (await res.json().catch(() => null)) as { error?: string } | null;
-    setNote(res.ok ? "Trading limit updated. The breaker peak moved with it." : body?.error || "Could not change the limit");
-    if (res.ok) {
-      setAmount("");
-      setLimitOpen(false);
-      await load();
-    }
-  }
-
   if (!payload) return <p className="page">Loading settings…</p>;
-  const settings = payload.settings;
-  const nextReview = payload.nextReview;
-  const strategies = enabled(settings.strategies_enabled);
-  const status = String(payload.state?.status ?? "active");
-  const engineAt = payload.engine?.finished_at
-    ? new Date(String(payload.engine.finished_at)).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })
-    : "no run yet";
+  const connectedAt = payload.kite?.connectedAt
+    ? new Date(payload.kite.connectedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })
+    : "";
+  const swingMoreFields = [
+    ["min_order_inr", "Smallest order", "₹"],
+    ["cash_reserve_inr", "Cash kept back", "₹"],
+    ["max_open_positions", "Open positions, at most", ""],
+    ["max_buys_per_strategy_per_day", "Buys per strategy a day", ""],
+    ["max_open_per_strategy", "Open per strategy", ""],
+    ["max_per_sector", "Per sector, at most", ""],
+    ["max_sells_per_day", "Sells a day, at most", ""],
+    ["chase_pct", "Skip a buy above signal by", "%"],
+    ["max_buys_per_day", "Orders the engine may send a day", ""],
+  ] as const;
+  const capital = Number(draft.intraday_capital_inr || "0");
 
   return (
     <section className="page">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <div>
-          <h1>Settings</h1>
-          <p className="sub">Changes apply on the next engine run. Exit rules are fixed from the backtest and shown read-only. Next review {nextReview}.</p>
-        </div>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button type="button" className="btn warn" onClick={async () => {
-            const res = await fetch("/api/mlive/kite/disconnect", { method: "POST" });
-            setNote(res.ok ? "Disconnected" : "Could not disconnect");
-            if (res.ok) window.dispatchEvent(new CustomEvent("mlive-kite", { detail: { connected: false } }));
-            await load();
-          }}>Disconnect</button>
-          <a className="btn primary" href="/api/mlive/kite/login" onClick={reconnect} aria-busy={connecting}>
-            {connecting && <span className="spin" aria-hidden="true" />}
-            {connecting ? "Connecting…" : "Reconnect Kite"}
-          </a>
-        </div>
+      <div className="page-head">
+        <h1>Settings</h1>
+        <button type="button" className="btn primary" disabled={!dirty || busy} onClick={() => void save()}>{busy ? "Saving…" : "Save changes"}</button>
       </div>
-      {(kiteError || note) && <p className="sub">{kiteError || note}</p>}
+      {note && <p className="sub">{note}</p>}
       {toast && <p className="toast" role="status">{toast}</p>}
-      <div className="stats cash-strip">
-        <div className="card stat">
-          <p className="lbl">Cash in Kite</p>
-          <div className={`v n ${payload.kiteFunds.cash != null && payload.kiteFunds.cash <= 0 ? "down" : payload.kiteFunds.cash != null ? "up" : ""}`}>
-            {payload.kiteFunds.cash == null ? "—" : inr(payload.kiteFunds.cash, 2)}
-          </div>
-          <div className="h">{payload.kiteFunds.error ? payload.kiteFunds.error : payload.kiteFunds.connected ? payload.cashNote || "Live available equity cash." : "Connect Kite to see the cash in the account."}</div>
-        </div>
-        <div className="card stat">
-          <p className="lbl">Trading limit</p>
-          <div className="v n">{inr(payload.tradingLimit)}</div>
-          <div className="h">Grows with profit. The engine never uses more than this.</div>
-        </div>
-        <div className="card stat">
-          <p className="lbl">Engine can use now</p>
-          <div className={`v n ${payload.engineCanUse <= 0 ? "down" : "up"}`}>{inr(payload.engineCanUse)}</div>
-          <div className="h">After holdings, pending buys, and the cash reserve.</div>
-        </div>
-      </div>
+      {kiteFlag === "error" && <p className="sub">Kite login did not finish. Try reconnect.</p>}
       <div className="card" style={{ marginTop: 16 }}>
-        <div className="field" style={{ borderTop: 0 }}>
-          <div><b>Change the trading limit</b><small>Raise or lower it. The breaker peak moves by the same amount.</small></div>
-          <button type="button" className="btn" onClick={() => setLimitOpen((open) => !open)}>{limitOpen ? "Close" : "Change limit"}</button>
+        <div className="field">
+          <div><b>Engine</b><small>{paused ? "Paused" : "Running"}</small></div>
+          <button type="button" className="btn" disabled={busy} onClick={async () => {
+            setBusy(true);
+            await fetch("/api/mlive/state", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(paused ? { resume: true } : { pause: true }) });
+            setBusy(false);
+            await load();
+          }}>{paused ? "Resume engine" : "Pause engine"}</button>
         </div>
-        {limitOpen && (
+        <div className="field">
+          <div><b>Mode</b></div>
+          <div className="seg" role="group" aria-label="Mode">
+            <button type="button" data-tone="auto" aria-pressed={modeNow === "auto"} disabled={busy} onClick={() => { if (modeNow !== "auto") setConfirmAuto(true); }}>Auto</button>
+            <button type="button" data-tone="you" aria-pressed={modeNow === "approve" || modeNow === "paused"} disabled={busy} onClick={() => void commitMode("approve")}>Approval</button>
+          </div>
+        </div>
+        {confirmAuto && (
+          <div className="field" role="alertdialog" aria-label="Confirm fully automatic">
+            <div><b>Switch to Auto?</b><small>The engine will send orders inside the rules without asking you.</small></div>
+            <span>
+              <button type="button" className="btn" onClick={() => setConfirmAuto(false)}>Cancel</button>
+              <button type="button" className="btn primary" onClick={() => void commitMode("auto")}>Confirm</button>
+            </span>
+          </div>
+        )}
+        <div className="field">
+          <div><b>Kite</b><small>{payload.kite?.connected ? `Connected ${connectedAt}` : "Not connected"}</small></div>
+          <a className="btn" href="/api/mlive/kite/login">Reconnect</a>
+        </div>
+        <Field label="Breaker drawdown" unit="%" value={draft.breaker_pct ?? ""} onChange={(value) => edit("breaker_pct", value)} />
+        <div className="field">
+          <div><b>Morning login reminder</b></div>
+          <button type="button" className="switch" aria-pressed={remind} onClick={() => { setRemind((on) => !on); setDirty(true); }}>
+            <span className="word">{remind ? "On" : "Off"}</span><span className="knob" />
+          </button>
+        </div>
+        {(status === "paused_by_breaker" || status === "halted_today") && (
           <div className="field">
-            <input className="n" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="Amount" inputMode="decimal" aria-label="Limit change amount" />
-            <button type="button" className="btn" onClick={() => changeLimit("deposit")}>Raise limit</button>
-            <button type="button" className="btn" onClick={() => changeLimit("withdrawal")}>Lower limit</button>
+            <div><b>Resume</b><small>{status === "halted_today" ? haltReasonText(payload.state?.halt_reason ?? null) : "The breaker stays paused until you resume."}</small></div>
           </div>
         )}
       </div>
       <div className="set-grid" style={{ marginTop: 16 }}>
-        <div className="card span-2">
-          <div className="card-h"><h2>How orders go out</h2></div>
-          <div className="modes">
-            {(["approve", "auto", "paused"] as const).map((item) => (
-              <button key={item} type="button" className="mode" data-mode={item} aria-pressed={modeNow === item} aria-busy={modeBusy === item} disabled={modeBusy != null} onClick={() => mode(item)}>
-                <b>
-                  {modeBusy === item && <span className="spin" aria-hidden="true" />}
-                  {modeBusy === item ? "Saving…" : item === "approve" ? "Approve each" : item === "auto" ? "Fully automatic" : "Paused"}
-                </b>
-                <span>{item === "approve" ? "You confirm each buy and sell." : item === "auto" ? "The engine sends inside the rules." : "No new orders. Stops still protect."}</span>
-              </button>
-            ))}
-          </div>
-          {confirmAuto && (
-            <div className="field" role="alertdialog" aria-label="Confirm fully automatic">
-              <div>
-                <b>Switch to fully automatic?</b>
-                <small>The engine will send buys and sells inside the rules without asking you.</small>
-              </div>
-              <div style={{ display: "flex", gap: 8, flex: "none" }}>
-                <button type="button" className="btn" onClick={() => setConfirmAuto(false)} disabled={modeBusy != null}>Cancel</button>
-                <button type="button" className="btn primary" onClick={() => void commitMode("auto")} disabled={modeBusy != null}>
-                  {modeBusy === "auto" && <span className="spin" aria-hidden="true" />}
-                  {modeBusy === "auto" ? "Switching…" : "Confirm"}
-                </button>
-              </div>
-            </div>
-          )}
-          <div className="field">
-            <div><b>Account</b><small>Zerodha client ID</small></div>
-            <span className="n">{payload.kite?.kiteUserId || "—"}</span>
-          </div>
-          <div className="field">
-            <div><b>Session</b><small>Kite tokens expire every morning</small></div>
-            <span className={`pill ${payload.kite?.connected ? "on" : "off"}`}>{payload.kite?.connected ? `Connected ${payload.kite.connectedAt ? new Date(payload.kite.connectedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" }) : ""}` : "Not connected"}</span>
-          </div>
-          <div className="field">
-            <div><b>Static IP</b><small>Whitelisted for order placement</small></div>
-            <span className="n">139.59.51.34</span>
-          </div>
-          <div className="field">
-            <div><b>Engine health</b><small>Last run {payload.engine?.kind ?? "—"} · {payload.engine?.status ?? "—"} · {engineAt}. Orders leave from the server, not the relay.</small></div>
-            <span className={`pill ${payload.engine?.status === "ok" ? "on" : "warn"}`}>{payload.engine?.status === "ok" ? "Healthy" : payload.engine ? String(payload.engine.status) : "Waiting"}</span>
-          </div>
-          <div className="field">
-            <div><b>Morning login reminder</b><small>Push at 08:30 and again at 09:00 if there is no session</small></div>
-            <Toggle on={settings.login_reminder !== false} label="Morning login reminder" onClick={() => save("login_reminder", settings.login_reminder === false)} />
-          </div>
-          {(status === "paused_by_breaker" || status === "paused_by_user" || status === "halted_today") && (
-            <div className="field">
-              <div>
-                <b>Resume</b>
-                <small>
-                  {status === "halted_today"
-                    ? haltReasonText(payload.state?.halt_reason ?? null)
-                    : status === "paused_by_breaker"
-                      ? "The breaker stays paused until you resume."
-                      : "Paused from Home or Settings."}
-                </small>
-              </div>
-              <button type="button" className="btn primary" onClick={async () => { await fetch("/api/mlive/state", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resume: true }) }); await load(); }}>Resume</button>
-            </div>
-          )}
-          <div className="field">
-            <div><b>Dry run</b><small>On until you turn it off in the database. The web does not flip this.</small></div>
-            <span className={`pill ${settings.dry_run === false ? "on" : "warn"}`}>{settings.dry_run === false ? "Off · live" : "On · simulated"}</span>
-          </div>
-        </div>
         <div className="card">
-          <div className="card-h"><h2>Money rules</h2></div>
-          {NUMBER_FIELDS.map((field) => (
-            <label className="field" key={field.key}>
-              <div><b>{field.label}</b><small>{field.help}</small></div>
-              <input
-                className="n"
-                defaultValue={val(settings, field.key)}
-                onBlur={(event) => {
-                  const next = Number(event.target.value);
-                  if (Number.isFinite(next)) void save(field.key, next);
-                }}
-              />
-            </label>
+          <div className="card-h"><h2><i className="book-dot" style={{ background: "var(--swing)", marginRight: 8 }} />Swing book</h2></div>
+          <Field label="Trading limit" unit="₹" value={limit} onChange={(value) => { setLimit(value); setDirty(true); }} />
+          <Field label="Most in one order" unit="%" value={draft.max_order_pct ?? ""} onChange={(value) => edit("max_order_pct", value)} />
+          <Field label="Risk per trade" unit="%" value={draft.risk_pct ?? ""} onChange={(value) => edit("risk_pct", value)} />
+          <Field label="New buys a day" unit="" value={draft.max_new_buys_per_day ?? ""} onChange={(value) => edit("max_new_buys_per_day", value)} />
+          <Field label="Cash used in one day" unit="%" value={draft.max_daily_deploy_pct ?? ""} onChange={(value) => edit("max_daily_deploy_pct", value)} />
+          <div className="field"><button type="button" className="btn" onClick={() => setSwingMore((open) => !open)}>{swingMore ? "Fewer rules" : "More rules (9)"}</button></div>
+          {swingMore && swingMoreFields.map(([key, label, unit]) => (
+            <Field key={key} label={label} unit={unit} value={draft[key] ?? ""} onChange={(value) => edit(key, value)} />
           ))}
         </div>
-        <div className="stack">
-          <div className="card">
-            <div className="card-h"><h2>Exit rules</h2><p className="sub">Chosen 5 Nov 2026. Read only.</p></div>
-            <div className="field"><div><b>RS</b><small>Chandelier: highest close since entry minus 2.5 × ATR(14). Ratchet up only. No 52-week tighten. GTT 3% below the stop.</small></div></div>
-            <div className="field"><div><b>EMA</b><small>Daily close below the 20-day EMA. The stop can fall with the EMA. Skip a limit entry that sits below the EMA. GTT 3% below.</small></div></div>
+        <div className="card">
+          <div className="card-h"><h2><i className="book-dot" style={{ background: "var(--intraday)", marginRight: 8 }} />Intraday book</h2></div>
+          <Field label="Capital" unit="₹" value={draft.intraday_capital_inr ?? ""} onChange={(value) => edit("intraday_capital_inr", value)} />
+          <div className="field">
+            <div><b>Leverage</b><small>Buying power ₹{Number.isFinite(capital) ? capital.toLocaleString("en-IN") : "—"}. No leverage.</small></div>
+            <div className="seg lev" role="group" aria-label="Leverage">
+              {[1, 2, 3, 4, 5].map((step) => (
+                <button key={step} type="button" aria-pressed={step === 1} disabled={step !== 1}>{step}×</button>
+              ))}
+            </div>
           </div>
-          <div className="card">
-            <div className="card-h"><h2>Strategies</h2><p className="sub">Next review {nextReview}.</p></div>
-            {(["rs", "ema"] as const).map((strategy) => (
-              <div className="field" key={strategy}>
-                <div><b>{strategy === "rs" ? "RS Resilience" : "EMA Pullback"}</b></div>
-                <Toggle
-                  on={strategies.includes(strategy)}
-                  label={strategy === "rs" ? "RS Resilience" : "EMA Pullback"}
-                  onClick={() => {
-                    const next = strategies.includes(strategy) ? strategies.filter((item) => item !== strategy) : [...strategies, strategy];
-                    void save("strategies_enabled", next);
-                  }}
-                />
-              </div>
-            ))}
+          <Field label="Risk per trade" unit="%" value={draft.intraday_risk_pct ?? ""} onChange={(value) => edit("intraday_risk_pct", value)} />
+          <Field label="Day loss limit" unit="%" value={draft.intraday_day_loss_pct ?? ""} onChange={(value) => edit("intraday_day_loss_pct", value)} />
+          <Field label="Trades a day, at most" unit="" value={draft.intraday_max_trades ?? ""} onChange={(value) => edit("intraday_max_trades", value)} />
+          <Field label="Close everything by" unit="" value={draft.intraday_exit_time ?? ""} onChange={(value) => edit("intraday_exit_time", value)} />
+          <div className="field">
+            <div><b>Allow short selling</b></div>
+            <button type="button" className="switch" aria-pressed={shortOn} onClick={() => { setShortOn((on) => !on); setDirty(true); }}>
+              <span className="word">{shortOn ? "On" : "Off"}</span><span className="knob" />
+            </button>
           </div>
+          <div className="field"><button type="button" className="btn" onClick={() => setDayMore((open) => !open)}>{dayMore ? "Fewer rules" : "More rules (4)"}</button></div>
+          {dayMore && (
+            <>
+              <Field label="No new trade before" unit="" value={draft.intraday_entry_before ?? ""} onChange={(value) => edit("intraday_entry_before", value)} />
+              <Field label="No new trade after" unit="" value={draft.intraday_entry_after ?? ""} onChange={(value) => edit("intraday_entry_after", value)} />
+              <Field label="Watchlist size" unit="" value={draft.intraday_watchlist ?? ""} onChange={(value) => edit("intraday_watchlist", value)} />
+              <Field label="Freeze size after red days" unit="" value={draft.intraday_freeze_days ?? ""} onChange={(value) => edit("intraday_freeze_days", value)} />
+            </>
+          )}
         </div>
       </div>
+      <p className="note">Exit rules change in code. Swing stays delivery and long only. Next review {payload.nextReview}.</p>
     </section>
   );
 }

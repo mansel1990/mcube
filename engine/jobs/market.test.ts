@@ -13,7 +13,10 @@ import {
   keepInstrumentRows,
   monthChunks,
   monthFile,
+  catchupFrom,
+  groupSessionRanges,
   parseMarketArgs,
+  parseNiftyList,
   seriesPlans,
   spanChunks,
   writeMonthFile,
@@ -59,8 +62,15 @@ describe("market history layout", () => {
     expect(fiveNeon).toMatchObject({ store: "neon", table: "candles_5m", chunk: "span", span: 90 });
     expect(inclusiveDays(fiveNeon?.from ?? "", "2026-11-16")).toBe(90);
     expect(plans[2]).toMatchObject({ store: "file", fileKind: "5m", chunk: "month", from: addDays("2026-11-16", -730), barsPerDay: 75 });
-    expect(plans[3]).toMatchObject({ store: "file", fileKind: "1m", table: null, from: addDays("2026-11-16", -365), barsPerDay: 375 });
+    expect(plans[3]).toMatchObject({ store: "file", fileKind: "1m", table: null, from: "2024-11-18", barsPerDay: 375 });
     expect(plans.some((plan) => plan.table === "candles_1m")).toBe(false);
+  });
+
+  it("fills missed sessions from the day after the last daily candle", () => {
+    expect(catchupFrom("2026-11-17", "2026-11-12", "2026-11-16")).toBe("2026-11-13");
+    expect(catchupFrom("2026-11-17", "2026-11-16", "2026-11-16")).toBe("2026-11-17");
+    expect(catchupFrom("2026-11-17", "2026-11-17", "2026-11-16")).toBe("2026-11-17");
+    expect(catchupFrom("2026-11-17", null, "2026-11-16")).toBe("2026-11-17");
   });
 
   it("parses a smoke-test symbol list that includes NIFTY 50", () => {
@@ -70,7 +80,17 @@ describe("market history layout", () => {
       series: "5m-files",
     });
     expect(parseMarketArgs([])).toEqual({});
+    expect(parseMarketArgs(["--refetch-gaps", "--only", "TATASTEEL"])).toEqual({ refetchGaps: true, only: ["TATASTEEL"] });
     expect(() => parseMarketArgs(["--series", "minute"])).toThrow(/--series/);
+    expect(parseNiftyList('Company Name,Industry,Symbol,Series\n"Trent Ltd",Retail,TRENT,EQ\n')).toEqual([
+      { symbol: "TRENT", industry: "Retail" },
+    ]);
+    const calendar = ["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"];
+    expect(groupSessionRanges(["2024-01-03", "2024-01-04"], calendar)).toEqual([{ from: "2024-01-03", to: "2024-01-04" }]);
+    expect(groupSessionRanges(["2024-01-03", "2024-01-05"], calendar)).toEqual([
+      { from: "2024-01-03", to: "2024-01-03" },
+      { from: "2024-01-05", to: "2024-01-05" },
+    ]);
   });
 
   it("keeps universe equities and indexes, and batches inserts", () => {

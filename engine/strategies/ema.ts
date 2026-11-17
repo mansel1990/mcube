@@ -2,7 +2,9 @@ import { emaSeries, rsiSeries, round2 } from "./indicators";
 import type { Signal, SignalContext, StrategyDef } from "./types";
 
 /**
- * Live EMA Pullback entry, from scanner/ema_scanner.py.
+ * Live EMA Pullback. Filters match scanner/ema_scanner.py.
+ * The buy is the live 09:45 limit at the signal close plus the limit offset,
+ * not the scanner's fill at the 20 EMA and not the next open.
  * The exit is the live one: the stop is the 20-day EMA and only moves up.
  * A close under it sells at the next open. The scanner's target is not used.
  */
@@ -46,7 +48,7 @@ export const emaPullback: StrategyDef = {
       }
       if (counted === 0 || volume <= 0) continue;
       const ratio = ctx.bars[i].v / (volume / counted);
-      out.push({ at: i, side: "long", score: ratio, stop: fast, minEntry: fast });
+      out.push({ at: i, side: "long", score: ratio, stop: fast, minEntry: fast, useLimit: true });
     }
     return out;
   },

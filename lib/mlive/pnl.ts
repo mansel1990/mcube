@@ -6,13 +6,15 @@
  */
 
 import { addDays, isTradingDay } from "./calendar";
+import { accountDrawdown } from "./charts";
 import type { ChargeSplit } from "./charges";
 
 /** Charge split plus an unclassified total when the rows have not been itemised yet. */
 export type BookedCharges = ChargeSplit & { unclassified: number };
 
 export type PnlRange = "1m" | "3m" | "all";
-export type PnlStrategyFilter = "all" | "rs" | "ema";
+export type PnlStrategyFilter = "all" | "rs" | "ema" | "orb" | "vwap";
+export type PnlBook = "all" | "swing" | "intraday";
 export type ExitReason = "trend_stop" | "gtt_exit" | "gtt_fallback" | "manual" | "breaker";
 export type ChargeSource = "kite" | "formula" | "adjustment";
 
@@ -23,7 +25,9 @@ export type ChargeType = (typeof CHARGE_TYPES)[number];
 export type PnlPosition = {
   id: number;
   symbol: string;
-  strategy: "rs" | "ema" | null;
+  strategy: "rs" | "ema" | string | null;
+  book?: "swing" | "intraday";
+  side?: "long" | "short";
   qty: number;
   avgPrice: number;
   openedAt: string;
@@ -93,6 +97,10 @@ export type BuildPnlInput = {
   range: PnlRange;
   strategy: PnlStrategyFilter;
   dryRun?: boolean;
+  /** Which book's trades, charges and capital to return. Defaults to both. */
+  book?: PnlBook;
+  /** Intraday starting capital (`intraday_capital_inr`). Swing capital stays on the fund ledger. */
+  intradayCapital?: number;
   /** Fraction, matching `breaker_pct`. 0.25 is a 25% breaker. */
   breakerPct?: number;
   maxPositions?: number;
@@ -124,7 +132,8 @@ export type PnlStats = {
 export type PnlTrade = {
   id: number;
   symbol: string;
-  strategy: "rs" | "ema";
+  strategy: string;
+  book: "swing" | "intraday";
   status: "open" | "closed";
   entryDate: string;
   entryAvg: number;
@@ -220,6 +229,13 @@ export type PnlModel = {
     rs: { stats: PnlStats; net: number; gross: number; charges: number; spark: { date: string; net: number }[] };
     ema: { stats: PnlStats; net: number; gross: number; charges: number; spark: { date: string; net: number }[] };
   };
+  /** Strategies that belong to the chosen book. Intraday is ORB and VWAP. */
+  strategies: { key: string; label: string; stats: PnlStats; net: number; gross: number; charges: number; spark: { date: string; net: number }[] }[];
+  book: PnlBook;
+  /** True when the chosen book has no positions. */
+  empty: boolean;
+  /** Trading limit not sitting in open positions. */
+  freeToInvest: number;
   byPeriod: { day: PeriodRow[]; week: PeriodRow[]; month: PeriodRow[] };
   series: {
     account: AccountPoint[];
@@ -470,7 +486,7 @@ function drawdownOf(series: AccountPoint[]): { peak: number; drawdownPct: number
   const last = series[series.length - 1];
   const currentPeak = series.reduce((max, point) => Math.max(max, point.value), 0);
   const drawdownInr = last ? Math.max(0, currentPeak - last.value) : 0;
-  const drawdownPct = currentPeak > 0 ? (drawdownInr / currentPeak) * 100 : 0;
+  const drawdownPct = last ? accountDrawdown(last.value, currentPeak) : 0;
   return { peak: currentPeak, drawdownPct, drawdownInr: paise(drawdownInr), maxDrawdownPct: maxPct, maxDrawdownInr: paise(maxInr) };
 }
 
@@ -501,7 +517,7 @@ function buildTrade(
   today: string,
   holidays: ReadonlySet<string>
 ): PnlTrade {
-  const strategy = position.strategy === "ema" ? "ema" : "rs";
+  const strategy = (position.strategy ?? "rs").trim().toLowerCase() || "rs";
   const entryDate = istDate(position.openedAt);
   const exitDate = position.closedAt ? istDate(position.closedAt) : null;
   const status = exitDate ? "closed" : "open";
@@ -549,6 +565,7 @@ function buildTrade(
     id: position.id,
     symbol: position.symbol,
     strategy,
+    book: position.book === "intraday" ? "intraday" : "swing",
     status,
     entryDate,
     entryAvg,
@@ -605,6 +622,99 @@ function strategyBlock(trades: PnlTrade[], capital: number, today: string) {
   };
 }
 
+function capitalFromLedger(ledger: PnlLedgerRow[], trades: PnlTrade[]): CapitalStatement {
+  const deposits = ledger.filter((row) => row.kind === "deposit").sort((a, b) => a.ts.localeCompare(b.ts) || a.id - b.id);
+  const withdrawn = paise(Math.abs(ledger.filter((row) => row.kind === "withdrawal").reduce((sum, row) => sum + row.amount, 0)));
+  const deposited = paise(deposits.reduce((sum, row) => sum + row.amount, 0));
+  const starting = deposits[0] ? paise(deposits[0].amount) : 0;
+  const laterDeposits = paise(deposited - starting);
+  const openAll = trades.filter((trade) => trade.status === "open");
+  const closedAll = trades.filter((trade) => trade.status === "closed");
+  const openCost = paise(openAll.reduce((sum, trade) => sum + trade.entryAvg * trade.qty, 0));
+  const openProfit = paise(openAll.reduce((sum, trade) => sum + trade.gross, 0));
+  const openCharges = paise(openAll.reduce((sum, trade) => sum + trade.charges.total, 0));
+  const netRealisedAll = paise(closedAll.reduce((sum, trade) => sum + trade.net, 0));
+  const tradingLimit = paise(ledger.reduce((sum, row) => sum + row.amount, 0));
+  const marketValue = paise(openCost + openProfit);
+  const accountValue = paise(tradingLimit - openCost + marketValue);
+  return {
+    starting,
+    deposits: laterDeposits,
+    withdrawals: withdrawn,
+    netRealised: netRealisedAll,
+    openCharges,
+    tradingLimit,
+    openCost,
+    openProfit,
+    marketValue,
+    accountValue,
+    gap: paise(tradingLimit - (starting + laterDeposits - withdrawn + netRealisedAll - openCharges)),
+  };
+}
+
+/**
+ * The ₹20,000 setting is a plan until the book has a trade.
+ * A tagged ledger deposit is already in the account, so it is not added again.
+ */
+export function includeIntradayCapital(input: { trades: number; deposited: boolean }): boolean {
+  return input.trades > 0 && !input.deposited;
+}
+
+/** No deposit and no trade: the setting is not money in the account. */
+export function intradayIsPlanned(input: { trades: number; deposited: boolean }): boolean {
+  return input.trades === 0 && !input.deposited;
+}
+
+/** Intraday capital is its own pot: the setting, plus that book's realised P&L. */
+function capitalFromBase(trades: PnlTrade[], base: number): CapitalStatement {
+  const openAll = trades.filter((trade) => trade.status === "open");
+  const closedAll = trades.filter((trade) => trade.status === "closed");
+  const openCost = paise(openAll.reduce((sum, trade) => sum + trade.entryAvg * trade.qty, 0));
+  const openProfit = paise(openAll.reduce((sum, trade) => sum + trade.gross, 0));
+  const openCharges = paise(openAll.reduce((sum, trade) => sum + trade.charges.total, 0));
+  const netRealised = paise(closedAll.reduce((sum, trade) => sum + trade.net, 0));
+  const tradingLimit = paise(base + netRealised - openCharges);
+  const marketValue = paise(openCost + openProfit);
+  const accountValue = paise(tradingLimit - openCost + marketValue);
+  return {
+    starting: paise(base),
+    deposits: 0,
+    withdrawals: 0,
+    netRealised,
+    openCharges,
+    tradingLimit,
+    openCost,
+    openProfit,
+    marketValue,
+    accountValue,
+    gap: 0,
+  };
+}
+
+function addCapital(a: CapitalStatement, b: CapitalStatement): CapitalStatement {
+  return {
+    starting: paise(a.starting + b.starting),
+    deposits: paise(a.deposits + b.deposits),
+    withdrawals: paise(a.withdrawals + b.withdrawals),
+    netRealised: paise(a.netRealised + b.netRealised),
+    openCharges: paise(a.openCharges + b.openCharges),
+    tradingLimit: paise(a.tradingLimit + b.tradingLimit),
+    openCost: paise(a.openCost + b.openCost),
+    openProfit: paise(a.openProfit + b.openProfit),
+    marketValue: paise(a.marketValue + b.marketValue),
+    accountValue: paise(a.accountValue + b.accountValue),
+    gap: paise(a.gap + b.gap),
+  };
+}
+
+const STRATEGY_LABEL: Record<string, string> = { rs: "RS", ema: "EMA", orb: "ORB", vwap: "VWAP" };
+
+function strategyKeys(book: PnlBook): string[] {
+  if (book === "intraday") return ["orb", "vwap"];
+  if (book === "swing") return ["rs", "ema"];
+  return ["rs", "ema", "orb", "vwap"];
+}
+
 export function buildPnl(input: BuildPnlInput): PnlModel {
   const includeDry = input.dryRun === true;
   const holidays = new Set(input.holidays ?? []);
@@ -631,38 +741,27 @@ export function buildPnl(input: BuildPnlInput): PnlModel {
     )
     .sort((a, b) => (a.exitDate ?? a.entryDate).localeCompare(b.exitDate ?? b.entryDate) || a.entryDate.localeCompare(b.entryDate) || a.id - b.id);
 
+  const viewBook = input.book ?? "all";
+  const swingTrades = tradesAll.filter((trade) => trade.book !== "intraday");
+  const dayTrades = tradesAll.filter((trade) => trade.book === "intraday");
+  const bookTrades = viewBook === "intraday" ? dayTrades : viewBook === "swing" ? swingTrades : tradesAll;
+  const intradayBase = paise(input.intradayCapital ?? 0);
+  const intradayDeposited = ledger.some((row) => row.kind === "deposit" && /intraday/i.test(row.note ?? ""));
+  const intradayReal = includeIntradayCapital({ trades: dayTrades.length, deposited: intradayDeposited });
+  const countedBase = viewBook === "intraday" || intradayReal ? intradayBase : 0;
+  const swingCapital = capitalFromLedger(ledger, swingTrades);
+  const dayCapital = capitalFromBase(dayTrades, countedBase);
+  const capital = viewBook === "swing" ? swingCapital : viewBook === "intraday" ? dayCapital : addCapital(swingCapital, dayCapital);
   const deposits = ledger.filter((row) => row.kind === "deposit").sort((a, b) => a.ts.localeCompare(b.ts) || a.id - b.id);
-  const withdrawalRows = ledger.filter((row) => row.kind === "withdrawal");
-  const deposited = paise(deposits.reduce((sum, row) => sum + row.amount, 0));
-  const withdrawn = paise(Math.abs(withdrawalRows.reduce((sum, row) => sum + row.amount, 0)));
+  const deposited = viewBook === "intraday"
+    ? dayCapital.starting
+    : paise(swingCapital.starting + swingCapital.deposits + (viewBook === "all" ? dayCapital.starting : 0));
+  const withdrawn = viewBook === "intraday" ? 0 : swingCapital.withdrawals;
   const netCapital = paise(deposited - withdrawn);
-  const starting = deposits[0] ? paise(deposits[0].amount) : 0;
-  const laterDeposits = paise(deposited - starting);
-  const openAll = tradesAll.filter((trade) => trade.status === "open");
-  const closedAll = tradesAll.filter((trade) => trade.status === "closed");
-  const openCost = paise(openAll.reduce((sum, trade) => sum + trade.entryAvg * trade.qty, 0));
-  const openProfit = paise(openAll.reduce((sum, trade) => sum + trade.gross, 0));
-  const openCharges = paise(openAll.reduce((sum, trade) => sum + trade.charges.total, 0));
-  const netRealisedAll = paise(closedAll.reduce((sum, trade) => sum + trade.net, 0));
-  const tradingLimit = paise(ledger.reduce((sum, row) => sum + row.amount, 0));
-  const marketValue = paise(openCost + openProfit);
-  const accountValue = paise(tradingLimit - openCost + marketValue);
-  const capital: CapitalStatement = {
-    starting,
-    deposits: laterDeposits,
-    withdrawals: withdrawn,
-    netRealised: netRealisedAll,
-    openCharges,
-    tradingLimit,
-    openCost,
-    openProfit,
-    marketValue,
-    accountValue,
-    gap: paise(tradingLimit - (starting + laterDeposits - withdrawn + netRealisedAll - openCharges)),
-  };
+  const accountValue = capital.accountValue;
 
   const start = rangeStart(today, input.range);
-  const ranged = tradesAll.filter((trade) => inWindow(trade, start, today));
+  const ranged = bookTrades.filter((trade) => inWindow(trade, start, today));
   const shown = ranged.filter((trade) => input.strategy === "all" || trade.strategy === input.strategy);
   const closed = shown.filter((trade) => trade.status === "closed");
   const exposure = exposureOf(shown, netCapital, today);
@@ -681,8 +780,10 @@ export function buildPnl(input: BuildPnlInput): PnlModel {
   );
 
   const fullAccount = accountSeries(
-    input.equity.map((row) => ({ ...row, date: istDate(row.date) })),
-    deposits[0] ? { date: istDate(deposits[0].ts), amount: paise(deposits[0].amount) } : null,
+    viewBook === "intraday" ? [] : input.equity.map((row) => ({ ...row, date: istDate(row.date), value: paise(row.value + (viewBook === "all" && intradayReal ? intradayBase : 0)) })),
+    viewBook === "intraday"
+      ? (intradayBase > 0 ? { date: today, amount: intradayBase } : null)
+      : deposits[0] ? { date: istDate(deposits[0].ts), amount: paise(deposits[0].amount + (viewBook === "all" && intradayReal ? intradayBase : 0)) } : null,
     { date: today, value: accountValue }
   );
   const drop = drawdownOf(fullAccount);
@@ -743,6 +844,14 @@ export function buildPnl(input: BuildPnlInput): PnlModel {
       rs: strategyBlock(rsTrades, netCapital, today),
       ema: strategyBlock(emaTrades, netCapital, today),
     },
+    strategies: strategyKeys(viewBook).map((key) => ({
+      key,
+      label: STRATEGY_LABEL[key] ?? key.toUpperCase(),
+      ...strategyBlock(ranged.filter((trade) => trade.strategy === key), netCapital, today),
+    })),
+    book: viewBook,
+    empty: bookTrades.length === 0,
+    freeToInvest: paise(capital.tradingLimit - capital.openCost),
     byPeriod: {
       day: periodsOf(closed, (date) => date),
       week: periodsOf(closed, isoWeekKey),

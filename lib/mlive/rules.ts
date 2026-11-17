@@ -67,6 +67,7 @@ export type SizingInput = {
   riskPct?: number;
   maxOrderPct?: number;
   minOrderInr?: number;
+  half?: boolean;
 };
 
 export type SizingResult = {
@@ -134,9 +135,10 @@ export function sizeOrder(input: SizingInput): SizingResult {
   const maxOrderPct = input.maxOrderPct ?? DEFAULT_MAX_ORDER_PCT;
   const minOrder = input.minOrderInr ?? DEFAULT_MIN_ORDER;
   const { fund, entry, stop, spendable } = input;
-  const riskBudget = riskPct * fund;
+  const scale = input.half ? 0.5 : 1;
+  const riskBudget = riskPct * fund * scale;
   const perShare = entry - stop;
-  const capValue = maxOrderPct * fund;
+  const capValue = maxOrderPct * fund * scale;
   const qtyRisk = floorDiv(riskBudget, perShare);
   const qtyCap = floorDiv(capValue, entry);
   const qtyCash = floorDiv(Math.max(0, spendable), entry);

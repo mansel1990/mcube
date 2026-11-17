@@ -212,3 +212,62 @@ export function monthsBetween(from: string, to: string): string[] {
   }
   return out;
 }
+
+export type StoredTradeRef = {
+  runId: number;
+  strategy: string;
+  paramsKey: string;
+  symbol: string;
+  entryTs: string;
+  exitTs: string;
+  net: number;
+};
+
+export async function tradesInRuns(runIds: number[], symbols: string[]): Promise<StoredTradeRef[]> {
+  if (runIds.length === 0 || symbols.length === 0) return [];
+  const rows = await mq<{
+    run_id: string;
+    strategy: string;
+    params_key: string;
+    symbol: string;
+    entry_ts: string;
+    exit_ts: string;
+    net: string;
+  }>(
+    `SELECT run_id::text AS run_id, strategy, params_key, symbol, entry_ts, exit_ts, net::text AS net
+       FROM research_trades
+      WHERE run_id = ANY($1::bigint[]) AND symbol = ANY($2::text[])`,
+    [runIds, symbols]
+  );
+  return rows.map((row) => ({
+    runId: Number(row.run_id),
+    strategy: row.strategy,
+    paramsKey: row.params_key,
+    symbol: row.symbol,
+    entryTs: row.entry_ts,
+    exitTs: row.exit_ts,
+    net: Number(row.net),
+  }));
+}
+
+export function intersectMask(
+  trades: readonly StoredTradeRef[],
+  mask: readonly { symbol: string; from: string; to: string; reason: string }[]
+): Array<StoredTradeRef & { maskFrom: string; maskTo: string; reason: string }> {
+  const bySymbol = new Map<string, { from: string; to: string; reason: string }[]>();
+  for (const row of mask) {
+    const list = bySymbol.get(row.symbol) ?? [];
+    list.push(row);
+    bySymbol.set(row.symbol, list);
+  }
+  const hits: Array<StoredTradeRef & { maskFrom: string; maskTo: string; reason: string }> = [];
+  for (const trade of trades) {
+    const entry = trade.entryTs.slice(0, 10);
+    const ranges = bySymbol.get(trade.symbol);
+    if (!ranges) continue;
+    const match = ranges.find((range) => entry >= range.from && entry <= range.to);
+    if (!match) continue;
+    hits.push({ ...trade, maskFrom: match.from, maskTo: match.to, reason: match.reason });
+  }
+  return hits;
+}

@@ -1,6 +1,7 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
+import { NIFTY_REASON_NOTE, type NiftyReason } from "@/lib/mlive/nifty-reason";
 import type { BookedCharges, ExitReason, PnlModel, PnlTrade } from "@/lib/mlive/pnl";
 import { isoWeekKey } from "@/lib/mlive/pnl";
 import {
@@ -85,13 +86,34 @@ function SumCard({
   );
 }
 
-export function ReportsPnl({ pnl, onOpen }: { pnl: PnlModel; onOpen?: (trade: PnlTrade) => void }) {
+export function ReportsPnl({
+  pnl,
+  onOpen,
+  query = "",
+  result = "all",
+  tradesHref = "/live-trade-mansel/reports?tab=trades",
+}: {
+  pnl: PnlModel;
+  onOpen?: (trade: PnlTrade) => void;
+  query?: string;
+  result?: "all" | "won" | "lost";
+  tradesHref?: string;
+}) {
   const [grain, setGrain] = useState<"day" | "week" | "month" | "all">("month");
   const [openPeriod, setOpenPeriod] = useState<string | null>(null);
   const [chargesOpen, setChargesOpen] = useState(false);
   const summary = pnl.summary;
   const closed = pnl.trades.filter((trade) => trade.status === "closed");
   const open = pnl.trades.filter((trade) => trade.status === "open");
+  const needle = query.trim().toLowerCase();
+  const listed = pnl.trades.filter((trade) => {
+    if (needle && !trade.symbol.toLowerCase().includes(needle)) return false;
+    if (result === "won" && !(trade.status === "closed" && trade.net > 0)) return false;
+    if (result === "lost" && !(trade.status === "closed" && trade.net < 0)) return false;
+    return true;
+  });
+  const listedOpen = listed.filter((trade) => trade.status === "open");
+  const listedClosed = listed.filter((trade) => trade.status === "closed");
   const closedCharges = sumBooked(closed);
   const closedTurnover = closed.reduce((sum, trade) => sum + trade.fills.reduce((inner, fill) => inner + fill.qty * fill.price, 0), 0);
   const groups = chargeGroups(closedCharges);
@@ -137,7 +159,7 @@ export function ReportsPnl({ pnl, onOpen }: { pnl: PnlModel; onOpen?: (trade: Pn
     <div className="pnl">
       <div className="sum-lg">
         <SumCard
-          title="Total P&L"
+          title="Total P&L (live)"
           formula="Total P&L is closed-trade profit after charges, plus open profit after the buy charges already paid. It equals account value minus net capital."
           value={signed(summary.netTotal)}
           sub={`Realised ${signed(summary.netRealised)} · Open ${signed(summary.openNet)}`}
@@ -165,11 +187,54 @@ export function ReportsPnl({ pnl, onOpen }: { pnl: PnlModel; onOpen?: (trade: Pn
           accent="charges"
         />
       </div>
-      <div className="sum-sm">
-        <SumCard title="Win rate" formula="Winning closed trades divided by all closed trades." value={formatWinRate(pnl.stats.winRate, pnl.stats.wins)} sub={`${pnl.stats.wins} ${pnl.stats.wins === 1 ? "win" : "wins"} · ${pnl.stats.losses} ${pnl.stats.losses === 1 ? "loss" : "losses"}`} accent="neutral" />
-        <SumCard title="Profit factor" formula="The sum of winning trades divided by the sum of losing trades." value={formatProfitFactor(pnl.stats.profitFactor, pnl.stats.wins)} sub="Gross wins ÷ gross losses" accent="neutral" />
-        <SumCard title="Avg win / avg loss" formula="The average winning trade and the average losing trade, after charges." value={`${formatSample(pnl.stats.wins, money(pnl.stats.avgWin))} / ${formatSample(pnl.stats.losses, money(pnl.stats.avgLoss))}`} sub="Per closed trade" accent="neutral" />
-        <SumCard title="Capital deposited" formula="Money added to the account. Withdrawals are listed in the capital statement." value={money(summary.deposited, 0)} sub={summary.returnPct >= 0 ? `Return ${summary.returnPct.toFixed(2)}%` : `Return ${summary.returnPct.toFixed(2)}%`} accent="neutral" />
+      <article className="card strip-card">
+        <div><span className="lbl">Account value</span><b className="n">{money(summary.accountValue, 0)}</b></div>
+        <div><span className="lbl">Win rate</span><b className="n">{formatWinRate(pnl.stats.winRate, pnl.stats.wins)}</b></div>
+        <div><span className="lbl">Profit factor</span><b className="n">{formatProfitFactor(pnl.stats.profitFactor, pnl.stats.wins)}</b></div>
+        <div><span className="lbl">Avg win / avg loss</span><b className="n">{formatSample(pnl.stats.wins, money(pnl.stats.avgWin))} / {formatSample(pnl.stats.losses, money(pnl.stats.avgLoss))}</b></div>
+        <div><span className="lbl">Cash not invested <Info label="Trading limit that is not in open positions. The cash reserve is still included." /></span><b className="n">{money(pnl.freeToInvest, 0)}</b></div>
+      </article>
+
+      <BenchmarkCard book={pnl.book} />
+
+      <div className="book-row">
+        <section className="card sheet">
+          <div className="sheet-h"><h2>Open positions</h2></div>
+          {listedOpen.length === 0 ? <p className="sub">No open positions.</p> : (
+            <table className="sheet">
+              <thead><tr><th>Stock</th><th className="r">Qty</th><th className="r">P&L</th></tr></thead>
+              <tbody>
+                {listedOpen.slice(0, 10).map((trade) => (
+                  <tr key={trade.id} className="tone-open">
+                    <td><button type="button" className="sort" onClick={() => onOpen?.(trade)}>{trade.symbol}</button></td>
+                    <td className="r n">{trade.qty}</td>
+                    <td className={`r n ${tone(trade.net)}`}>{signed(trade.net)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+        <section className="card sheet">
+          <div className="sheet-h">
+            <h2>Closed trades</h2>
+            <a href={tradesHref}>See all</a>
+          </div>
+          {listedClosed.length === 0 ? <p className="sub">No closed trades yet.</p> : (
+            <table className="sheet">
+              <thead><tr><th>Stock</th><th>Exit</th><th className="r">P&L</th></tr></thead>
+              <tbody>
+                {[...listedClosed].reverse().slice(0, 10).map((trade) => (
+                  <tr key={trade.id} className={trade.net >= 0 ? "tone-profit" : "tone-loss"}>
+                    <td><button type="button" className="sort" onClick={() => onOpen?.(trade)}>{trade.symbol}</button></td>
+                    <td>{trade.exitDate ?? ""}</td>
+                    <td className={`r n ${tone(trade.net)}`}>{signed(trade.net)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
       </div>
 
       <section className="card sheet">
@@ -279,8 +344,8 @@ export function ReportsPnl({ pnl, onOpen }: { pnl: PnlModel; onOpen?: (trade: Pn
               </tr>
             </thead>
             <tbody>
-              {(["rs", "ema"] as const).map((key) => {
-                const block = pnl.byStrategy[key];
+              {pnl.strategies.map((block) => {
+                const key = block.key;
                 const openRows = pnl.trades.filter((trade) => trade.strategy === key && trade.status === "open");
                 const closedRows = pnl.trades.filter((trade) => trade.strategy === key && trade.status === "closed");
                 const unrealised = openRows.reduce((sum, trade) => sum + trade.net, 0);
@@ -288,7 +353,7 @@ export function ReportsPnl({ pnl, onOpen }: { pnl: PnlModel; onOpen?: (trade: Pn
                 const onlyOpen = block.stats.trades === 0 && openRows.length > 0;
                 return (
                   <tr key={key} className={quiet ? "quiet" : undefined}>
-                    <td><span className={`dot ${key}`} /> {key === "rs" ? "RS" : "EMA"}</td>
+                    <td><span className={`dot ${key}`} /> {block.label}</td>
                     {quiet ? <td colSpan={8}>No trades yet</td> : onlyOpen ? (
                       <>
                         <td className="num">{openRows.length} open</td>
@@ -418,11 +483,25 @@ function Cols() {
   );
 }
 
-export function TradesTable({ pnl, onOpen }: { pnl: PnlModel; onOpen: (trade: PnlTrade) => void }) {
-  const [strategy, setStrategy] = useState<"all" | "rs" | "ema">("all");
-  const [result, setResult] = useState<"all" | "won" | "lost">("all");
+export function TradesTable({
+  pnl,
+  onOpen,
+  query: queryProp,
+  result: resultProp,
+  headerFilters = false,
+}: {
+  pnl: PnlModel;
+  onOpen: (trade: PnlTrade) => void;
+  query?: string;
+  result?: "all" | "won" | "lost";
+  headerFilters?: boolean;
+}) {
+  const [strategy, setStrategy] = useState("all");
+  const [resultState, setResult] = useState<"all" | "won" | "lost">("all");
   const [reason, setReason] = useState<"all" | ExitReason>("all");
-  const [query, setQuery] = useState("");
+  const [queryState, setQuery] = useState("");
+  const query = queryProp ?? queryState;
+  const result = resultProp ?? resultState;
   const [sort, setSort] = useState<SortKey>("entry");
   const [dir, setDir] = useState<1 | -1>(1);
 
@@ -488,18 +567,20 @@ export function TradesTable({ pnl, onOpen }: { pnl: PnlModel; onOpen: (trade: Pn
   return (
     <div className="pnl">
       <div className="trade-filters">
-        <input className="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search symbol" aria-label="Search symbol" />
+        {!headerFilters && <input className="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search symbol" aria-label="Search symbol" />}
         <div className="seg" role="group" aria-label="Strategy">
-          {(["all", "rs", "ema"] as const).map((item) => (
-            <button key={item} type="button" aria-pressed={strategy === item} onClick={() => setStrategy(item)}>{item === "all" ? "All" : item.toUpperCase()}</button>
+          {["all", ...pnl.strategies.map((row) => row.key)].map((item) => (
+            <button key={item} type="button" data-tone={item} aria-pressed={strategy === item} onClick={() => setStrategy(item)}>{item === "all" ? "All" : item.toUpperCase()}</button>
           ))}
         </div>
-        <span className="vdiv" aria-hidden="true" />
-        <div className="seg" role="group" aria-label="Result">
-          {(["all", "won", "lost"] as const).map((item) => (
-            <button key={item} type="button" aria-pressed={result === item} onClick={() => setResult(item)}>{item === "all" ? "All" : item === "won" ? "Won" : "Lost"}</button>
-          ))}
-        </div>
+        {!headerFilters && <span className="vdiv" aria-hidden="true" />}
+        {!headerFilters && (
+          <div className="seg" role="group" aria-label="Result">
+            {(["all", "won", "lost"] as const).map((item) => (
+              <button key={item} type="button" data-tone={item} aria-pressed={result === item} onClick={() => setResult(item)}>{item === "all" ? "All" : item === "won" ? "Won" : "Lost"}</button>
+            ))}
+          </div>
+        )}
         <label className="exit-pick">
           Exit
           <select aria-label="Exit reason" value={reason} onChange={(event) => setReason(event.target.value === "all" ? "all" : event.target.value as ExitReason)}>
@@ -655,5 +736,57 @@ function ChargeHover({ charges }: { charges: BookedCharges }) {
         </span>
       )}
     </span>
+  );
+}
+
+type BenchSlice = { id: string; label: string; oursPct: number | null; niftyPct: number | null; diffPp: number | null; daysAhead: number; marketDays: number };
+
+function benchPct(value: number | null): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  const sign = value > 0 ? "+" : value < 0 ? "−" : "";
+  return `${sign}${Math.abs(value).toFixed(2)}%`;
+}
+
+function BenchmarkCard({ book }: { book: string }) {
+  const [period, setPeriod] = useState("start");
+  const [report, setReport] = useState<{ tooEarly: boolean; periods: BenchSlice[]; niftyReason?: NiftyReason | null; through?: string | null } | null>(null);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fetch(`/api/mlive/benchmark?book=${book}`, { cache: "no-store" }).then(async (res) => {
+        if (res.ok) setReport((await res.json()) as { tooEarly: boolean; periods: BenchSlice[]; niftyReason?: NiftyReason | null; through?: string | null });
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [book]);
+  const slice = report?.periods.find((item) => item.id === period) ?? report?.periods[0];
+  return (
+    <article className="card bench">
+      <div className="book-top">
+        <h2>Against Nifty 50</h2>
+        <div>
+          <div className="seg" role="group" aria-label="Period">
+            {(report?.periods ?? [
+              { id: "start", label: "Since start" },
+              { id: "month", label: "This month" },
+              { id: "3m", label: "3M" },
+              { id: "1y", label: "1Y" },
+            ]).map((item) => (
+              <button key={item.id} type="button" aria-pressed={period === item.id} onClick={() => setPeriod(item.id)}>{item.label}</button>
+            ))}
+          </div>
+          {report?.through && <p className="muted">to {shortDate(report.through)}</p>}
+        </div>
+      </div>
+      <div className="bench-grid">
+        <div><span className="lbl">Mansel Live</span><b>{benchPct(slice?.oursPct ?? null)}</b></div>
+        <div><span className="lbl">Nifty 50</span><b>{benchPct(slice?.niftyPct ?? null)}</b></div>
+        <div><span className="lbl">Difference</span><b>{slice?.diffPp == null ? "—" : `${slice.diffPp >= 0 ? "+" : "−"}${Math.abs(slice.diffPp).toFixed(2)} pts`}</b></div>
+        <div><span className="lbl">Days ahead</span><b>{slice ? `${slice.daysAhead} of ${slice.marketDays}` : "—"}</b></div>
+      </div>
+      <p className="muted">Mansel Live is time-weighted, so money added is not counted as profit. Nifty 50 is the price index, without dividends. Days with no Nifty close are left out.</p>
+      {report?.niftyReason && slice?.niftyPct == null && <p className="muted">{NIFTY_REASON_NOTE[report.niftyReason]}</p>}
+      {report?.tooEarly && <p className="muted">Too early to judge: compare after about 3 months.</p>}
+      {book === "intraday" && <p className="muted">Intraday does not have its own daily account series yet.</p>}
+    </article>
   );
 }

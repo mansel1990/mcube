@@ -433,3 +433,76 @@ describe("capital and filters", () => {
     expect(`${bucket?.label} ${formatInr(bucket?.total ?? 0)}`).toBe("Unclassified ₹0.13");
   });
 });
+
+describe("book filter", () => {
+  it("returns each book's trades, charges and capital, and All is their sum", () => {
+    const swing: PnlPosition = {
+      id: 1, symbol: "AAA", strategy: "rs", book: "swing", qty: 0, avgPrice: 100,
+      openedAt: "2026-11-02T04:00:00.000Z", closedAt: "2026-11-03T09:00:00.000Z", trendStop: 90, charges: 10,
+    };
+    const day: PnlPosition = {
+      id: 2, symbol: "BBB", strategy: "orb", book: "intraday", qty: 0, avgPrice: 50,
+      openedAt: "2026-11-04T04:00:00.000Z", closedAt: "2026-11-04T09:00:00.000Z", trendStop: 48, charges: 4,
+    };
+    const input: BuildPnlInput = {
+      ...EMPTY,
+      positions: [swing, day],
+      fills: [
+        { id: 1, positionId: 1, side: "BUY", qty: 1, price: 100, ts: swing.openedAt },
+        { id: 2, positionId: 1, side: "SELL", qty: 1, price: 150, ts: swing.closedAt ?? swing.openedAt },
+        { id: 3, positionId: 2, side: "BUY", qty: 2, price: 50, ts: day.openedAt },
+        { id: 4, positionId: 2, side: "SELL", qty: 2, price: 60, ts: day.closedAt ?? day.openedAt },
+      ],
+      chargeItems: [
+        { id: 1, positionId: 1, side: "BUY", intraday: false, source: "formula", ts: swing.openedAt, brokerage: 10, stt: 0, exchange: 0, sebi: 0, stamp: 0, gst: 0, dp: 0, total: 10 },
+        { id: 2, positionId: 2, side: "BUY", intraday: true, source: "formula", ts: day.openedAt, brokerage: 4, stt: 0, exchange: 0, sebi: 0, stamp: 0, gst: 0, dp: 0, total: 4 },
+      ],
+      ledger: [{ id: 1, kind: "deposit", amount: 1000, ts: "2026-10-01T04:00:00.000Z" }],
+      equity: [{ date: "2026-11-01", value: 1000 }],
+      intradayCapital: 20000,
+    };
+    const swingModel = buildPnl({ ...input, book: "swing" });
+    const dayModel = buildPnl({ ...input, book: "intraday" });
+    const all = buildPnl({ ...input, book: "all" });
+
+    expect(swingModel.trades.map((trade) => trade.symbol)).toEqual(["AAA"]);
+    expect(dayModel.trades.map((trade) => trade.symbol)).toEqual(["BBB"]);
+    expect(swingModel.trades[0].charges.total).toBe(10);
+    expect(dayModel.trades[0].charges.total).toBe(4);
+    expect(dayModel.trades.some((trade) => trade.strategy === "rs" || trade.strategy === "ema")).toBe(false);
+    expect(swingModel.strategies.map((row) => row.key)).toEqual(["rs", "ema"]);
+    expect(dayModel.strategies.map((row) => row.key)).toEqual(["orb", "vwap"]);
+    expect(swingModel.summary.deposited).toBe(1000);
+    expect(dayModel.summary.deposited).toBe(20000);
+    expect(dayModel.capital.starting).toBe(20000);
+    expect(all.summary.deposited).toBe(21000);
+    expect(all.trades.map((trade) => trade.symbol).sort()).toEqual(["AAA", "BBB"]);
+    expect(all.summary.charges).toBeCloseTo(swingModel.summary.charges + dayModel.summary.charges, 2);
+    expect(all.capital.accountValue).toBeCloseTo(swingModel.capital.accountValue + dayModel.capital.accountValue, 2);
+    expect(all.capital.netRealised).toBeCloseTo(swingModel.capital.netRealised + dayModel.capital.netRealised, 2);
+  });
+
+  it("leaves planned intraday capital out of All until the book is funded or has a trade", () => {
+    const input: BuildPnlInput = {
+      ...EMPTY,
+      ledger: [{ id: 1, kind: "deposit", amount: 80000, ts: "2026-10-01T04:00:00.000Z" }],
+      equity: [{ date: "2026-11-16", value: 80000 }],
+      intradayCapital: 20000,
+      book: "all",
+    };
+    const all = buildPnl(input);
+    expect(all.capital.starting).toBe(80000);
+    expect(all.summary.deposited).toBe(80000);
+    expect(all.summary.accountValue).toBe(80000);
+    expect(all.freeToInvest).toBe(80000);
+    const funded = buildPnl({
+      ...input,
+      ledger: [
+        { id: 1, kind: "deposit", amount: 80000, ts: "2026-10-01T04:00:00.000Z" },
+        { id: 2, kind: "deposit", amount: 20000, ts: "2026-11-01T04:00:00.000Z", note: "Intraday book" },
+      ],
+    });
+    expect(funded.summary.deposited).toBe(100000);
+    expect(funded.summary.accountValue).toBe(100000);
+  });
+});

@@ -40,6 +40,18 @@ export function sessionsBack(day: string, sessions: number, holidays: ReadonlySe
   return cursor;
 }
 
+/** The last `count` market days ending on `end`, newest first. A day with no trades is still a market day. */
+export function recentMarketDays(end: string, count: number, holidays: ReadonlySet<string>): string[] {
+  const days: string[] = [];
+  let cursor = isTradingDay(end, holidays) ? end : previousTradingDay(end, holidays);
+  const n = Math.max(1, count);
+  for (let i = 0; i < n; i++) {
+    days.push(cursor);
+    cursor = previousTradingDay(cursor, holidays);
+  }
+  return days;
+}
+
 export function todayIst(now = new Date()): string {
   return now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 }

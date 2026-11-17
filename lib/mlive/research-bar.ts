@@ -154,6 +154,95 @@ export function lossDayOverlap(a: ReadonlySet<string>, b: ReadonlySet<string>): 
   return shared / a.size;
 }
 
+export function overlapNote(aName: string, bName: string, aAlsoB: number, bAlsoA: number): string {
+  const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
+  return `${aName}'s losing days also lost by ${bName}: ${pct(aAlsoB)}. ${bName}'s losing days also lost by ${aName}: ${pct(bAlsoA)}. Only the combined-book result establishes whether the pair reduces drawdown.`;
+}
+
+/** Completed trades only. Same-day exits break by timestamp, then symbol. */
+export function orderedNets(trades: readonly { exitDate: string; exitTs: string; symbol: string; net: number }[]): number[] {
+  return [...trades]
+    .sort((a, b) => a.exitDate.localeCompare(b.exitDate) || a.exitTs.localeCompare(b.exitTs) || a.symbol.localeCompare(b.symbol))
+    .map((trade) => trade.net);
+}
+
+export type EquityPoint = { date: string; value: number };
+
+export type EquityPeriod = { key: string; start: number; end: number; profitable: boolean; returnPct: number };
+
+/**
+ * Month, half-year and year returns from equity endpoints.
+ * The first period opens at `capital`. A period is profitable only when its
+ * ending equity is higher than its starting equity. Returns are not summed.
+ */
+export function equityPeriods(
+  equity: readonly EquityPoint[],
+  capital: number,
+  from: string,
+  to: string,
+  kind: "month" | "half" | "year"
+): EquityPeriod[] {
+  const points = [...equity].filter((point) => point.date >= from && point.date <= to).sort((a, b) => a.date.localeCompare(b.date));
+  const bounds = periodBounds(from, to, kind);
+  let cursor = 0;
+  let start = capital;
+  const out: EquityPeriod[] = [];
+  for (const bound of bounds) {
+    let end = start;
+    while (cursor < points.length && points[cursor].date <= bound.end) {
+      end = points[cursor].value;
+      cursor += 1;
+    }
+    const returnPct = start > 0 ? ((end - start) / start) * 100 : 0;
+    out.push({ key: bound.key, start, end, profitable: end > start + 1e-6, returnPct });
+    start = end;
+  }
+  return out;
+}
+
+export function assertBuildingWindow(sample: string, window: { from: string; to: string }): void {
+  if (sample === "building" && window.from === "2019-01-01" && window.to === "2023-12-31") return;
+  throw new Error(`Refusing research sample ${sample} window ${window.from} through ${window.to}. The building window is 2019-01-01 through 2023-12-31.`);
+}
+
+function periodBounds(from: string, to: string, kind: "month" | "half" | "year"): { key: string; end: string }[] {
+  const out: { key: string; end: string }[] = [];
+  let year = Number(from.slice(0, 4));
+  let month = Number(from.slice(5, 7));
+  const endYear = Number(to.slice(0, 4));
+  const endMonth = Number(to.slice(5, 7));
+  if (!year || !month || !endYear || !endMonth) return out;
+  const seen = new Set<string>();
+  while (year < endYear || (year === endYear && month <= endMonth)) {
+    const key = kind === "month"
+      ? `${year}-${String(month).padStart(2, "0")}`
+      : kind === "year"
+        ? String(year)
+        : `${year}-${month <= 6 ? "H1" : "H2"}`;
+    const end = kind === "month"
+      ? monthEnd(year, month)
+      : kind === "year"
+        ? `${year}-12-31`
+        : month <= 6 ? `${year}-06-30` : `${year}-12-31`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push({ key, end: end < to ? end : to });
+    }
+    month += 1;
+    if (month === 13) {
+      month = 1;
+      year += 1;
+    }
+  }
+  return out;
+}
+
+function monthEnd(year: number, month: number): string {
+  const next = new Date(Date.UTC(year, month, 1));
+  next.setUTCDate(0);
+  return next.toISOString().slice(0, 10);
+}
+
 export function downsampleEquity<T>(points: readonly T[], max = 400): T[] {
   if (points.length <= max) return [...points];
   const out: T[] = [];
@@ -179,6 +268,8 @@ export type ScoreInput = {
   equityEnd: number;
   windowFrom: string;
   windowTo: string;
+  /** Half-year hit rate from equity endpoints. When set, monthly percents are not added. */
+  periodPct?: number;
 };
 
 export type ScoreOutput = {
@@ -205,7 +296,9 @@ export function scoreResearch(input: ScoreInput): ScoreOutput {
   const wins = input.nets.filter((net) => net > 0).length;
   const avgNetPct = input.netPcts.length ? input.netPcts.reduce((sum, value) => sum + value, 0) / input.netPcts.length : 0;
   const quarters = byQuarter(input.book, input.windowFrom, input.windowTo);
-  const periods = profitablePeriods(input.monthly, quarters);
+  const periods = input.periodPct != null
+    ? { pct: input.periodPct, profitable: 0, total: 0 }
+    : profitablePeriods(input.monthly, quarters);
   const bar = researchThresholds(input.book, input.sample);
   const result: ScoreOutput = {
     trades,
