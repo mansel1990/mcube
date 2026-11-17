@@ -137,6 +137,9 @@ export async function POST(request: NextRequest) {
   const allowed = new Set(RESEARCH_STRATEGIES[book]);
   const strategies = (body.strategies ?? []).filter((name) => allowed.has(name));
   if (strategies.length === 0) return NextResponse.json({ error: "Pick at least one strategy." }, { status: 400 });
+  if (body.sample === "diagnostic") {
+    return NextResponse.json({ error: "A diagnostic run has no official verdict and is not queued from this page." }, { status: 400 });
+  }
   const sample: ResearchSample = body.sample === "heldback" ? "heldback" : "building";
   const confirmHeldback = body.confirmHeldback === true;
   const force = body.force === true;

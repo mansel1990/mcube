@@ -4,7 +4,23 @@
  */
 
 export type ResearchBook = "swing" | "intraday" | "longterm";
-export type ResearchSample = "building" | "heldback";
+export type ResearchSample = "building" | "heldback" | "diagnostic";
+
+/** Official intraday building sample ends the session before held-back. */
+export const INTRADAY_BUILDING_END = "2026-04-30";
+export const INTRADAY_HELD_BACK_FROM = "2026-05-01";
+export const INTRADAY_BUILDING_FROM = "2024-11-18";
+
+/**
+ * VWAP's 100 names and ORB's 200 names are the current index lists.
+ * Join and exit dates are not stored, so this is survivorship bias.
+ * A result with this limitation cannot qualify for live trading.
+ */
+export const INTRADAY_SURVIVORSHIP =
+  "The intraday universe is the current Nifty 100 and Nifty 200, not point-in-time constituents. Names that left the index are missing. This is survivorship bias. A result with this limitation cannot qualify for live trading.";
+
+export const DIAGNOSTIC_VERDICT =
+  "Diagnostic sample. No official pass or fail. A good diagnostic result is not evidence for live trading.";
 
 export type ResearchThresholds = {
   profitFactor: number;
@@ -39,8 +55,10 @@ export function sampleWindow(book: ResearchBook, sample: ResearchSample, lastCan
     if (sample === "building") return { from: "2011-01-01", to: "2023-12-31" };
     return { from: "2024-01-01", to: lastCandle && lastCandle >= "2024-01-01" ? lastCandle : "2024-01-01" };
   }
-  if (sample === "building") return { from: "2024-11-18", to: "2026-04-30" };
-  return { from: "2026-05-01", to: lastCandle && lastCandle >= "2026-05-01" ? lastCandle : "2026-05-01" };
+  if (sample === "heldback") {
+    return { from: INTRADAY_HELD_BACK_FROM, to: lastCandle && lastCandle >= INTRADAY_HELD_BACK_FROM ? lastCandle : INTRADAY_HELD_BACK_FROM };
+  }
+  return { from: INTRADAY_BUILDING_FROM, to: INTRADAY_BUILDING_END };
 }
 
 /** A second held-back run is refused until someone passes --force. */
@@ -179,7 +197,24 @@ export function orderedNets(trades: readonly { exitDate: string; exitTs: string;
 
 export type EquityPoint = { date: string; value: number };
 
-export type EquityPeriod = { key: string; start: number; end: number; profitable: boolean; returnPct: number };
+export type EquityPeriod = {
+  key: string;
+  start: number;
+  end: number;
+  profitable: boolean;
+  returnPct: number;
+  /** False when the window does not cover that calendar period, including the current open half-year. */
+  complete: boolean;
+};
+
+export type HalfYearAccount = {
+  complete: EquityPeriod[];
+  incomplete: EquityPeriod[];
+  profitable: number;
+  completeCount: number;
+  /** "3 of 5 complete half-years". The incomplete period is not in the ratio. */
+  label: string;
+};
 
 /**
  * Month, half-year and year returns from equity endpoints.
@@ -205,10 +240,66 @@ export function equityPeriods(
       cursor += 1;
     }
     const returnPct = start > 0 ? ((end - start) / start) * 100 : 0;
-    out.push({ key: bound.key, start, end, profitable: end > start + 1e-6, returnPct });
+    const complete = bound.naturalStart >= from && bound.naturalEnd <= to;
+    out.push({ key: bound.key, start, end, profitable: end > start + 1e-6, returnPct, complete });
     start = end;
   }
   return out;
+}
+
+/** Complete periods only. The current open period stays in `incomplete`. */
+export function halfYearAccount(periods: readonly EquityPeriod[]): HalfYearAccount {
+  const complete = periods.filter((period) => period.complete);
+  const incomplete = periods.filter((period) => !period.complete);
+  const profitable = complete.filter((period) => period.profitable).length;
+  return {
+    complete,
+    incomplete,
+    profitable,
+    completeCount: complete.length,
+    label: `${profitable} of ${complete.length} complete half-years`,
+  };
+}
+
+/**
+ * Old variant reports printed `round(percent / 10)/10`.
+ * The 2019–2023 building sample has ten half-years, so 50% became "5/10".
+ * A held-back window is not ten half-years, and that label was wrong.
+ */
+export function legacyHalfYearLabel(pct: number): string {
+  return `${Math.round(pct / 10)}/10`;
+}
+
+export function diagnosticIntradayWindow(commonStart: string): { from: string; to: string } {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(commonStart)) throw new Error("Diagnostic coverage start is missing.");
+  if (commonStart > INTRADAY_BUILDING_END) {
+    throw new Error(`Coverage starts ${commonStart}, after the building sample ends. There is no diagnostic window.`);
+  }
+  const from = commonStart < INTRADAY_BUILDING_FROM ? INTRADAY_BUILDING_FROM : commonStart;
+  return { from, to: INTRADAY_BUILDING_END };
+}
+
+/** Latest first day on which every symbol has a session. A missing symbol blocks the date. */
+export function commonCoverageStart(firstDays: readonly (string | null)[]): { start: string | null; missing: number } {
+  const missing = firstDays.filter((day) => !day).length;
+  if (firstDays.length === 0 || missing > 0) return { start: null, missing };
+  let start = firstDays[0] ?? "";
+  for (const day of firstDays) if (day && day > start) start = day;
+  if (!start) return { start: null, missing };
+  return { start, missing: 0 };
+}
+
+export function assertIntradaySampleEnd(sample: ResearchSample, window: { to: string }): void {
+  if (sample !== "building" && sample !== "diagnostic") return;
+  if (window.to !== INTRADAY_BUILDING_END) {
+    throw new Error(`Refusing ${sample} intraday sample ending ${window.to}. It must end on ${INTRADAY_BUILDING_END}.`);
+  }
+}
+
+export function assertNoHeldbackIntradayCandle(sample: ResearchSample, day: string): void {
+  if ((sample === "building" || sample === "diagnostic") && day >= INTRADAY_HELD_BACK_FROM) {
+    throw new Error(`Refusing ${sample} candle on ${day}. Intraday held-back starts ${INTRADAY_HELD_BACK_FROM}.`);
+  }
 }
 
 export function assertBuildingWindow(sample: string, window: { from: string; to: string }, confirmHeldback = false): void {
@@ -217,8 +308,8 @@ export function assertBuildingWindow(sample: string, window: { from: string; to:
   throw new Error(`Refusing research sample ${sample} window ${window.from} through ${window.to}. The building window is 2019-01-01 through 2023-12-31.`);
 }
 
-function periodBounds(from: string, to: string, kind: "month" | "half" | "year"): { key: string; end: string }[] {
-  const out: { key: string; end: string }[] = [];
+function periodBounds(from: string, to: string, kind: "month" | "half" | "year"): { key: string; end: string; naturalStart: string; naturalEnd: string }[] {
+  const out: { key: string; end: string; naturalStart: string; naturalEnd: string }[] = [];
   let year = Number(from.slice(0, 4));
   let month = Number(from.slice(5, 7));
   const endYear = Number(to.slice(0, 4));
@@ -231,14 +322,19 @@ function periodBounds(from: string, to: string, kind: "month" | "half" | "year")
       : kind === "year"
         ? String(year)
         : `${year}-${month <= 6 ? "H1" : "H2"}`;
-    const end = kind === "month"
+    const naturalStart = kind === "month"
+      ? `${year}-${String(month).padStart(2, "0")}-01`
+      : kind === "year"
+        ? `${year}-01-01`
+        : month <= 6 ? `${year}-01-01` : `${year}-07-01`;
+    const naturalEnd = kind === "month"
       ? monthEnd(year, month)
       : kind === "year"
         ? `${year}-12-31`
         : month <= 6 ? `${year}-06-30` : `${year}-12-31`;
     if (!seen.has(key)) {
       seen.add(key);
-      out.push({ key, end: end < to ? end : to });
+      out.push({ key, naturalStart, naturalEnd, end: naturalEnd < to ? naturalEnd : to });
     }
     month += 1;
     if (month === 13) {
@@ -325,6 +421,11 @@ export function scoreResearch(input: ScoreInput): ScoreOutput {
     passed: false,
     failReasons: [],
   };
+  if (input.sample === "diagnostic") {
+    result.passed = false;
+    result.failReasons = [];
+    return result;
+  }
   const reasons: string[] = [];
   if (result.profitFactor < bar.profitFactor) reasons.push(`Profit factor ${result.profitFactor.toFixed(2)}, needs ${bar.profitFactor}`);
   if (result.trades < bar.trades) reasons.push(`Trades ${result.trades}, needs ${bar.trades}`);

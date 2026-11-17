@@ -55,6 +55,12 @@ export function parseResearchArgs(argv: readonly string[]): ResearchArgs {
   }
   if (variants?.length && grid) throw new Error("--variant requires --no-grid");
   if (variants?.length && strategies?.length) throw new Error("Use --variant without --strategy; each variant declares its strategy inputs");
+  if (book === "intraday" && sample === "heldback") {
+    throw new Error("Intraday held-back is closed. This command will not read it.");
+  }
+  if (sample === "diagnostic" && book !== "intraday") {
+    throw new Error("--sample diagnostic is only for an intraday study.");
+  }
   if (book === "longterm") {
     if (sample === "heldback") throw new Error("Long Game held-back data is locked for this task.");
     if (grid) throw new Error("Long Game is frozen and requires --no-grid");
@@ -86,8 +92,8 @@ function readBook(value: string | undefined, flag: string): ResearchBook {
 }
 
 function readSample(value: string | undefined, flag: string): ResearchSample {
-  if (value === "building" || value === "heldback") return value;
-  throw new Error(`${flag} needs building or heldback`);
+  if (value === "building" || value === "heldback" || value === "diagnostic") return value;
+  throw new Error(`${flag} needs building, heldback, or diagnostic`);
 }
 
 function readList(value: string | undefined, flag: string): string[] {

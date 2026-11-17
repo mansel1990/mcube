@@ -25,6 +25,25 @@ export function withExecutionSlip(candidates: readonly Candidate[], slip: number
   });
 }
 
+/** Largest closed winners, then their share of the sum of closed nets. No replacement trade is added. */
+export function winnerShare(trades: readonly { symbol: string; net: number }[], count: number): { symbols: string[]; net: number; share: number | null } {
+  const winners = [...trades].filter((trade) => trade.net > 0).sort((a, b) => b.net - a.net || a.symbol.localeCompare(b.symbol)).slice(0, count);
+  const net = winners.reduce((sum, trade) => sum + trade.net, 0);
+  const total = trades.reduce((sum, trade) => sum + trade.net, 0);
+  return { symbols: winners.map((trade) => trade.symbol), net, share: total > 0 ? net / total : null };
+}
+
+/** Closed-trade profit factor after the largest winning nets are removed. Nothing is inserted in their place. */
+export function profitFactorDroppingLargest(nets: readonly number[], count: number): number {
+  const winners = nets
+    .map((net, index) => ({ net, index }))
+    .filter((row) => row.net > 0)
+    .sort((a, b) => b.net - a.net || a.index - b.index)
+    .slice(0, count);
+  const drop = new Set(winners.map((row) => row.index));
+  return profitFactor(nets.filter((_, index) => !drop.has(index)));
+}
+
 export function concentrationKeys(trades: readonly FilledTrade[], count: number): Set<string> {
   const winners = trades.filter((trade) => trade.net > 0).sort((a, b) => b.net - a.net || a.symbol.localeCompare(b.symbol));
   return new Set(winners.slice(0, count).map((trade) => muteKey(trade)));

@@ -97,6 +97,30 @@ export function momentumCohortAction(input: {
   return "form";
 }
 
+export type MomentumEodPlan = {
+  formCohort: boolean;
+  writeIdeas: boolean;
+  buyDecisions: boolean;
+  proposeWeeklyExits: boolean;
+  sellWatch: boolean;
+};
+
+/** Parked momentum still exits and watches sells. It does not form a buy cohort or write ideas. */
+export function momentumEodPlan(input: { entriesEnabled: boolean; weeklySignalDay: boolean }): MomentumEodPlan {
+  return {
+    formCohort: input.entriesEnabled && input.weeklySignalDay,
+    writeIdeas: input.entriesEnabled,
+    buyDecisions: false,
+    proposeWeeklyExits: input.weeklySignalDay,
+    sellWatch: true,
+  };
+}
+
+/** The sell watcher reprices during the session. After 15:30 it would cancel, so the evening job must not call it. */
+export function momentumSellWatchShouldRun(minutes: number): boolean {
+  return minutes >= 9 * 60 + 15 && minutes <= 15 * 60 + 30;
+}
+
 export function momentumCohortIsCurrent(signalDate: string, day: string, firstTradeDay: string): boolean {
   return day === signalDate || (day >= firstTradeDay && isoWeek(day) === isoWeek(firstTradeDay));
 }

@@ -41,6 +41,35 @@ export async function universe(series: "nifty500" | "nifty200" | "nifty100"): Pr
   return rows.map((row) => ({ symbol: row.symbol, tick: Number(row.tick) > 0 ? Number(row.tick) : 0.05 }));
 }
 
+/** First session in the building window. Months after April 2026 are not opened. */
+export async function firstCoveredSession(
+  symbol: string,
+  kind: "5m" | "1m",
+  from = "2024-11-18",
+  to = "2026-04-30",
+): Promise<string | null> {
+  for (const month of monthsBetween(from, to)) {
+    const file = monthFile(kind, symbol, month);
+    try {
+      await access(file);
+    } catch {
+      continue;
+    }
+    const lines = createInterface({ input: createReadStream(file).pipe(createGunzip()), crlfDelay: Infinity });
+    try {
+      for await (const line of lines) {
+        const bar = parseCandle(line);
+        if (!bar) continue;
+        const day = barDay(bar.t);
+        if (day >= from && day <= to) return day;
+      }
+    } finally {
+      lines.close();
+    }
+  }
+  return null;
+}
+
 export async function forEachSession(
   symbol: string,
   kind: "5m" | "1m",

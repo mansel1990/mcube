@@ -15,7 +15,11 @@ import {
   lossDayOverlap,
   sampleWindow,
   assertBuildingWindow,
+  assertIntradaySampleEnd,
   byQuarter,
+  commonCoverageStart,
+  diagnosticIntradayWindow,
+  INTRADAY_SURVIVORSHIP,
   type ResearchBook,
 } from "@/lib/mlive/research-bar";
 import { istMinutes, todayIst } from "@/lib/mlive/calendar";
@@ -36,6 +40,7 @@ import {
   dailyBars,
   deleteTrades,
   ensureTradeTable,
+  firstCoveredSession,
   forEachSession,
   insertTrades,
   intersectMask,
@@ -143,7 +148,32 @@ async function execute(runId: number, args: ResearchArgs & { strategies: string[
   }
   const capital = await loadCapital(args.book);
   const last = identity.lastCandle || (args.book === "swing" ? await lastDailyDate() : todayIst());
-  const window = sampleWindow(args.book, args.sample, last);
+  let window = sampleWindow(args.book, args.sample, last);
+  if (args.book === "intraday" && args.sample === "heldback") {
+    throw new Error("Intraday held-back is closed. This command will not read it.");
+  }
+  if (args.book === "intraday" && args.sample === "diagnostic") {
+    const loaded = await loadIntradayUniverses(args.only);
+    const required = diagnosticSymbols(args.strategies, loaded);
+    const firstDays: (string | null)[] = [];
+    const missing: string[] = [];
+    for (const item of required) {
+      const day = await firstCoveredSession(item.symbol, item.kind);
+      firstDays.push(day);
+      if (!day) missing.push(`${item.symbol} ${item.kind}`);
+    }
+    if (missing.length) {
+      console.log(`diagnostic missing coverage, none dropped:\n${missing.join("\n")}`);
+      throw new Error(`Diagnostic coverage is incomplete for ${missing.length} symbols. This was not relabelled as a building sample.`);
+    }
+    const common = commonCoverageStart(firstDays);
+    if (!common.start) throw new Error("Diagnostic coverage did not resolve. This was not relabelled as a building sample.");
+    window = diagnosticIntradayWindow(common.start);
+    console.log(`diagnostic window ${window.from} through ${window.to}. ${INTRADAY_SURVIVORSHIP}`);
+  }
+  if (args.book === "intraday" && (args.sample === "building" || args.sample === "diagnostic")) {
+    assertIntradaySampleEnd(args.sample, window);
+  }
   if (args.book === "swing") {
     console.log(`research sample ${args.sample} window ${window.from} through ${window.to}`);
     assertBuildingWindow(args.sample, window, args.confirmHeldback);
@@ -468,6 +498,17 @@ async function loadSwingUniverse(only?: string[]) {
   return { symbols, nifty, sectors };
 }
 
+function diagnosticSymbols(
+  strategies: readonly string[],
+  loaded: { orb: string[]; vwap: string[] },
+): { symbol: string; kind: "5m" | "1m" }[] {
+  const rows: { symbol: string; kind: "5m" | "1m" }[] = [];
+  const wanted = new Set(strategies);
+  if (wanted.has("orb")) for (const symbol of loaded.orb) rows.push({ symbol, kind: "5m" });
+  if (wanted.has("vwap")) for (const symbol of loaded.vwap) rows.push({ symbol, kind: "1m" });
+  return rows;
+}
+
 async function loadIntradayUniverses(only?: string[]) {
   const wanted = only?.length ? new Set(only) : null;
   const keep = (rows: { symbol: string; tick: number }[]) => (wanted ? rows.filter((row) => wanted.has(row.symbol)) : rows);
@@ -589,9 +630,10 @@ function buildNote(
     ? `Momentum entry gates: ${momentum.book.blocks.candidates} candidates, ${momentum.book.blocks.filled} filled, ${momentum.book.blocks.cappedBuys} blocked by the new-buy cap, ${momentum.book.blocks.cappedOpen} by the open-position cap, ${momentum.book.blocks.held} because the name was already held, ${momentum.book.blocks.sector} by the sector cap, ${momentum.book.blocks.deploy} by the daily deploy cap, ${momentum.book.blocks.size} because the order could not be sized. Lowest cash was ₹${Math.round(momentum.book.minCash).toLocaleString("en-IN")}.`
     : "";
   return [
-    `${args.sample === "heldback" ? "Held-back" : "Building"} sample ${window.from} to ${window.to}.`,
+    `${args.sample === "heldback" ? "Held-back" : args.sample === "diagnostic" ? "Diagnostic" : "Building"} sample ${window.from} to ${window.to}.`,
+    args.sample === "diagnostic" ? "This is not a building-sample pass and has no official verdict." : "",
     warmupNote,
-    SURVIVORSHIP,
+    args.book === "intraday" ? INTRADAY_SURVIVORSHIP : SURVIVORSHIP,
     args.book === "swing" ? JOIN_DATES : "",
     cost,
     rules,

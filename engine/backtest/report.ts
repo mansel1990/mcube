@@ -1,4 +1,4 @@
-import { lossDayOverlap, overlapNote } from "@/lib/mlive/research-bar";
+import { halfYearAccount, legacyHalfYearLabel, lossDayOverlap, overlapNote } from "@/lib/mlive/research-bar";
 import type { RangeAudit } from "./clean";
 import type { StoredTradeRef } from "./data";
 import type { ScoredRun } from "./score";
@@ -118,7 +118,7 @@ function formatVariantComparison(rows: readonly ScoredRun[]): string {
       dd.troughDate,
       dd.recoveryDate,
       Math.round(dd.rupeeLoss),
-      `${Math.round(row.score.halfYearsProfitablePct / 10)}/10`,
+      halfYearCell(row),
       `${gates}/5`,
       row.book.exposurePct.toFixed(1),
       row.book.maxExposurePct.toFixed(1),
@@ -149,7 +149,19 @@ function formatVariantComparison(rows: readonly ScoredRun[]): string {
       num(stress?.execution.cagrPct),
     ].join("\t"));
   }
-  lines.push("Official gates: PF ≥1.4; trades ≥150; average net ≥0.8%; profitable half-years ≥70% (7/10); max drawdown ≤15%.");
+  lines.push("Official building gates: PF ≥1.4; trades ≥150; average net ≥0.8%; profitable complete half-years ≥70%; max drawdown ≤15%.");
+  lines.push(`The old "n/10" cell was ${legacyHalfYearLabel(50)} whenever the stored rate was 50%, because it divided the percentage by 10 and always assumed the ten half-years of 2019–2023. That label is not used.`);
+  for (const row of rows) {
+    const account = halfYearAccount(row.periods ?? []);
+    if (!row.periods?.length) continue;
+    for (const period of account.complete) {
+      lines.push(`${row.variant} ${period.key} complete start ${Math.round(period.start)} end ${Math.round(period.end)} return ${period.returnPct.toFixed(2)}%`);
+    }
+    for (const period of account.incomplete) {
+      lines.push(`${row.variant} ${period.key} incomplete start ${Math.round(period.start)} end ${Math.round(period.end)} return ${period.returnPct.toFixed(2)}%. Excluded from ${account.label}.`);
+    }
+    lines.push(`${row.variant}: ${account.label}. Removing large winners is a concentration stress, not a strategy variant. Positive-skew momentum is expected to need large winners; one held-back sample does not show that the concentration repeats.`);
+  }
   for (const row of rows) {
     const worstTrades = [...row.book.trades].sort((a, b) => a.net - b.net).slice(0, 5).map((trade) => `${trade.symbol} ₹${Math.round(trade.net)}`).join(", ");
     const sectors = new Map<string, number>();
@@ -255,6 +267,11 @@ export function formatOverlap(rows: readonly ScoredRun[]): string {
     }
   }
   return lines.join(" ");
+}
+
+function halfYearCell(row: ScoredRun): string {
+  if (row.periods?.length) return halfYearAccount(row.periods).label;
+  return `${row.score.halfYearsProfitablePct.toFixed(0)}%`;
 }
 
 function num(value: number | undefined): string {

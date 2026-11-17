@@ -5,6 +5,7 @@ import {
   monthlyReturns,
   orderedNets,
   scoreResearch,
+  type EquityPeriod,
   type ResearchBook,
   type ResearchSample,
   type ScoreOutput,
@@ -29,6 +30,7 @@ export type ScoredRun = {
   lossDays: Set<string>;
   monthly: Record<string, number>;
   equity: { date: string; value: number }[];
+  periods?: EquityPeriod[];
   stress?: StressReport;
 };
 
@@ -49,7 +51,10 @@ export function scoreBook(
   const monthly = swing
     ? Object.fromEntries(months.map((period) => [period.key, period.returnPct]))
     : monthlyReturns(result.equity);
-  const periodPct = halves.length ? (halves.filter((period) => period.profitable).length / halves.length) * 100 : 0;
+  const completeHalves = halves.filter((period) => period.complete);
+  const periodPct = completeHalves.length
+    ? (completeHalves.filter((period) => period.profitable).length / completeHalves.length) * 100
+    : 0;
   const end = result.equity.length ? result.equity[result.equity.length - 1].value : capital;
   const nets = orderedNets(result.trades);
   const score = scoreResearch({
@@ -75,5 +80,6 @@ export function scoreBook(
     lossDays: losingDays(result.equity),
     monthly,
     equity: downsampleEquity(result.equity),
+    periods: halves,
   };
 }

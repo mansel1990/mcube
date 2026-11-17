@@ -14,8 +14,9 @@ import {
   duplicateBlock,
   heldbackQueueBlock,
   identityFromRun,
-  isLiveStrategy,
+  isParkedResearch,
   makeIdentity,
+  PARKED_RESEARCH,
   overlapPairs,
   runClock,
   sampleSpan,
@@ -25,7 +26,9 @@ import {
   rebaseToCapital,
   RESEARCH_RUNTIME,
   researchStartLine,
+  readResearchSample,
   resultBand,
+  storedHalfYears,
   robustnessLabel,
   runSummary,
   sortStrategies,
@@ -185,7 +188,7 @@ export function ResearchView() {
   const defaults = variantRun ? (payload?.results ?? []) : (payload?.results ?? []).filter((row) => row.isDefault);
   const selected = defaults.find((row) => resultKey(row) === strategy) ?? null;
   const settings = selected ? (payload?.results ?? []).filter((row) => row.strategy === selected.strategy) : [];
-  const runSample = (payload?.run?.sample === "heldback" ? "heldback" : "building") as ResearchSample;
+  const runSample = readResearchSample(payload?.run?.sample);
   const bar = barFor(book, payload?.run ? runSample : "building");
   const span = paramsWindow(payload?.run?.params);
   const quarters = span ? byQuarter(book, span.from, span.to) : book === "intraday";
@@ -201,7 +204,12 @@ export function ResearchView() {
     book,
     runs: payload?.runs.length ?? 0,
     sample: payload?.run ? runSample : null,
-    rows: cards.map((row) => ({ name: row.name, passed: row.passed, fails: row.failReasons.length })),
+    rows: cards.map((row) => ({
+      name: row.name,
+      passed: row.passed && !isParkedResearch(book, row.strategy, row.variantId),
+      fails: row.failReasons.length,
+      parked: isParkedResearch(book, row.strategy, row.variantId),
+    })),
   });
   const stored = storedRuns(payload?.runs ?? []);
   const proposal = payload
@@ -431,10 +439,15 @@ export function ResearchView() {
       {showCards && (
         <div className="research-grid">
           {cards.map((row) => {
+            const fund = Number(objectOf(payload?.run?.params.capital).fund);
+            const halves = span ? storedHalfYears(equityPoints(row.equity), fund, span.from, span.to) : null;
+            const parked = isParkedResearch(book, row.strategy, row.variantId);
+            const diagnostic = runSample === "diagnostic";
             const tests = passRows({
               profitFactor: row.profitFactor,
               trades: row.trades,
-              halfYearsPct: row.halfYearsPct,
+              halfYearsPct: halves ? halves.pct : row.halfYearsPct,
+              halfYearLabel: halves?.label,
               worstDrawdownPct: row.worstDrawdownPct,
               avgNetPct: row.avgNetPct,
               bar,
@@ -466,15 +479,17 @@ export function ResearchView() {
                     <div className="idea">{strategyIdea(row.strategy)}</div>
                   </div>
                   <div className="research-pills">
-                    <span className={`chip ${row.band === "passed" ? "ok" : row.band === "close" ? "wait" : "bad"}`}>
-                      {row.band === "passed" ? "Passed" : row.band === "close" ? "Close" : "Failed"}
-                    </span>
-                    {isLiveStrategy(book, row.strategy, row.variantId) && <span className="chip live">Live now</span>}
+                    {diagnostic ? <span className="chip quiet">Diagnostic</span> : parked ? <span className="chip wait">{PARKED_RESEARCH}</span> : (
+                      <span className={`chip ${row.band === "passed" ? "ok" : row.band === "close" ? "wait" : "bad"}`}>
+                        {row.band === "passed" ? "Passed" : row.band === "close" ? "Close" : "Failed"}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="pass-rows">
-                  {tests.map((test) => <div key={test.id} className={test.pass ? "ok" : "fail"}>{test.text}</div>)}
+                  {diagnostic ? <div>No official pass or fail. A good diagnostic result is not evidence for live trading.</div> : tests.map((test) => <div key={test.id} className={test.pass ? "ok" : "fail"}>{test.text}</div>)}
                 </div>
+                {halves?.incomplete && <span className="muted">{halves.incomplete}</span>}
                 <div>
                   <span className="lbl">Annualized backtest return (CAGR)</span>
                   <div className={`research-cagr n ${row.cagrPct != null && row.cagrPct < 0 ? "down" : ""}`}>{row.cagrPct == null ? "—" : `${row.cagrPct.toFixed(1)}%`}</div>

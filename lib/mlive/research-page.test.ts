@@ -119,7 +119,7 @@ describe("research page copy", () => {
     expect(variantName("M10-10")).toBe("Momentum XI — Powerplay");
     expect(variantName("TB+M10")).toBe("All-Rounder XI — Breakout + Momentum");
     expect(variantName("future-variant")).toBe("future-variant");
-    expect(isLiveStrategy("swing", "momentum", "M10-6")).toBe(true);
+    expect(isLiveStrategy("swing", "momentum", "M10-6")).toBe(false);
     expect(isLiveStrategy("swing", "momentum", "M10-10")).toBe(false);
   });
 

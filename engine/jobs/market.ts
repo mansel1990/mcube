@@ -1,11 +1,25 @@
-import { gzipSync } from "zlib";
 import path from "path";
-import { mkdir, rename, unlink, writeFile, access } from "fs/promises";
+import { createReadStream } from "fs";
+import { mkdir, readdir, rename, statfs, unlink, writeFile, access } from "fs/promises";
+import { createInterface } from "readline";
+import { createGunzip, gzipSync } from "zlib";
 import { addDays, istMinutes, previousTradingDay, todayIst } from "@/lib/mlive/calendar";
+import { INTRADAY_BUILDING_END, INTRADAY_BUILDING_FROM } from "@/lib/mlive/research-bar";
 import { mq } from "../db";
 import { MliveKite } from "../kite";
 import { holidaySet } from "../load";
 import { runJob } from "../run";
+import {
+  assertFreeDisk,
+  backfillThrough,
+  formatCoverage,
+  minuteImportMayStart,
+  minuteImportMustStop,
+  minuteProvenance,
+  missingSessions,
+  reliableCoverageStart,
+  type SymbolCoverage,
+} from "./market-window";
 
 const SIZE_GATE = 650 * 1024 * 1024;
 export const INSTRUMENT_BATCH = 500;
@@ -332,14 +346,30 @@ async function fileExists(file: string): Promise<boolean> {
 export async function writeMonthFile(kind: "5m" | "1m", symbol: string, month: string, rows: Candle[]): Promise<void> {
   const finalPath = monthFile(kind, symbol, month);
   await mkdir(path.dirname(finalPath), { recursive: true });
+  const csv = candleCsv(rows);
   const tmpPath = `${finalPath}.${process.pid}.tmp`;
   try {
-    await writeFile(tmpPath, gzipSync(Buffer.from(candleCsv(rows))));
+    await writeFile(tmpPath, gzipSync(Buffer.from(csv)));
     await rename(tmpPath, finalPath);
   } catch (error) {
     await unlink(tmpPath).catch(() => undefined);
     throw error;
   }
+  if (kind !== "1m") return;
+  const sidecar = `${finalPath}.provenance.json`;
+  if (await fileExists(sidecar)) return;
+  const from = rows[0] ? istStamp(rows[0].date).slice(0, 10) : `${month}-01`;
+  const last = rows.at(-1);
+  const to = last ? istStamp(last.date).slice(0, 10) : from;
+  await writeFile(sidecar, `${JSON.stringify(minuteProvenance({
+    symbol,
+    month,
+    from,
+    to,
+    rows: rows.length,
+    csv,
+    retrievedAt: new Date().toISOString(),
+  }))}\n`);
 }
 
 function candleDay(row: Candle, interval: CandleInterval): string {
@@ -609,54 +639,178 @@ async function sessionLoaded(table: CandleTable, token: number, day: string): Pr
 }
 
 async function runSeries(kite: MliveKite, plan: SeriesPlan, only: string[] | undefined, oneSession: boolean): Promise<void> {
-  const symbols = await symbolsFor(plan, only);
+  let active = plan;
+  if (!oneSession && plan.id === "1m-files") {
+    if (!minuteImportMayStart(istMinutes())) {
+      console.log("1m backfill stopped: outside 16:00–16:55 and 20:00–07:00 IST. Progress is unchanged.");
+      return;
+    }
+    const free = await freeBytes(filesRoot());
+    assertFreeDisk(free);
+    const symbolsForGap = await symbolsFor(plan, only);
+    const firstDays = await Promise.all(symbolsForGap.map((item) => firstMinuteDay(item.symbol)));
+    const reliable = reliableCoverageStart(firstDays);
+    const through = backfillThrough(reliable);
+    console.log(reliable
+      ? `1m reliable coverage begins ${reliable}. Backfill stops on ${through ?? "nothing"}, before that day.`
+      : `1m coverage is not yet complete for every symbol. Backfill stops on ${through}. Held-back from 2026-05-01 is not requested.`);
+    if (!through) {
+      console.log(formatCoverage(await coverageRows(symbolsForGap.map((item) => item.symbol), plan.from, INTRADAY_BUILDING_END)));
+      return;
+    }
+    active = { ...plan, from: INTRADAY_BUILDING_FROM, to: through < INTRADAY_BUILDING_END ? through : INTRADAY_BUILDING_END };
+  }
+  const symbols = await symbolsFor(active, only);
   if (symbols.length === 0) {
     console.log(`${plan.label}: no symbols`);
     return;
   }
-  console.log(`${plan.label}: ${symbols.length} symbols ${plan.from} to ${plan.to}`);
+  console.log(`${active.label}: ${symbols.length} symbols ${active.from} to ${active.to}`);
   let finished = 0;
   for (const item of symbols) {
-    if (plan.store === "neon" && (await databaseBytes()) >= SIZE_GATE) {
-      console.log(`market: stopped before 650 MB while on ${plan.label}. Unfinished symbols stay in download_progress.`);
+    if (active.id === "1m-files" && !oneSession && minuteImportMustStop(istMinutes())) {
+      console.log("1m backfill stopped cleanly for the research window. Finished months stay in download_progress.");
+      console.log(formatCoverage(await coverageRows(symbols.map((row) => row.symbol), active.from, active.to)));
+      return;
+    }
+    if (active.store === "neon" && (await databaseBytes()) >= SIZE_GATE) {
+      console.log(`market: stopped before 650 MB while on ${active.label}. Unfinished symbols stay in download_progress.`);
       return;
     }
     const progress = await mq<{ last_to: string | null }>(
       `SELECT last_to::text AS last_to FROM download_progress WHERE symbol = $1 AND interval = $2 AND store = $3`,
-      [item.symbol, plan.interval, plan.store]
+      [item.symbol, active.interval, active.store]
     );
-    const stored = progress[0]?.last_to ? addDays(progress[0].last_to.slice(0, 10), 1) : plan.from;
-    const catchingUp = oneSession && plan.from < plan.to;
-    let cursor = stored < plan.from ? plan.from : stored;
-    if (catchingUp) cursor = plan.from;
-    if (!catchingUp && cursor > plan.to) {
+    const stored = progress[0]?.last_to ? addDays(progress[0].last_to.slice(0, 10), 1) : active.from;
+    const catchingUp = oneSession && active.from < active.to;
+    let cursor = stored < active.from ? active.from : stored;
+    if (catchingUp) cursor = active.from;
+    if (!catchingUp && cursor > active.to) {
       finished += 1;
-      console.log(`${plan.label} ${finished} of ${symbols.length}`);
+      console.log(`${active.label} ${finished} of ${symbols.length}`);
       continue;
     }
-    if (!catchingUp && oneSession && plan.table && (await sessionLoaded(plan.table, item.token, plan.to))) {
-      await saveProgress(item.symbol, plan, plan.to);
+    if (!catchingUp && oneSession && active.table && (await sessionLoaded(active.table, item.token, active.to))) {
+      await saveProgress(item.symbol, active, active.to);
       finished += 1;
-      console.log(`${plan.label} ${finished} of ${symbols.length}`);
+      console.log(`${active.label} ${finished} of ${symbols.length}`);
       continue;
     }
-    const chunks = plan.chunk === "month" ? monthChunks(cursor, plan.to) : spanChunks(cursor, plan.to, plan.span);
+    const chunks = active.chunk === "month" ? monthChunks(cursor, active.to) : spanChunks(cursor, active.to, active.span);
     for (const chunk of chunks) {
-      if (plan.fileKind) {
-        const file = monthFile(plan.fileKind, item.symbol, chunk.label);
+      if (active.id === "1m-files" && !oneSession && minuteImportMustStop(istMinutes())) {
+        console.log("1m backfill stopped cleanly for the research window. Finished months stay in download_progress.");
+        console.log(formatCoverage(await coverageRows(symbols.map((row) => row.symbol), active.from, active.to)));
+        return;
+      }
+      if (active.fileKind) {
+        const file = monthFile(active.fileKind, item.symbol, chunk.label);
         if (await fileExists(file)) {
-          await saveProgress(item.symbol, plan, chunk.to);
+          await saveProgress(item.symbol, active, chunk.to);
           continue;
         }
       }
-      const rows = prepareRows(await fetchChunk(kite, item.token, plan.interval, chunk.from, chunk.to), plan.interval, chunk.from, chunk.to);
-      if (plan.store === "neon" && plan.table) await insertCandles(plan.table, item.token, item.symbol, rows);
-      else if (plan.fileKind) await writeMonthFile(plan.fileKind, item.symbol, chunk.label, rows);
-      await saveProgress(item.symbol, plan, chunk.to);
+      let rows: Candle[];
+      try {
+        rows = prepareRows(await fetchChunk(kite, item.token, active.interval, chunk.from, chunk.to), active.interval, chunk.from, chunk.to);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (active.id === "1m-files" && message.includes("session expired")) {
+          console.log(`${message} Finished months stay in download_progress.`);
+          console.log(formatCoverage(await coverageRows(symbols.map((row) => row.symbol), active.from, active.to)));
+          return;
+        }
+        throw error;
+      }
+      if (active.store === "neon" && active.table) await insertCandles(active.table, item.token, item.symbol, rows);
+      else if (active.fileKind) await writeMonthFile(active.fileKind, item.symbol, chunk.label, rows);
+      await saveProgress(item.symbol, active, chunk.to);
     }
     finished += 1;
-    console.log(`${plan.label} ${finished} of ${symbols.length}`);
+    console.log(`${active.label} ${finished} of ${symbols.length}`);
   }
+  if (active.id === "1m-files" && !oneSession) {
+    console.log(formatCoverage(await coverageRows(symbols.map((row) => row.symbol), active.from, active.to)));
+  }
+}
+
+async function freeBytes(dir: string): Promise<number> {
+  const stats = await statfs(dir);
+  return Number(stats.bavail) * Number(stats.bsize);
+}
+
+/** First stored one-minute session at or before the building end. Later files are not opened. */
+export async function firstMinuteDay(symbol: string): Promise<string | null> {
+  const dir = path.join(filesRoot(), "1m", symbol);
+  let names: string[] = [];
+  try {
+    names = (await readdir(dir)).filter((name) => /^\d{4}-\d{2}\.csv\.gz$/.test(name)).sort();
+  } catch {
+    return null;
+  }
+  for (const name of names) {
+    const month = name.slice(0, 7);
+    if (month > INTRADAY_BUILDING_END.slice(0, 7)) break;
+    const day = await firstDayInFile(path.join(dir, name), INTRADAY_BUILDING_FROM, INTRADAY_BUILDING_END);
+    if (day) return day;
+  }
+  return null;
+}
+
+async function firstDayInFile(file: string, from: string, to: string): Promise<string | null> {
+  const lines = createInterface({ input: createReadStream(file).pipe(createGunzip()), crlfDelay: Infinity });
+  try {
+    for await (const line of lines) {
+      if (!line || line.startsWith("ts_ist")) continue;
+      const day = line.slice(0, 10);
+      if (day >= from && day <= to) return day;
+    }
+  } finally {
+    lines.close();
+  }
+  return null;
+}
+
+async function coverageRows(symbols: string[], from: string, to: string): Promise<SymbolCoverage[]> {
+  const cappedTo = to > INTRADAY_BUILDING_END ? INTRADAY_BUILDING_END : to;
+  const expected = await expectedSessions(from, cappedTo);
+  const rows: SymbolCoverage[] = [];
+  for (const symbol of symbols) {
+    const present = await minuteSessions(symbol, from, cappedTo);
+    const missing = missingSessions(expected, present);
+    rows.push({ symbol, sessions: present.size, missing });
+  }
+  return rows;
+}
+
+async function expectedSessions(from: string, to: string): Promise<string[]> {
+  const rows = await mq<{ day: string }>(
+    `SELECT ts::text AS day FROM candles_daily
+      WHERE symbol = 'NIFTY 50' AND ts >= $1::date AND ts <= $2::date
+      ORDER BY ts`,
+    [from, to]
+  );
+  return rows.map((row) => String(row.day).slice(0, 10));
+}
+
+async function minuteSessions(symbol: string, from: string, to: string): Promise<Set<string>> {
+  const present = new Set<string>();
+  for (const chunk of monthChunks(from, to)) {
+    if (chunk.label > INTRADAY_BUILDING_END.slice(0, 7)) break;
+    const file = monthFile("1m", symbol, chunk.label);
+    if (!(await fileExists(file))) continue;
+    const lines = createInterface({ input: createReadStream(file).pipe(createGunzip()), crlfDelay: Infinity });
+    try {
+      for await (const line of lines) {
+        if (!line || line.startsWith("ts_ist")) continue;
+        const day = line.slice(0, 10);
+        if (day >= from && day <= to) present.add(day);
+      }
+    } finally {
+      lines.close();
+    }
+  }
+  return present;
 }
 
 async function run(options: { oneSession: boolean; only?: string[]; series?: SeriesId }): Promise<void> {

@@ -1,4 +1,4 @@
-import type { ResearchSample } from "@/lib/mlive/research-bar";
+import { assertNoHeldbackIntradayCandle, type ResearchSample } from "@/lib/mlive/research-bar";
 import type { Bar } from "../strategies/math";
 import { emptyContext, paramSets, type StrategyDef } from "../strategies/types";
 import { selectIntraday, walkSession, type DayRules, type SessionTrade } from "./intraday-sim";
@@ -78,6 +78,21 @@ export async function simulateIntraday(input: {
   daily: (symbol: string) => Promise<Bar[]>;
   onSymbol?: (label: string, index?: number, total?: number) => void;
 }): Promise<IntradaySimulation> {
+  if ((input.sample === "building" || input.sample === "diagnostic") && input.window.to >= "2026-05-01") {
+    throw new Error(`Refusing to read intraday candles through ${input.window.to} for a ${input.sample} run.`);
+  }
+  const guarded: typeof input = {
+    ...input,
+    stream: async (symbol, kind, from, to, visit) => {
+      if ((input.sample === "building" || input.sample === "diagnostic") && to >= "2026-05-01") {
+        throw new Error(`Refusing to read intraday candles through ${to} for a ${input.sample} run.`);
+      }
+      await input.stream(symbol, kind, from, to, (day, bars) => {
+        assertNoHeldbackIntradayCandle(input.sample, day);
+        visit(day, bars);
+      });
+    },
+  };
   const calendar = [...new Set(
     (await input.daily("NIFTY 50"))
       .map((bar) => bar.t.slice(0, 10))
@@ -89,12 +104,12 @@ export async function simulateIntraday(input: {
   const orb = input.strategies.filter((strategy) => strategy.name === "orb");
   const vwap = input.strategies.filter((strategy) => strategy.name === "vwap");
   if (orb.length) {
-    const result = await runOrb(input, orb, calendar);
+    const result = await runOrb(guarded, orb, calendar);
     scored.push(...result.scored);
     notes.push(result.note);
   }
   if (vwap.length) {
-    const result = await runVwap(input, vwap, calendar);
+    const result = await runVwap(guarded, vwap, calendar);
     scored.push(...result.scored);
     notes.push(result.note);
   }

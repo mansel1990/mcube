@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import v8 from "node:v8";
 import { loadEnv } from "./db";
-import { researchRespawnArgv } from "./research-spawn";
+import { jobHeapMb, researchRespawnArgv, takeHeapFlag } from "./research-spawn";
 import { approvals } from "./jobs/approvals";
 import { buys } from "./jobs/buys";
 import { cancel } from "./jobs/cancel";
@@ -26,6 +26,19 @@ import { swingSwitch } from "./jobs/swing-switch";
 
 loadEnv();
 
+let argv = process.argv;
+let requestedHeap: number | null = null;
+if (process.argv[2] === "research") {
+  try {
+    const taken = takeHeapFlag(process.argv);
+    argv = taken.argv;
+    requestedHeap = taken.heapMb;
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exit(1);
+  }
+}
+
 const jobs: Record<string, () => Promise<void>> = {
   "import-ideas": importIdeas,
   "eod-stops": eodStops,
@@ -45,31 +58,40 @@ const jobs: Record<string, () => Promise<void>> = {
   "market-check": marketCheck,
   "longterm-import": () => longtermImport(process.argv.slice(3)),
   "momentum-eod": momentumEod,
-  research: () => researchJob(process.argv.slice(3)),
+  research: () => researchJob(argv.slice(3)),
   "research-queue": researchQueue,
   quotes,
   intraday,
   "swing-switch": swingSwitch,
 };
 
-const name = process.argv[2];
+const name = argv[2];
 const job = name ? jobs[name] : undefined;
 if (!job) {
   console.error(`Usage: npm run engine -- <${Object.keys(jobs).join("|")}>`);
+  console.error("research --heap <MB> raises only that manual run (600–8192). Queue and cron stay at 600. Example: --heap 2200");
   process.exit(1);
 }
 
 const withOptions = name === "market-backfill" || name === "research" || name === "longterm-import";
-if (!withOptions && process.argv.length > 3) {
+if (!withOptions && argv.length > 3) {
   console.error(`${name} does not take options`);
   process.exit(1);
 }
 
-if ((name === "research" || name === "research-queue") && process.env.MLIVE_RESEARCH_HEAP !== "1") {
-  if (v8.getHeapStatistics().heap_size_limit < 560 * 1024 * 1024) {
-    const child = spawnSync(process.execPath, researchRespawnArgv(process.execArgv, process.argv), {
+const minuteBackfill = name === "market-backfill" && argv.some((arg) => arg === "1m-files" || arg.endsWith("=1m-files"));
+const heapMb = jobHeapMb(name, requestedHeap, minuteBackfill);
+if (heapMb && process.env.MLIVE_RESEARCH_HEAP !== "1" && process.env.MLIVE_JOB_HEAP !== "1") {
+  const limit = v8.getHeapStatistics().heap_size_limit;
+  if (limit < (heapMb - 40) * 1024 * 1024) {
+    const child = spawnSync(process.execPath, researchRespawnArgv(process.execArgv, argv), {
       stdio: "inherit",
-      env: { ...process.env, NODE_OPTIONS: "--max-old-space-size=600", MLIVE_RESEARCH_HEAP: "1" },
+      env: {
+        ...process.env,
+        NODE_OPTIONS: `--max-old-space-size=${heapMb}`,
+        MLIVE_RESEARCH_HEAP: "1",
+        MLIVE_JOB_HEAP: "1",
+      },
     });
     process.exit(child.status ?? 1);
   }
@@ -78,7 +100,7 @@ if ((name === "research" || name === "research-queue") && process.env.MLIVE_RESE
 let run: () => Promise<void> = job;
 if (name === "market-backfill") {
   try {
-    const args = parseMarketArgs(process.argv.slice(3));
+    const args = parseMarketArgs(argv.slice(3));
     run = () => marketBackfill(args);
   } catch (error) {
     console.error(error instanceof Error ? error.message : error);

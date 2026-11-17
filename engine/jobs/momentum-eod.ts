@@ -1,31 +1,33 @@
-import { nextTradingDay, todayIst } from "@/lib/mlive/calendar";
+import { istMinutes, nextTradingDay, todayIst } from "@/lib/mlive/calendar";
 import { raiseAlert } from "../alerts";
 import { dailyBars } from "../backtest/data";
 import { num, q } from "../db";
 import { holidaySet, loadSettings } from "../load";
-import { isWeeklySignalDay, loadMomentumSnapshot, momentumCohortIsCurrent } from "../momentum-live";
+import { isWeeklySignalDay, loadMomentumSnapshot, momentumCohortIsCurrent, momentumEodPlan, momentumSellWatchShouldRun, type MomentumEodPlan } from "../momentum-live";
+import { maintainMomentumWeeklySells } from "../momentum-sell-watch";
 import { runJob } from "../run";
 
 export async function momentumEod(): Promise<void> {
   await runJob("momentum-eod", async (runId) => {
     const settings = await loadSettings();
-    if (!settings.strategies.includes("momentum")) return { skipped: "momentum disabled" };
+    const entriesEnabled = settings.strategies.includes("momentum");
     const today = todayIst();
     const nextSession = nextTradingDay(today, await holidaySet());
-    const nifty = await dailyBars("NIFTY 50");
-    const latest = nifty.at(-1)?.t ?? "";
-    if (latest !== today) {
-      await raiseAlert({
-        level: "problem",
-        code: "bad_data",
-        message: `Momentum did not run: latest NIFTY 50 candle is ${latest || "missing"}, expected ${today}.`,
-        runId,
-      });
-      throw new Error(`Momentum scan has stale NIFTY 50 candle ${latest || "missing"}`);
+    const weeklySignalDay = isWeeklySignalDay(today, nextSession);
+    const plan = momentumEodPlan({ entriesEnabled, weeklySignalDay });
+    if (!entriesEnabled) {
+      let exits = 0;
+      if (plan.proposeWeeklyExits) {
+        await requireFreshNifty(today, runId);
+        const snapshot = await loadMomentumSnapshot(today);
+        exits = await proposeWeeklyExits(runId, today, nextSession, new Set(snapshot.cohort.map((row) => row.symbol)), settings.dryRun);
+      }
+      const sellWatch = await runSellWatch(plan, runId);
+      return { skipped: "momentum entries parked", ideas: 0, buys: 0, cohort: false, exits, sellWatch };
     }
+    await requireFreshNifty(today, runId);
     let formed = false;
     let exits = 0;
-    const weeklySignalDay = isWeeklySignalDay(today, nextSession);
     if (weeklySignalDay) {
       const seen = await q(`SELECT signal_date FROM mlive.mlive_momentum_runs WHERE signal_date = $1::date`, [today]);
       const snapshot = await loadMomentumSnapshot(today);
@@ -53,9 +55,29 @@ export async function momentumEod(): Promise<void> {
     } else {
       await expireStaleCohort(today, await holidaySet());
     }
-    const ideas = await writeActiveIdeas(runId, today, nextSession, settings.dryRun);
-    return { formed, ideas, exits, validFor: nextSession };
+    const ideas = plan.writeIdeas ? await writeActiveIdeas(runId, today, nextSession, settings.dryRun) : 0;
+    const sellWatch = await runSellWatch(plan, runId);
+    return { formed, ideas, buys: 0, exits, sellWatch, validFor: nextSession };
   });
+}
+
+async function requireFreshNifty(today: string, runId: number): Promise<void> {
+  const nifty = await dailyBars("NIFTY 50");
+  const latest = nifty.at(-1)?.t ?? "";
+  if (latest === today) return;
+  await raiseAlert({
+    level: "problem",
+    code: "bad_data",
+    message: `Momentum did not run: latest NIFTY 50 candle is ${latest || "missing"}, expected ${today}.`,
+    runId,
+  });
+  throw new Error(`Momentum scan has stale NIFTY 50 candle ${latest || "missing"}`);
+}
+
+async function runSellWatch(plan: MomentumEodPlan, runId: number): Promise<boolean> {
+  if (!plan.sellWatch || !momentumSellWatchShouldRun(istMinutes())) return false;
+  await maintainMomentumWeeklySells(runId);
+  return true;
 }
 
 async function expireStaleCohort(today: string, holidays: ReadonlySet<string>): Promise<void> {

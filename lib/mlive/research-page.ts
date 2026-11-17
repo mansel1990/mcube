@@ -1,4 +1,7 @@
 import {
+  DIAGNOSTIC_VERDICT,
+  equityPeriods,
+  halfYearAccount,
   researchThresholds,
   type ResearchBook,
   type ResearchSample,
@@ -82,7 +85,22 @@ export function variantName(key: string): string {
 }
 
 export function isLiveStrategy(book: ResearchBook, key: string, variant?: string | null): boolean {
-  return book === "swing" && key === "momentum" && variant === "M10-6";
+  void book;
+  void key;
+  void variant;
+  return false;
+}
+
+/** Frozen Momentum stays on the page with its history. It is not live and not a recommendation. */
+export function isParkedResearch(book: ResearchBook, key: string, variant?: string | null): boolean {
+  return book === "swing" && key === "momentum" && (variant == null || variant === "M10-6");
+}
+
+export const PARKED_RESEARCH = "Parked · research only";
+
+export function readResearchSample(value: unknown): ResearchSample {
+  if (value === "heldback" || value === "diagnostic" || value === "building") return value;
+  return "building";
 }
 
 export function resultBand(passed: boolean, fails: number): Band {
@@ -125,7 +143,7 @@ export function readIdentity(params: unknown, engineSha = ""): ResearchIdentity 
   if (raw.book !== "swing" && raw.book !== "intraday" && raw.book !== "longterm") return null;
   return makeIdentity({
     book: raw.book,
-    sample: raw.sample === "heldback" ? "heldback" : "building",
+    sample: readResearchSample(raw.sample),
     strategies: stringsOf(raw.strategies),
     variants: stringsOf(raw.variants),
     grid: raw.grid !== false,
@@ -155,7 +173,7 @@ export function identityFromRun(input: {
   if (strategies.length === 0 || !last || !input.engineSha) return null;
   return makeIdentity({
     book: input.book,
-    sample: input.sample === "heldback" ? "heldback" : "building",
+    sample: readResearchSample(input.sample),
     strategies,
     variants: stringsOf(params.variants),
     grid: params.grid !== false,
@@ -292,21 +310,28 @@ export function verdictFor(input: {
   book: ResearchBook;
   runs: number;
   sample: ResearchSample | null;
-  rows: { name: string; passed: boolean; fails: number }[];
+  rows: { name: string; passed: boolean; fails: number; parked?: boolean }[];
 }): { tone: "empty" | "open" | "passed"; text: string } {
+  if (input.sample === "diagnostic") return { tone: "open", text: DIAGNOSTIC_VERDICT };
   if (input.book === "intraday" && input.runs === 0) return { tone: "empty", text: INTRADAY_EMPTY };
   if (input.rows.length === 0) return { tone: "empty", text: "Building sample not run yet." };
-  const passed = input.rows.filter((row) => row.passed);
+  const parkedNote = input.rows.some((row) => row.parked) ? ` Momentum is ${PARKED_RESEARCH}, not a recommendation.` : "";
+  const active = input.rows.filter((row) => !row.parked);
+  const passed = active.filter((row) => row.passed);
   if (passed.length > 0) {
     const noun = passed.length === 1 ? "strategy" : "strategies";
     const next = input.sample === "heldback" ? "" : " Next step: held-back test.";
-    return { tone: "passed", text: `${passed.length} ${noun} passed: ${joinNames(passed.map((row) => row.name))}.${next}` };
+    return { tone: "passed", text: `${passed.length} ${noun} passed: ${joinNames(passed.map((row) => row.name))}.${next}${parkedNote}` };
   }
-  const ranked = [...input.rows].sort((a, b) => a.fails - b.fails || a.name.localeCompare(b.name));
+  const ranked = [...active].sort((a, b) => a.fails - b.fails || a.name.localeCompare(b.name));
   const close = ranked.filter((row) => row.fails >= 1 && row.fails <= 2);
   const listed = close.length > 0 ? close : ranked.slice(0, 2);
   const closest = listed.map((row) => `${row.name} (fails ${row.fails} of ${PASS_BAR_COUNT} tests)`);
-  return { tone: "open", text: `No strategy has passed yet. Closest: ${joinNames(closest)}.` };
+  const empty = ranked.length === 0;
+  const text = empty
+    ? `No strategy is recommended.${parkedNote}`
+    : `No strategy has passed yet. Closest: ${joinNames(closest)}.${parkedNote}`;
+  return { tone: "open", text };
 }
 
 export function bandCounts(rows: readonly { band: Band }[]): { passed: number; close: number; failed: number } {
@@ -326,16 +351,18 @@ export function passRows(input: {
   profitFactor: number | null;
   trades: number;
   halfYearsPct: number | null;
+  halfYearLabel?: string | null;
   worstDrawdownPct: number | null;
   avgNetPct: number | null;
   bar: ResearchThresholds;
   quarters: boolean;
 }): PassRow[] {
   const period = input.quarters ? "quarters" : "half-years";
+  const periodLabel = input.halfYearLabel ?? `Profitable ${period} ${num(input.halfYearsPct, 0)}%`;
   const rows: PassRow[] = [
     row("profit", input.profitFactor != null && input.profitFactor >= input.bar.profitFactor, `Profit factor ${num(input.profitFactor, 2)}`, `needs ${input.bar.profitFactor}`),
     row("trades", input.trades >= input.bar.trades, `Trades ${input.trades}`, `needs ${input.bar.trades}`),
-    row("periods", input.halfYearsPct != null && input.halfYearsPct >= input.bar.halfYearsPct, `Profitable ${period} ${num(input.halfYearsPct, 0)}%`, `needs ${input.bar.halfYearsPct}%`),
+    row("periods", input.halfYearsPct != null && input.halfYearsPct >= input.bar.halfYearsPct, periodLabel, `needs ${input.bar.halfYearsPct}%`),
     row("drawdown", input.worstDrawdownPct != null && input.worstDrawdownPct <= input.bar.maxDrawdownPct, `Worst drawdown ${num(input.worstDrawdownPct, 1)}%`, `needs ≤ ${input.bar.maxDrawdownPct}%`),
     row("average", input.avgNetPct != null && input.avgNetPct >= input.bar.avgNetPct, `Average net per trade ${num(input.avgNetPct, 2)}%`, `needs ${input.bar.avgNetPct}%`),
   ];
@@ -408,14 +435,16 @@ export function aboutRun(input: {
   strategies: readonly string[];
   capital: Record<string, unknown>;
 }): string[] {
-  const sample = input.sample === "heldback" ? "Held-back" : "Building";
+  const sample = input.sample === "heldback" ? "Held-back" : input.sample === "diagnostic" ? "Diagnostic" : "Building";
   const span = input.window ? sampleSpan(input.window.from, input.window.to) : "dates not stored";
-  const lines = [`${sample} sample, ${span}.`];
+  const lines = [input.sample === "diagnostic"
+    ? `Diagnostic sample, ${span}. Not a building pass and not a verdict.`
+    : `${sample} sample, ${span}.`];
   if (input.book === "swing") {
     lines.push("Today's Nifty 500. Names that left the index are missing, and join dates are not stored.");
     lines.push("Delivery charges on the real quantity, DP charge on sells, 0.05% slippage.");
   } else {
-    lines.push("Opening range uses Nifty 200 and VWAP uses Nifty 100. Names that left the index are missing.");
+    lines.push("Current Nifty 100 and Nifty 200 constituents, not point-in-time membership. This is survivorship bias. A result with this limitation cannot qualify for live trading.");
     lines.push("MIS charges on the real quantity, plus 0.1% slippage.");
   }
   lines.push(capitalLine(input.book, input.capital));
@@ -446,6 +475,23 @@ export function rebaseToCapital(
 
 export function barFor(book: ResearchBook, sample: ResearchSample): ResearchThresholds {
   return researchThresholds(book, sample);
+}
+
+/** Half-years from a stored equity curve. The open half-year is labelled and left out of the ratio. */
+export function storedHalfYears(
+  equity: readonly { date: string; value: number }[],
+  capital: number,
+  from: string,
+  to: string,
+): { label: string; pct: number; incomplete: string } | null {
+  if (equity.length === 0 || !(capital > 0) || !from || !to) return null;
+  const account = halfYearAccount(equityPeriods(equity, capital, from, to, "half"));
+  if (account.completeCount + account.incomplete.length === 0) return null;
+  const pct = account.completeCount ? (account.profitable / account.completeCount) * 100 : 0;
+  const incomplete = account.incomplete
+    .map((period) => `${period.key} is incomplete and is excluded from the ratio.`)
+    .join(" ");
+  return { label: `Profitable ${account.label}`, pct, incomplete };
 }
 
 function capitalLine(book: ResearchBook, capital: Record<string, unknown>): string {

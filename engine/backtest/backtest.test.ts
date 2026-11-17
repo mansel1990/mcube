@@ -359,17 +359,7 @@ describe("research backtest", () => {
     expect(heldbackBlock(["M10-8"], heldbackSubjects(["momentum"], ["M10-6"]), false)).toBeNull();
     expect(heldbackBlock(["M10-6"], heldbackSubjects(["momentum"], ["M10-6"]), false)).toMatch(/M10-6/);
     expect(heldbackBlock(["M10-6"], heldbackSubjects(["momentum"], ["M10-6"]), true)).toBeNull();
-    expect(parseResearchArgs(["--book", "intraday", "--heldback", "--no-grid", "--only", "infy,tcs", "--strategy", "orb"])).toEqual({
-      book: "intraday",
-      strategies: ["orb"],
-      variants: undefined,
-      sample: "heldback",
-      confirmHeldback: false,
-      force: false,
-      grid: false,
-      only: ["INFY", "TCS"],
-      anytime: false,
-    });
+    expect(() => parseResearchArgs(["--book", "intraday", "--heldback", "--no-grid", "--only", "infy,tcs", "--strategy", "orb"])).toThrow(/held-back is closed/);
     expect(parseResearchArgs([
       "--book", "swing", "--variant", "M10-6", "--heldback", "--confirm-heldback", "--no-grid",
     ])).toMatchObject({
