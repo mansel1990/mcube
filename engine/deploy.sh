@@ -20,7 +20,11 @@ if [[ "${1:-}" != "--install" ]]; then
 fi
 
 cd "$ROOT"
-git pull --ff-only
+if [[ "${MLIVE_DEPLOY_REFRESHED:-0}" != "1" ]]; then
+  git pull --ff-only
+  export MLIVE_DEPLOY_REFRESHED=1
+  exec bash "$ROOT/engine/deploy.sh" --install
+fi
 npm ci
 npm run engine:build
 
