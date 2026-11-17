@@ -71,6 +71,16 @@ export function formatCoverage(rows: readonly SymbolCoverage[]): string {
   return lines.join("\n");
 }
 
+export function formatMinuteBackfillLine(symbol: string, requested: number, received: number, stillMissing: number): string {
+  return `${symbol}: requested ${requested} received ${received} still missing ${stillMissing}`;
+}
+
+/** Coverage of the whole building window, not the forward progress marker. */
+export function formatMinuteCoverage(from: string, to: string, present: number, expected: number): string {
+  const pct = expected > 0 ? (present / expected) * 100 : 0;
+  return `1m coverage ${from}..${to}: ${pct.toFixed(1)}% (${present}/${expected} sessions)`;
+}
+
 export function candleChecksum(csv: string): string {
   return createHash("sha256").update(csv).digest("hex");
 }

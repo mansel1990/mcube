@@ -4,6 +4,7 @@ import path from "path";
 import { gunzipSync } from "zlib";
 import { addDays } from "@/lib/mlive/calendar";
 import { describe, expect, it } from "vitest";
+import { candleChecksum, formatMinuteBackfillLine, formatMinuteCoverage } from "./market-window";
 import {
   CANDLE_BATCH,
   INSTRUMENT_BATCH,
@@ -11,12 +12,14 @@ import {
   KITE_GAP_MS,
   candleCsv,
   keepInstrumentRows,
+  mergeMinuteMonth,
   monthChunks,
   monthFile,
   catchupFrom,
   groupSessionRanges,
   parseMarketArgs,
   parseNiftyList,
+  planMinuteBackfill,
   seriesPlans,
   spanChunks,
   writeMonthFile,
@@ -132,4 +135,75 @@ describe("market history layout", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it("requests the file gap when progress is already past the building end", () => {
+    const calendar = weekdays("2024-11-18", "2026-05-04");
+    const present = new Set(calendar.filter((day) => day >= "2025-11-17" && day <= "2026-04-30"));
+    const progressLastTo = "2026-11-17";
+    expect(addDays(progressLastTo, 1) > "2026-04-30").toBe(true);
+    const chunks = planMinuteBackfill({ progressLastTo, present, calendar, span: 31 });
+    expect(chunks[0]?.from).toBe("2024-11-18");
+    expect(chunks.some((chunk) => chunk.from <= "2025-11-14" && chunk.to >= "2025-11-14")).toBe(true);
+    expect(chunks.every((chunk) => chunk.from <= "2026-04-30" && chunk.to <= "2026-04-30")).toBe(true);
+    expect(chunks.some((chunk) => chunk.from >= "2026-05-01" || chunk.to >= "2026-05-01")).toBe(false);
+    for (const day of calendar) {
+      if (day < "2024-11-18" || day > "2025-11-14") continue;
+      expect(chunks.some((chunk) => chunk.from <= day && chunk.to >= day)).toBe(true);
+    }
+    for (const chunk of chunks) expect(inclusiveDays(chunk.from, chunk.to)).toBeLessThanOrEqual(31);
+    expect(formatMinuteBackfillLine("WIPRO", 247, 240, 7)).toBe("WIPRO: requested 247 received 240 still missing 7");
+    expect(formatMinuteCoverage("2024-11-18", "2026-04-30", 112, 359)).toBe("1m coverage 2024-11-18..2026-04-30: 31.2% (112/359 sessions)");
+  });
+
+  it("keeps stored one-minute rows and refuses a May 2026 request", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "mcube-candles-"));
+    const previous = process.env.MARKET_FILES_DIR;
+    process.env.MARKET_FILES_DIR = root;
+    try {
+      await writeMonthFile("1m", "WIPRO", "2025-11", [
+        { date: "2025-11-17T03:45:00.000Z", open: 10, high: 11, low: 9, close: 10, volume: 100 },
+      ]);
+      const added = await mergeMinuteMonth(
+        "WIPRO",
+        "2025-11",
+        [
+          { date: "2025-11-17T03:45:00.000Z", open: 1, high: 1, low: 1, close: 999, volume: 1 },
+          { date: "2025-11-14T03:45:00.000Z", open: 5, high: 6, low: 4, close: 5, volume: 7 },
+        ],
+        { from: "2024-11-18", to: "2025-11-14" }
+      );
+      expect(added).toEqual(["2025-11-14"]);
+      const finalPath = monthFile("1m", "WIPRO", "2025-11");
+      const text = gunzipSync(await readFile(finalPath)).toString("utf8");
+      expect(text).toContain("2025-11-17 09:15:00,10,11,9,10,100");
+      expect(text).toContain("2025-11-14 09:15:00,5,6,4,5,7");
+      expect(text).not.toContain("999");
+      const sidecar = JSON.parse(await readFile(`${finalPath}.provenance.json`, "utf8")) as { source: string; from: string; to: string; checksum: string };
+      expect(sidecar.source).toBe("kite.historical");
+      expect(sidecar.from).toBe("2024-11-18");
+      expect(sidecar.to).toBe("2025-11-14");
+      expect(sidecar.checksum).toBe(candleChecksum(text));
+      const names = await readdir(path.dirname(finalPath));
+      expect(names.filter((name) => name.endsWith(".tmp"))).toEqual([]);
+      await expect(mergeMinuteMonth("WIPRO", "2026-05", [
+        { date: "2026-05-04T03:45:00.000Z", open: 1, high: 1, low: 1, close: 1, volume: 1 },
+      ], { from: "2026-05-01", to: "2026-05-04" })).rejects.toThrow(/2026-05-04/);
+      expect(await readdir(path.join(root, "1m", "WIPRO")).then((entries) => entries.some((name) => name.startsWith("2026-05")))).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env.MARKET_FILES_DIR;
+      else process.env.MARKET_FILES_DIR = previous;
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
+
+function weekdays(from: string, to: string): string[] {
+  const out: string[] = [];
+  let cursor = from;
+  while (cursor <= to) {
+    const day = new Date(`${cursor}T00:00:00Z`).getUTCDay();
+    if (day !== 0 && day !== 6) out.push(cursor);
+    cursor = addDays(cursor, 1);
+  }
+  return out;
+}

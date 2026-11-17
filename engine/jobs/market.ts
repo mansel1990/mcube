@@ -1,8 +1,8 @@
 import path from "path";
 import { createReadStream } from "fs";
-import { mkdir, readdir, rename, statfs, unlink, writeFile, access } from "fs/promises";
+import { mkdir, readdir, readFile, rename, statfs, unlink, writeFile, access } from "fs/promises";
 import { createInterface } from "readline";
-import { createGunzip, gzipSync } from "zlib";
+import { createGunzip, gunzipSync, gzipSync } from "zlib";
 import { addDays, istMinutes, previousTradingDay, todayIst } from "@/lib/mlive/calendar";
 import { INTRADAY_BUILDING_END, INTRADAY_BUILDING_FROM } from "@/lib/mlive/research-bar";
 import { mq } from "../db";
@@ -11,13 +11,12 @@ import { holidaySet } from "../load";
 import { runJob } from "../run";
 import {
   assertFreeDisk,
-  backfillThrough,
-  formatCoverage,
+  formatMinuteBackfillLine,
+  formatMinuteCoverage,
   minuteImportMayStart,
   minuteImportMustStop,
   minuteProvenance,
   missingSessions,
-  reliableCoverageStart,
   type SymbolCoverage,
 } from "./market-window";
 
@@ -237,6 +236,37 @@ export function spanChunks(from: string, to: string, span: number): DateChunk[] 
   return chunks;
 }
 
+/**
+ * One-minute requests for sessions missing from the stored month files.
+ * `progressLastTo` is the forward download marker. It is not a cursor: a value
+ * past 30 April 2026 must not skip the building gap, and this function does not
+ * move that marker. Nothing after the building end is requested. Contiguous
+ * missing sessions are split so each request is at most `span` calendar days.
+ */
+export function planMinuteBackfill(input: {
+  progressLastTo: string | null;
+  present: ReadonlySet<string>;
+  calendar: readonly string[];
+  span: number;
+}): DateChunk[] {
+  const start = INTRADAY_BUILDING_FROM;
+  const end = INTRADAY_BUILDING_END;
+  const forwardMarker = input.progressLastTo;
+  const window = input.calendar.filter((day) => {
+    if (forwardMarker && day > end) return false;
+    return day >= start && day <= end;
+  });
+  const missing = window.filter((day) => !input.present.has(day));
+  const chunks: DateChunk[] = [];
+  for (const range of groupSessionRanges(missing, window)) {
+    if (range.from > end || range.to > end) continue;
+    const boundedTo = range.to > end ? end : range.to;
+    const boundedFrom = range.from < start ? start : range.from;
+    chunks.push(...spanChunks(boundedFrom, boundedTo, input.span).filter((chunk) => chunk.from >= start && chunk.to <= end));
+  }
+  return chunks;
+}
+
 export function filesRoot(): string {
   return process.env.MARKET_FILES_DIR?.trim() || "/var/lib/mcube/candles";
 }
@@ -370,6 +400,113 @@ export async function writeMonthFile(kind: "5m" | "1m", symbol: string, month: s
     csv,
     retrievedAt: new Date().toISOString(),
   }))}\n`);
+}
+
+const MINUTE_HEADER = "ts_ist,open,high,low,close,volume";
+
+/** Keep every stored session line. Incoming bars for a day already in the file are dropped. */
+export function mergeMinuteCsv(existingCsv: string, incoming: readonly Candle[]): { csv: string; addedDays: string[] } {
+  const stored = existingCsv
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith("ts_ist"));
+  const storedDays = new Set(stored.map((line) => line.slice(0, 10)));
+  const fresh = incoming.filter((row) => {
+    const day = istStamp(row.date).slice(0, 10);
+    return day >= INTRADAY_BUILDING_FROM && day <= INTRADAY_BUILDING_END && !storedDays.has(day);
+  });
+  const addedDays = [...new Set(fresh.map((row) => istStamp(row.date).slice(0, 10)))].sort();
+  if (addedDays.length === 0) return { csv: existingCsv, addedDays };
+  const addedLines = candleCsv([...fresh].sort((a, b) => a.date.localeCompare(b.date)))
+    .split("\n")
+    .filter((line) => line.length > 0 && !line.startsWith("ts_ist"));
+  const body = [...stored, ...addedLines].sort((a, b) => a.localeCompare(b));
+  return { csv: `${MINUTE_HEADER}\n${body.join("\n")}\n`, addedDays };
+}
+
+async function commitGzip(finalPath: string, body: Buffer): Promise<void> {
+  await mkdir(path.dirname(finalPath), { recursive: true });
+  const tmpPath = `${finalPath}.${process.pid}.tmp`;
+  await writeFile(tmpPath, body);
+  try {
+    await rename(tmpPath, finalPath);
+  } catch (error) {
+    const code = error && typeof error === "object" && "code" in error ? String((error as { code: unknown }).code) : "";
+    if (code !== "EPERM" && code !== "EEXIST") {
+      await unlink(tmpPath).catch(() => undefined);
+      throw error;
+    }
+    await unlink(finalPath);
+    try {
+      await rename(tmpPath, finalPath);
+    } catch (renameError) {
+      await unlink(tmpPath).catch(() => undefined);
+      throw renameError;
+    }
+  }
+}
+
+/**
+ * Merge new one-minute bars into one month. Stored sessions stay byte for byte.
+ * The provenance sidecar records this Kite request and the checksum of the file
+ * after the merge. A request past the building end is refused.
+ */
+export async function mergeMinuteMonth(
+  symbol: string,
+  month: string,
+  incoming: readonly Candle[],
+  request: { from: string; to: string }
+): Promise<string[]> {
+  if (request.from > INTRADAY_BUILDING_END || request.to > INTRADAY_BUILDING_END) {
+    throw new Error(`Refusing to request one-minute candles through ${request.to}.`);
+  }
+  const rows = incoming.filter((row) => istStamp(row.date).slice(0, 7) === month);
+  if (rows.length === 0) return [];
+  const finalPath = monthFile("1m", symbol, month);
+  let existing = `${MINUTE_HEADER}\n`;
+  if (await fileExists(finalPath)) existing = gunzipSync(await readFile(finalPath)).toString("utf8");
+  const merged = mergeMinuteCsv(existing, rows);
+  if (merged.addedDays.length === 0) return [];
+  const sidecar = `${finalPath}.provenance.json`;
+  const requests = [{ from: request.from, to: request.to }];
+  if (await fileExists(sidecar)) {
+    try {
+      const previous = JSON.parse(await readFile(sidecar, "utf8")) as { requests?: Array<{ from: string; to: string }> };
+      if (Array.isArray(previous.requests)) requests.unshift(...previous.requests);
+    } catch {
+      // An unreadable sidecar is replaced by the provenance of this merge.
+    }
+  }
+  await commitGzip(finalPath, gzipSync(Buffer.from(merged.csv)));
+  const dataRows = merged.csv.split("\n").filter((line) => line.length > 0 && !line.startsWith("ts_ist")).length;
+  await writeFile(sidecar, `${JSON.stringify({
+    ...minuteProvenance({
+      symbol,
+      month,
+      from: request.from,
+      to: request.to,
+      rows: dataRows,
+      csv: merged.csv,
+      retrievedAt: new Date().toISOString(),
+    }),
+    requests,
+  })}\n`);
+  return merged.addedDays;
+}
+
+async function storeMinuteRows(symbol: string, rows: readonly Candle[], request: { from: string; to: string }): Promise<string[]> {
+  const byMonth = new Map<string, Candle[]>();
+  for (const row of rows) {
+    const day = istStamp(row.date).slice(0, 10);
+    if (day < INTRADAY_BUILDING_FROM || day > INTRADAY_BUILDING_END) continue;
+    const month = day.slice(0, 7);
+    const list = byMonth.get(month) ?? [];
+    list.push(row);
+    byMonth.set(month, list);
+  }
+  const added: string[] = [];
+  for (const [month, monthRows] of byMonth) added.push(...(await mergeMinuteMonth(symbol, month, monthRows, request)));
+  return added;
 }
 
 function candleDay(row: Candle, interval: CandleInterval): string {
@@ -638,28 +775,82 @@ async function sessionLoaded(table: CandleTable, token: number, day: string): Pr
   return Number(have[0]?.n ?? 0) > 0;
 }
 
-async function runSeries(kite: MliveKite, plan: SeriesPlan, only: string[] | undefined, oneSession: boolean): Promise<void> {
-  let active = plan;
-  if (!oneSession && plan.id === "1m-files") {
-    if (!minuteImportMayStart(istMinutes())) {
-      console.log("1m backfill stopped: outside 16:00–16:55 and 20:00–07:00 IST. Progress is unchanged.");
-      return;
-    }
-    const free = await freeBytes(filesRoot());
-    assertFreeDisk(free);
-    const symbolsForGap = await symbolsFor(plan, only);
-    const firstDays = await Promise.all(symbolsForGap.map((item) => firstMinuteDay(item.symbol)));
-    const reliable = reliableCoverageStart(firstDays);
-    const through = backfillThrough(reliable);
-    console.log(reliable
-      ? `1m reliable coverage begins ${reliable}. Backfill stops on ${through ?? "nothing"}, before that day.`
-      : `1m coverage is not yet complete for every symbol. Backfill stops on ${through}. Held-back from 2026-05-01 is not requested.`);
-    if (!through) {
-      console.log(formatCoverage(await coverageRows(symbolsForGap.map((item) => item.symbol), plan.from, INTRADAY_BUILDING_END)));
-      return;
-    }
-    active = { ...plan, from: INTRADAY_BUILDING_FROM, to: through < INTRADAY_BUILDING_END ? through : INTRADAY_BUILDING_END };
+async function runMinuteGap(kite: MliveKite, plan: SeriesPlan, only: string[] | undefined): Promise<void> {
+  if (!minuteImportMayStart(istMinutes())) {
+    console.log("1m backfill stopped: outside 16:00–16:55 and 20:00–07:00 IST. Progress is unchanged.");
+    return;
   }
+  const free = await freeBytes(filesRoot());
+  assertFreeDisk(free);
+  const symbols = await symbolsFor(plan, only);
+  if (symbols.length === 0) {
+    console.log(`${plan.label}: no symbols`);
+    return;
+  }
+  const from = INTRADAY_BUILDING_FROM;
+  const to = INTRADAY_BUILDING_END;
+  console.log(`${plan.label}: ${symbols.length} symbols ${from} to ${to}. Requests follow missing stored sessions. download_progress is not moved.`);
+  const expected = await expectedSessions(from, to);
+  let halt: "window" | "session" | null = null;
+  let index = 0;
+  for (const item of symbols) {
+    index += 1;
+    if (minuteImportMustStop(istMinutes())) {
+      halt = "window";
+      break;
+    }
+    const present = await minuteSessions(item.symbol, from, to);
+    const missing = missingSessions(expected, present);
+    const chunks = planMinuteBackfill({ progressLastTo: null, present, calendar: expected, span: plan.span });
+    const requested = new Set<string>();
+    const received = new Set<string>();
+    for (const chunk of chunks) {
+      if (minuteImportMustStop(istMinutes())) {
+        halt = "window";
+        break;
+      }
+      if (chunk.from > to || chunk.to > to) throw new Error(`Refusing to request one-minute candles through ${chunk.to}.`);
+      for (const day of missing) {
+        if (day >= chunk.from && day <= chunk.to) requested.add(day);
+      }
+      let rows: Candle[];
+      try {
+        rows = prepareRows(await fetchChunk(kite, item.token, plan.interval, chunk.from, chunk.to), plan.interval, chunk.from, chunk.to);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes("session expired")) {
+          console.log(`${message} Stored candles were kept. The forward progress marker was not moved.`);
+          halt = "session";
+          break;
+        }
+        throw error;
+      }
+      for (const row of rows) {
+        const day = candleDay(row, "minute");
+        if (day >= from && day <= to && requested.has(day)) received.add(day);
+      }
+      await storeMinuteRows(item.symbol, rows, chunk);
+    }
+    const have = new Set(present);
+    for (const day of received) have.add(day);
+    const still = missingSessions(expected, have).length;
+    console.log(`${plan.label} ${index} of ${symbols.length} ${formatMinuteBackfillLine(item.symbol, requested.size, received.size, still)}`);
+    if (halt) break;
+  }
+  if (halt === "window") {
+    console.log("1m backfill stopped cleanly for the research window. Stored candles were kept. The forward progress marker was not moved.");
+  }
+  const coverage = await coverageRows(symbols.map((row) => row.symbol), from, to);
+  const presentCount = coverage.reduce((sum, row) => sum + row.sessions, 0);
+  console.log(formatMinuteCoverage(from, to, presentCount, expected.length * symbols.length));
+}
+
+async function runSeries(kite: MliveKite, plan: SeriesPlan, only: string[] | undefined, oneSession: boolean): Promise<void> {
+  if (!oneSession && plan.id === "1m-files") {
+    await runMinuteGap(kite, plan, only);
+    return;
+  }
+  const active = plan;
   const symbols = await symbolsFor(active, only);
   if (symbols.length === 0) {
     console.log(`${plan.label}: no symbols`);
@@ -668,11 +859,6 @@ async function runSeries(kite: MliveKite, plan: SeriesPlan, only: string[] | und
   console.log(`${active.label}: ${symbols.length} symbols ${active.from} to ${active.to}`);
   let finished = 0;
   for (const item of symbols) {
-    if (active.id === "1m-files" && !oneSession && minuteImportMustStop(istMinutes())) {
-      console.log("1m backfill stopped cleanly for the research window. Finished months stay in download_progress.");
-      console.log(formatCoverage(await coverageRows(symbols.map((row) => row.symbol), active.from, active.to)));
-      return;
-    }
     if (active.store === "neon" && (await databaseBytes()) >= SIZE_GATE) {
       console.log(`market: stopped before 650 MB while on ${active.label}. Unfinished symbols stay in download_progress.`);
       return;
@@ -698,11 +884,6 @@ async function runSeries(kite: MliveKite, plan: SeriesPlan, only: string[] | und
     }
     const chunks = active.chunk === "month" ? monthChunks(cursor, active.to) : spanChunks(cursor, active.to, active.span);
     for (const chunk of chunks) {
-      if (active.id === "1m-files" && !oneSession && minuteImportMustStop(istMinutes())) {
-        console.log("1m backfill stopped cleanly for the research window. Finished months stay in download_progress.");
-        console.log(formatCoverage(await coverageRows(symbols.map((row) => row.symbol), active.from, active.to)));
-        return;
-      }
       if (active.fileKind) {
         const file = monthFile(active.fileKind, item.symbol, chunk.label);
         if (await fileExists(file)) {
@@ -710,27 +891,13 @@ async function runSeries(kite: MliveKite, plan: SeriesPlan, only: string[] | und
           continue;
         }
       }
-      let rows: Candle[];
-      try {
-        rows = prepareRows(await fetchChunk(kite, item.token, active.interval, chunk.from, chunk.to), active.interval, chunk.from, chunk.to);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (active.id === "1m-files" && message.includes("session expired")) {
-          console.log(`${message} Finished months stay in download_progress.`);
-          console.log(formatCoverage(await coverageRows(symbols.map((row) => row.symbol), active.from, active.to)));
-          return;
-        }
-        throw error;
-      }
+      const rows = prepareRows(await fetchChunk(kite, item.token, active.interval, chunk.from, chunk.to), active.interval, chunk.from, chunk.to);
       if (active.store === "neon" && active.table) await insertCandles(active.table, item.token, item.symbol, rows);
       else if (active.fileKind) await writeMonthFile(active.fileKind, item.symbol, chunk.label, rows);
       await saveProgress(item.symbol, active, chunk.to);
     }
     finished += 1;
     console.log(`${active.label} ${finished} of ${symbols.length}`);
-  }
-  if (active.id === "1m-files" && !oneSession) {
-    console.log(formatCoverage(await coverageRows(symbols.map((row) => row.symbol), active.from, active.to)));
   }
 }
 
