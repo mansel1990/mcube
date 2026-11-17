@@ -30,6 +30,7 @@ import {
   sortStrategies,
   strategyIdea,
   strategyName,
+  variantName,
   verdictFor,
   type StoredRun,
 } from "@/lib/mlive/research-page";
@@ -106,6 +107,7 @@ export function ResearchView() {
   const [sample, setSample] = useState<ResearchSample>("building");
   const [grid, setGrid] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [runLoading, setRunLoading] = useState(false);
   const [strategy, setStrategy] = useState<string | null>(null);
   const [trades, setTrades] = useState<Trade[]>([]);
   const [reasons, setReasons] = useState<{ reason: string; n: number }[]>([]);
@@ -131,27 +133,37 @@ export function ResearchView() {
     const timer = window.setTimeout(() => {
       const query = new URLSearchParams({ book, benchmark: "1" });
       if (runId) query.set("run", String(runId));
-      void fetch(`/api/mlive/research?${query}`).then(async (res) => {
-        if (cancelled) return;
-        const body = (await res.json()) as Payload;
-        if (!res.ok) {
-          setError(body.error || "Research could not be loaded.");
-          setPayload(null);
-          return;
-        }
-        setError(null);
-        if (!runId) {
-          const preferred = body.runs.find((run) => run.status === "ok") ?? body.run;
-          if (preferred && body.run && preferred.id !== body.run.id) {
-            router.replace(`/live-trade-mansel/research?book=${book}&run=${preferred.id}`, { scroll: false });
+      void fetch(`/api/mlive/research?${query}`)
+        .then(async (res) => {
+          if (cancelled) return;
+          const body = (await res.json()) as Payload;
+          if (!res.ok) {
+            setError(body.error || "Research could not be loaded.");
+            setPayload(null);
+            setRunLoading(false);
             return;
           }
-        }
-        setPayload(body);
-        if (body.run && (!runId || !body.runs.some((run) => run.id === runId))) {
-          router.replace(`/live-trade-mansel/research?book=${book}&run=${body.run.id}`, { scroll: false });
-        }
-      });
+          setError(null);
+          if (!runId) {
+            const preferred = body.runs.find((run) => run.status === "ok") ?? body.run;
+            if (preferred && body.run && preferred.id !== body.run.id) {
+              setRunLoading(true);
+              router.replace(`/live-trade-mansel/research?book=${book}&run=${preferred.id}`, { scroll: false });
+              return;
+            }
+          }
+          setPayload(body);
+          setRunLoading(false);
+          if (body.run && (!runId || !body.runs.some((run) => run.id === runId))) {
+            setRunLoading(true);
+            router.replace(`/live-trade-mansel/research?book=${book}&run=${body.run.id}`, { scroll: false });
+          }
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setError("Research could not be loaded.");
+          setRunLoading(false);
+        });
     }, 0);
     return () => {
       cancelled = true;
@@ -177,7 +189,8 @@ export function ResearchView() {
   const held = new Map((payload?.heldback ?? []).map((row) => [row.strategy, row.at]));
   const cards = sortStrategies(defaults.map((row) => ({
     ...row,
-    name: typeof row.params.variant === "string" ? row.params.variant : strategyName(row.strategy),
+    name: typeof row.params.variant === "string" ? variantName(row.params.variant) : strategyName(row.strategy),
+    variantId: typeof row.params.variant === "string" ? row.params.variant : null,
     band: resultBand(row.passed, row.failReasons.length),
   })));
   const counts = bandCounts(cards);
@@ -246,13 +259,19 @@ export function ResearchView() {
 
   function chooseBook(next: ResearchBook) {
     if (next === book) return;
+    setRunLoading(true);
     router.replace(`/live-trade-mansel/research?book=${next}`, { scroll: false });
   }
 
   function chooseRun(id: number) {
+    if (id === payload?.run?.id) {
+      setMenu(false);
+      return;
+    }
     setStrategy(null);
     setPage(1);
     setMenu(false);
+    setRunLoading(true);
     router.replace(`/live-trade-mansel/research?book=${book}&run=${id}`, { scroll: false });
   }
 
@@ -292,7 +311,7 @@ export function ResearchView() {
     : "";
 
   return (
-    <section className="page">
+    <section className={`page${runLoading ? " research-switching" : ""}`} aria-busy={runLoading}>
       <div className="page-head">
         <div>
           <h1>Research</h1>
@@ -301,7 +320,7 @@ export function ResearchView() {
               <span>{summary}</span>
               {(payload?.runs.length ?? 0) > 0 && (
                 <span className="earlier-wrap" ref={menuRef}>
-                  <button type="button" className="earlier" aria-expanded={menu} aria-haspopup="listbox" onClick={() => setMenu((value) => !value)}>
+                  <button type="button" className="earlier" aria-expanded={menu} aria-haspopup="listbox" disabled={runLoading} onClick={() => setMenu((value) => !value)}>
                     <span className="kicker">Earlier runs</span>
                     <span>Run {payload?.run?.id}</span>
                     <span aria-hidden="true">▾</span>
@@ -311,7 +330,7 @@ export function ResearchView() {
                       {(payload?.runs ?? []).map((run) => {
                         const option = runOption(run);
                         return (
-                          <button type="button" key={run.id} role="option" aria-selected={run.id === payload?.run?.id} className={run.id === payload?.run?.id ? "on" : undefined} onClick={() => chooseRun(run.id)}>
+                          <button type="button" key={run.id} role="option" disabled={runLoading} aria-selected={run.id === payload?.run?.id} className={run.id === payload?.run?.id ? "on" : undefined} onClick={() => chooseRun(run.id)}>
                             <span className="row">
                               <b>Run {run.id}</b>
                               <span className={`chip ${option.tone}`}>{option.status}</span>
@@ -335,6 +354,8 @@ export function ResearchView() {
           <button type="button" className={`btn new-run${open ? " on" : ""}`} aria-expanded={open} disabled={Boolean(active) || busy} title={moving ?? undefined} onClick={() => setOpen((value) => !value)}>New run</button>
         </div>
       </div>
+
+      {runLoading && <p className="run-switch-status" role="status">Loading selected run…</p>}
 
       {open && (
         <article className="card run-panel">
@@ -419,22 +440,23 @@ export function ResearchView() {
                 <div className="card-top">
                   <div>
                     <b>{row.name}</b>
+                    {row.variantId && <div className="muted">{row.variantId}</div>}
                     <div className="idea">{strategyIdea(row.strategy)}</div>
                   </div>
                   <div className="research-pills">
                     <span className={`chip ${row.band === "passed" ? "ok" : row.band === "close" ? "wait" : "bad"}`}>
                       {row.band === "passed" ? "Passed" : row.band === "close" ? "Close" : "Failed"}
                     </span>
-                    {isLiveStrategy(book, row.strategy) && <span className="chip live">Live now</span>}
+                    {isLiveStrategy(book, row.strategy, row.variantId) && <span className="chip live">Live now</span>}
                   </div>
                 </div>
                 <div className="pass-rows">
                   {tests.map((test) => <div key={test.id} className={test.pass ? "ok" : "fail"}>{test.text}</div>)}
                 </div>
                 <div>
-                  <span className="lbl">Yearly return on ₹80,000</span>
+                  <span className="lbl">Annualized backtest return (CAGR)</span>
                   <div className={`research-cagr n ${row.cagrPct != null && row.cagrPct < 0 ? "down" : ""}`}>{row.cagrPct == null ? "—" : `${row.cagrPct.toFixed(1)}%`}</div>
-                  <span className="muted">Avg net {row.avgNetPct == null ? "—" : `${row.avgNetPct.toFixed(2)}%`} · {row.trades} trades</span>
+                  <span className="muted">Starting capital ₹80,000 · Avg net {row.avgNetPct == null ? "—" : `${row.avgNetPct.toFixed(2)}%`} · {row.trades} trades</span>
                 </div>
                 <Spark points={equityPoints(row.equity)} />
                 <span className="muted">{robustnessLabel(row.profitFactor, others, bar.profitFactor)}</span>
@@ -532,7 +554,8 @@ function StrategyDetail(props: {
   csvHref: string;
 }) {
   const { onClose } = props;
-  const title = typeof props.row.params.variant === "string" ? props.row.params.variant : strategyName(props.row.strategy);
+  const variantId = typeof props.row.params.variant === "string" ? props.row.params.variant : null;
+  const title = variantId ? variantName(variantId) : strategyName(props.row.strategy);
   const pages = Math.max(1, Math.ceil(props.total / 40));
   const hasNifty = props.series.some((point) => point.nifty != null);
   useEffect(() => {
@@ -548,6 +571,7 @@ function StrategyDetail(props: {
         <div className="chart-head">
           <div>
             <h2>{title}</h2>
+            {variantId && <p className="sub">{variantId}</p>}
             <p className="sub">{strategyIdea(props.row.strategy)}</p>
           </div>
           <button type="button" className="btn" onClick={props.onClose}>Close</button>
@@ -598,7 +622,13 @@ function StrategyDetail(props: {
             <tbody>
               {props.grid.map((row) => (
                 <tr key={row.paramsKey} className={row.isDefault ? "is-default" : undefined}>
-                  <td>{row.isDefault ? "Default" : typeof row.params.variant === "string" ? row.params.variant : row.paramsKey}</td>
+                  <td>
+                    {typeof row.params.variant === "string"
+                      ? `${variantName(row.params.variant)} (${row.params.variant})`
+                      : row.isDefault
+                        ? "Default"
+                        : row.paramsKey}
+                  </td>
                   <td className="r n">{row.profitFactor == null ? "—" : row.profitFactor.toFixed(2)}</td>
                   <td className="r n">{row.avgNetPct == null ? "—" : `${row.avgNetPct.toFixed(2)}%`}</td>
                   <td className="r n">{row.trades}</td>

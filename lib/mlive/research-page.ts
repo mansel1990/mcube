@@ -30,6 +30,15 @@ export const RESEARCH_IDEAS: Record<string, string> = {
   vwap: "Trades with the session's volume-weighted average",
 };
 
+export const RESEARCH_VARIANT_NAMES: Record<string, string> = {
+  "M15-control": "Momentum XI — Opener",
+  "M10-6": "Momentum XI — Anchor",
+  "M10-8": "Momentum XI — Middle Order",
+  "M10-10": "Momentum XI — Powerplay",
+  "M-vol8": "Momentum XI — Adaptive",
+  "TB+M10": "All-Rounder XI — Breakout + Momentum",
+};
+
 export const INTRADAY_EMPTY =
   "Intraday has not been tested yet. Data: 5-minute bars from Nov 2024 (building Nov 2024–Apr 2026). Runs on the server after 16:00.";
 
@@ -65,8 +74,12 @@ export function strategyIdea(key: string): string {
   return RESEARCH_IDEAS[key] ?? "";
 }
 
-export function isLiveStrategy(book: ResearchBook, key: string): boolean {
-  return book === "swing" && (key === "rs" || key === "ema");
+export function variantName(key: string): string {
+  return RESEARCH_VARIANT_NAMES[key] ?? key;
+}
+
+export function isLiveStrategy(book: ResearchBook, key: string, variant?: string | null): boolean {
+  return book === "swing" && key === "momentum" && variant === "M10-6";
 }
 
 export function resultBand(passed: boolean, fails: number): Band {
