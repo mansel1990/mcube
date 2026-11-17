@@ -1,4 +1,5 @@
 import { istMinutes, previousTradingDay, todayIst } from "@/lib/mlive/calendar";
+import { estimateCharges } from "@/lib/mlive/charges";
 import {
   buyTooCloseToStop,
   decisionSentence,
@@ -21,6 +22,7 @@ import {
   sizeOrder,
   spendableCash,
   systemCash,
+  type PaceBook,
   type ScoredIdea,
 } from "@/lib/mlive/rules";
 import { audit } from "../audit";
@@ -29,6 +31,8 @@ import { buyPace, openCost, openPositions, pendingBuyValue, saveDeployBaseline }
 import { jsonValue, num, q } from "../db";
 import { MliveKite, type KiteHolding } from "../kite";
 import { fundBalance, holidaySet, loadSettings, loadState, setState } from "../load";
+import { grossAllows, markedSwingBook, pendingGrossCommitment, sizeMomentumOrder } from "../live-portfolio";
+import { liveSwingPolicy } from "../live-strategies";
 import { bhavcopyPresent, livePrice, loadBars, previousClose, yahooPreviousClose } from "../market";
 import { runJob } from "../run";
 
@@ -167,6 +171,7 @@ export async function runSessionPreflight(runId: number, input: SessionPreflight
   const { settings, state, holdings, kiteCash, fund } = input;
   const today = todayIst();
   const positions = await openPositions(settings.dryRun);
+  const marked = await markedSwingBook(fund, settings.dryRun);
     const kiteBook = new Map(holdings.map((row) => [row.tradingsymbol.toUpperCase(), row]));
     if (input.reconcile) {
     for (const position of positions) {
@@ -243,7 +248,7 @@ export async function runSessionPreflight(runId: number, input: SessionPreflight
     const viable: ScoredIdea[] = [];
     for (const idea of ideas) {
       const symbol = String(idea.symbol);
-      const strategy = idea.strategy === "ema" ? "ema" : "rs";
+      const strategy = idea.strategy === "ema" ? "ema" : idea.strategy === "momentum" ? "momentum" : "rs";
       if (!settings.strategies.includes(strategy)) continue;
       const bars = await loadBars(symbol, 30);
       const last = await previousClose(symbol);
@@ -268,7 +273,7 @@ export async function runSessionPreflight(runId: number, input: SessionPreflight
         sectorCount: sectorCounts.get(String(idea.sector ?? "")) ?? 0,
         maxPerSector: settings.maxPerSector,
         historyDays: bars.length,
-        badData: bad != null || stop == null,
+        badData: bad != null || (strategy !== "momentum" && stop == null),
         chasing: false,
         belowMinAfterSizing: false,
         entryBelowStop: strategy === "ema" && stop != null && entryBelowEma(entry, stop),
@@ -312,8 +317,9 @@ export async function runSessionPreflight(runId: number, input: SessionPreflight
     }
     let cash = spendable;
     let planned = 0;
+    let grossCommitted = await pendingGrossCommitment(today, settings.dryRun);
     const pace = await buyPace(today, settings.dryRun, { approved: true });
-    let paceBook = {
+    let paceBook: PaceBook = {
       newBuys: pace.newBuys,
       strategyBuys: pace.strategyBuys,
       openInStrategy: pace.openInStrategy,
@@ -330,15 +336,25 @@ export async function runSessionPreflight(runId: number, input: SessionPreflight
       }
       const entry = limitPrice(num(source.signal_close), settings.limitOffset);
       const stop = num(source.initial_stop);
-      const sized = sizeOrder({
-        fund,
-        entry,
-        stop,
-        spendable: cash,
-        riskPct: settings.riskPct,
-        maxOrderPct: settings.maxOrderPct,
-        minOrderInr: settings.minOrderInr,
-      });
+      const policy = liveSwingPolicy(idea.strategy, settings);
+      const sized = idea.strategy === "momentum"
+        ? sizeMomentumOrder({
+            equity: marked.equity,
+            entry,
+            spendable: cash,
+            maxOrderPct: policy.maxOrderPct,
+            minOrderInr: policy.minOrderInr,
+            rates: settings.charges,
+          })
+        : sizeOrder({
+            fund,
+            entry,
+            stop,
+            spendable: cash,
+            riskPct: settings.riskPct,
+            maxOrderPct: policy.maxOrderPct,
+            minOrderInr: policy.minOrderInr,
+          });
       await audit({ actor: "engine", action: "sizing", symbol: idea.symbol, reason: sized.text, runId });
       if (sized.reason !== "ok") {
         const would = Math.min(sized.qtyRisk, sized.qtyCap);
@@ -351,6 +367,21 @@ export async function runSessionPreflight(runId: number, input: SessionPreflight
         }, null, settings.dryRun);
         continue;
       }
+      if (
+        policy.maxGrossExposurePct != null &&
+        !grossAllows(marked.gross, grossCommitted, sized.notional, marked.equity, policy.maxGrossExposurePct)
+      ) {
+        await proposeSkip(
+          runId,
+          today,
+          num(source.id),
+          idea.symbol,
+          "gross_exposure",
+          `The order would take marked swing exposure above ${Math.round(policy.maxGrossExposurePct * 100)}%.`,
+          settings.dryRun
+        );
+        continue;
+      }
       const paced = paceBuys(
         [{ symbol: idea.symbol, strategy: idea.strategy, notional: sized.notional }],
         paceBook,
@@ -358,7 +389,7 @@ export async function runSessionPreflight(runId: number, input: SessionPreflight
           maxNewBuysPerDay: settings.maxNewBuys,
           maxBuysPerDay: settings.maxBuys,
           maxBuysPerStrategyPerDay: settings.maxBuysPerStrategy,
-          maxOpenPerStrategy: settings.maxOpenPerStrategy,
+          maxOpenPerStrategy: idea.strategy === "momentum" ? policy.maxOpen : settings.maxOpenPerStrategy,
           maxDailyDeployPct: settings.maxDailyDeployPct,
           engineCanUseNow: engineNow,
         }
@@ -398,7 +429,8 @@ export async function runSessionPreflight(runId: number, input: SessionPreflight
       if (state.mode === "approve") {
         await raiseAlert({ level: "needs_you", code: "approve_buy", symbol: idea.symbol, message: `Approve buy ${idea.symbol} · ${sized.qty} @ ₹${entry}`, runId });
       }
-      cash -= sized.notional;
+      cash -= sized.notional + (idea.strategy === "momentum" ? estimateCharges("BUY", sized.notional, settings.charges).total : 0);
+      grossCommitted += sized.notional;
       planned += 1;
       const sector = String(source.sector ?? "");
       if (sector) sectorCounts.set(sector, (sectorCounts.get(sector) ?? 0) + 1);

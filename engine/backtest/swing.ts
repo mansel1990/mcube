@@ -7,6 +7,7 @@ import { scoreBook, type ScoredRun } from "./score";
 import type { ResearchSample } from "@/lib/mlive/research-bar";
 import { bookOutcome, concentrationKeys, executionNote, withExecutionSlip, yearRows } from "./stress";
 import { walkSymbol, type GateStats, type WalkStats } from "./walk";
+import type { SwingVariantName } from "./swing-variants";
 
 export type SwingSymbol = { symbol: string; tick: number; sector: string };
 
@@ -27,6 +28,7 @@ export async function simulateSwing(input: {
   indexClose: Float64Array;
   indexUp: Uint8Array;
   strategies: StrategyDef[];
+  variants?: SwingVariantName[];
   grid: boolean;
   sample: ResearchSample;
   window: { from: string; to: string };
@@ -42,20 +44,35 @@ export async function simulateSwing(input: {
 }): Promise<SwingOutput> {
   const index = new Map(input.calendar.map((day, at) => [day, at]));
   const buckets = new Map<string, Bucket>();
-  for (const strategy of input.strategies) {
-    for (const set of paramSets(strategy, input.grid)) {
-      const keep = set.isDefault && FROZEN.has(strategy.name);
-      buckets.set(`${strategy.name}:${set.key}`, {
-        strategy,
-        params: set.params,
-        key: set.key,
-        isDefault: set.isDefault,
-        candidates: [],
-        retain: keep,
-      });
+  const variantMode = Boolean(input.variants?.length);
+  if (variantMode) {
+    const momentum = input.strategies.find((strategy) => strategy.name === "momentum");
+    const trend = input.strategies.find((strategy) => strategy.name === "trend_breakout");
+    if (momentum) {
+      buckets.set("momentum:source-top8", sourceBucket(momentum, { ...defaultParams(momentum), topN: 8 }, "source-top8"));
+      if (input.variants?.some((name) => name === "M10-10" || name === "TB+M10")) {
+        buckets.set("momentum:source-top10", sourceBucket(momentum, { ...defaultParams(momentum), topN: 10 }, "source-top10"));
+      }
+    }
+    if (trend && input.variants?.includes("TB+M10")) {
+      buckets.set("trend_breakout:source-default", sourceBucket(trend, defaultParams(trend), "source-default"));
+    }
+  } else {
+    for (const strategy of input.strategies) {
+      for (const set of paramSets(strategy, input.grid)) {
+        const keep = set.isDefault && FROZEN.has(strategy.name);
+        buckets.set(`${strategy.name}:${set.key}`, {
+          strategy,
+          params: set.params,
+          key: set.key,
+          isDefault: set.isDefault,
+          candidates: [],
+          retain: keep,
+        });
+      }
     }
   }
-  if (input.grid) {
+  if (input.grid && !variantMode) {
     for (const extra of variantBuckets(input.strategies)) {
       buckets.set(`${extra.strategy.name}:${extra.key}`, extra);
     }
@@ -82,7 +99,7 @@ export async function simulateSwing(input: {
           gttGap: bucket.strategy.name === "ema" || bucket.strategy.name === "rs" ? input.gttGap : 0,
           limitOffset: input.limitOffset,
           chasePct: input.chasePct,
-          stats: bucket.isDefault && FROZEN.has(bucket.strategy.name) ? fills : undefined,
+          stats: bucket.stats ?? (bucket.isDefault && FROZEN.has(bucket.strategy.name) ? fills : undefined),
           sessionBars: (day) => input.intraday?.(row.symbol, day),
           riskGap: bucket.strategy.name === "rs" ? 0.01 : undefined,
           gate: (at) => eligibilityAt(trimmed, at),
@@ -93,6 +110,11 @@ export async function simulateSwing(input: {
         }
       }
     }
+  }
+  if (variantMode && input.variants) {
+    const scored = scoreVariants(input.variants, buckets, windowDays, input);
+    const variantFills = sumWalkStats([...buckets.values()].map((bucket) => bucket.stats).filter((stats): stats is WalkStats => stats != null));
+    return { scored, eligibility: Object.fromEntries(eligibility), fills: variantFills };
   }
   const scored: ScoredRun[] = [];
   const held = new Map<string, Candidate[]>();
@@ -196,7 +218,148 @@ type Bucket = {
   candidates: Candidate[];
   cap?: number;
   retain?: boolean;
+  stats?: WalkStats;
 };
+
+function sourceBucket(strategy: StrategyDef, params: Record<string, number>, key: string): Bucket {
+  return {
+    strategy,
+    params,
+    key,
+    isDefault: false,
+    candidates: [],
+    retain: true,
+    stats: { attempted: 0, unfilled: 0, dailyApprox: 0, intraday: 0, ambiguous: 0 },
+  };
+}
+
+function scoreVariants(
+  requested: SwingVariantName[],
+  buckets: Map<string, Bucket>,
+  calendar: string[],
+  input: {
+    slip: number;
+    sample: ResearchSample;
+    window: { from: string; to: string };
+    rules: SwingRules;
+  }
+): ScoredRun[] {
+  const top8 = buckets.get("momentum:source-top8");
+  const top10 = buckets.get("momentum:source-top10");
+  const trend = buckets.get("trend_breakout:source-default");
+  const rows: ScoredRun[] = [];
+  for (const variantName of requested) {
+    let strategy = "momentum";
+    let candidates: Candidate[];
+    let sourceStats: WalkStats[];
+    let rules: SwingRules;
+    let params: Record<string, number>;
+    if (variantName === "M15-control") {
+      if (!top8) throw new Error("M15-control needs the momentum top-8 source");
+      candidates = top8.candidates;
+      sourceStats = top8.stats ? [top8.stats] : [];
+      rules = variantRules(input.rules, { maxOrderPct: 0.15, maxOpen: 8 });
+      params = { ...top8.params, topN: 8, capPct: 15, maxOpen: 8, minOrderInr: 4000 };
+    } else if (variantName === "M10-6") {
+      if (!top8) throw new Error("M10-6 needs the momentum top-8 source");
+      candidates = top8.candidates;
+      sourceStats = top8.stats ? [top8.stats] : [];
+      rules = variantRules(input.rules, { maxOrderPct: 0.1, maxOpen: 6, maxGrossExposurePct: 0.6 });
+      params = { ...top8.params, topN: 8, capPct: 10, maxOpen: 6, maxGrossPct: 60, minOrderInr: 4000 };
+    } else if (variantName === "M10-8") {
+      if (!top8) throw new Error("M10-8 needs the momentum top-8 source");
+      candidates = top8.candidates;
+      sourceStats = top8.stats ? [top8.stats] : [];
+      rules = variantRules(input.rules, { maxOrderPct: 0.1, maxOpen: 8, maxGrossExposurePct: 0.8 });
+      params = { ...top8.params, topN: 8, capPct: 10, maxOpen: 8, maxGrossPct: 80, minOrderInr: 4000 };
+    } else if (variantName === "M10-10") {
+      if (!top10) throw new Error("M10-10 needs the momentum top-10 source");
+      candidates = top10.candidates;
+      sourceStats = top10.stats ? [top10.stats] : [];
+      rules = variantRules(input.rules, { maxOrderPct: 0.1, maxOpen: 10, maxGrossExposurePct: 1 });
+      params = { ...top10.params, topN: 10, capPct: 10, maxOpen: 10, maxGrossPct: 100, minOrderInr: 4000 };
+    } else if (variantName === "M-vol8") {
+      if (!top8) throw new Error("M-vol8 needs the momentum top-8 source");
+      candidates = top8.candidates;
+      sourceStats = top8.stats ? [top8.stats] : [];
+      rules = variantRules(input.rules, {
+        maxOrderPct: 0.15,
+        maxOpen: 8,
+        maxGrossExposurePct: 0.8,
+        atrExposurePct: 0.005,
+      });
+      params = { ...top8.params, topN: 8, atrExposurePct: 0.5, capPct: 15, maxOpen: 8, maxGrossPct: 80, minOrderInr: 4000 };
+    } else {
+      if (!top10 || !trend) throw new Error("TB+M10 needs trend breakout and momentum top-10 sources");
+      strategy = "trend_breakout+momentum";
+      candidates = [
+        ...trend.candidates.map((candidate) => ({ ...candidate, group: "trend_breakout" })),
+        ...top10.candidates.map((candidate) => ({ ...candidate, group: "momentum" })),
+      ];
+      sourceStats = [trend.stats, top10.stats].filter((stats): stats is WalkStats => stats != null);
+      rules = variantRules(input.rules, {
+        maxOrderPct: 0.1,
+        maxOpen: 10,
+        maxPerStrategy: 5,
+        maxGrossExposurePct: 1,
+      });
+      params = {
+        ...top10.params,
+        ...Object.fromEntries(Object.entries(trend.params).map(([key, value]) => [`trend_${key}`, value])),
+        topN: 10,
+        capPct: 10,
+        maxOpen: 10,
+        maxPerStrategy: 5,
+        maxGrossPct: 100,
+        minOrderInr: 4000,
+      };
+    }
+    const result = runSwingPortfolio(candidates, rules, calendar);
+    result.blocks.unfilledLimit = sourceStats.reduce((sum, stats) => sum + stats.unfilled, 0);
+    params = {
+      ...params,
+      rankSessions: 90,
+      indexAverageSessions: 200,
+      weeklyExit: 1,
+      priceStop: 0,
+      maxNewBuys: rules.maxNewBuys,
+      maxPerSector: rules.maxPerSector,
+      maxDailyDeployPct: rules.maxDailyDeployPct * 100,
+      cashReserve: rules.cashReserve,
+      riskPct: rules.riskPct * 100,
+      slippagePct: input.slip * 100,
+    };
+    const row = scoreBook(strategy, params, variantName, false, result, "swing", input.sample, input.window, input.rules.capital);
+    row.variant = variantName;
+    attachStress(row, candidates, rules, calendar, input);
+    rows.push(row);
+  }
+  return rows;
+}
+
+function variantRules(rules: SwingRules, overrides: Partial<SwingRules>): SwingRules {
+  return {
+    ...rules,
+    minOrderInr: 4000,
+    maxGrossExposurePct: undefined,
+    atrExposurePct: undefined,
+    maxPerStrategy: undefined,
+    ...overrides,
+  };
+}
+
+function sumWalkStats(rows: WalkStats[]): WalkStats {
+  return rows.reduce<WalkStats>(
+    (sum, row) => ({
+      attempted: sum.attempted + row.attempted,
+      unfilled: sum.unfilled + row.unfilled,
+      dailyApprox: (sum.dailyApprox ?? 0) + (row.dailyApprox ?? 0),
+      intraday: (sum.intraday ?? 0) + (row.intraday ?? 0),
+      ambiguous: (sum.ambiguous ?? 0) + (row.ambiguous ?? 0),
+    }),
+    { attempted: 0, unfilled: 0, dailyApprox: 0, intraday: 0, ambiguous: 0 }
+  );
+}
 
 function variantBuckets(strategies: StrategyDef[]): Bucket[] {
   const out: Bucket[] = [];

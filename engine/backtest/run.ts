@@ -25,6 +25,7 @@ import { filesRoot, syncUniverse } from "../jobs/market";
 import { loadSettings } from "../load";
 import { strategiesFor } from "../strategies";
 import type { ResearchArgs } from "./args";
+import { strategiesForSwingVariants, type SwingVariantName } from "./swing-variants";
 import { VERIFIED_ACTIONS } from "./actions";
 import { CLEAN_THRESHOLDS, CLEAN_VERSION, cleanSymbol, fingerprintSeries, type CleanedSeries } from "./clean";
 import {
@@ -74,9 +75,10 @@ type Capital = SwingRules & {
 
 export async function runResearch(args: ResearchArgs, opts?: { runId?: number; requestedBy?: string }): Promise<number> {
   guardResearchAnytime(args.anytime, hostname());
-  const names = strategiesFor(args.book, args.strategies).map((strategy) => strategy.name);
+  const requested = args.variants?.length ? strategiesForSwingVariants(args.variants) : args.strategies;
+  const names = strategiesFor(args.book, requested).map((strategy) => strategy.name);
   const requestedBy = opts?.requestedBy ?? "cli";
-  const identity = await researchIdentityFor({ book: args.book, sample: args.sample, grid: args.grid, only: args.only, strategies: names });
+  const identity = await researchIdentityFor({ book: args.book, sample: args.sample, grid: args.grid, only: args.only, strategies: names, variants: args.variants });
   if (!args.force) {
     const blocked = await duplicateIdentityError(identity, opts?.runId);
     if (blocked) {
@@ -139,6 +141,7 @@ async function execute(runId: number, args: ResearchArgs & { strategies: string[
   }
   const params = {
     strategies: args.strategies,
+    variants: args.variants ?? [],
     grid: args.grid,
     only: args.only ?? null,
     window,
@@ -234,6 +237,7 @@ async function execute(runId: number, args: ResearchArgs & { strategies: string[
       indexClose: built.indexClose,
       indexUp: built.indexUp,
       strategies: strategiesFor("swing", args.strategies),
+      variants: args.variants,
       grid: args.grid,
       sample: args.sample,
       window,
@@ -555,7 +559,12 @@ function buildNote(
     : "Bars before 09:15 and from 15:15 onward are ignored, including days before 3 Aug 2026.";
   const names = new Set(args.strategies ?? []);
   const momentum = scored.find((row) => row.strategy === "momentum" && (row.isDefault || row.params.capPct === 15));
-  const gates = momentum
+  const gates = args.variants?.length
+    ? scored.map((row) => {
+        const block = row.book.blocks;
+        return `${row.variant}: ${block.candidates} candidates, ${block.filled} filled; blocks held ${block.held}, daily-buy ${block.cappedBuys}, max-open ${block.cappedOpen}, per-strategy ${block.cappedStrategy}, sector ${block.sector}, daily-deploy ${block.deploy}, gross-cap ${block.grossExposure}, position-cap ${block.positionCap}, cash ${block.insufficientCash}, minimum/whole-share ${block.minimumOrder}, unfilled-limit ${block.unfilledLimit}.`;
+      }).join(" ")
+    : momentum
     ? `Momentum entry gates: ${momentum.book.blocks.candidates} candidates, ${momentum.book.blocks.filled} filled, ${momentum.book.blocks.cappedBuys} blocked by the new-buy cap, ${momentum.book.blocks.cappedOpen} by the open-position cap, ${momentum.book.blocks.held} because the name was already held, ${momentum.book.blocks.sector} by the sector cap, ${momentum.book.blocks.deploy} by the daily deploy cap, ${momentum.book.blocks.size} because the order could not be sized. Lowest cash was ₹${Math.round(momentum.book.minCash).toLocaleString("en-IN")}.`
     : "";
   return [
@@ -571,6 +580,7 @@ function buildNote(
     names.has("momentum") ? MOMENTUM_NOTE : "",
     limitNote,
     cleaningNote,
+    args.variants?.length ? `Declarative swing variants: ${args.variants.join(", ")}. Each row uses its frozen ₹4,000 minimum, position/open/gross caps and sizing rule; live strategy settings are unchanged.` : "",
     gates,
     args.only?.length ? `This run only used ${args.only.join(", ")}, so ranks are inside that list.` : "",
   ].filter(Boolean).join(" ");
@@ -592,7 +602,7 @@ async function saveResults(runId: number, rows: ScoredRun[]): Promise<void> {
       [
         runId,
         row.strategy,
-        JSON.stringify(row.params),
+        JSON.stringify(row.variant ? { ...row.params, variant: row.variant } : row.params),
         row.paramsKey,
         row.isDefault,
         row.score.trades,
@@ -679,7 +689,7 @@ async function insertRun(args: ResearchArgs, strategies: string[], status: strin
        (book, sample, status, requested_by, started_at, params, engine_sha)
      VALUES ($1,$2,$3,$4, CASE WHEN $3 = 'running' THEN now() ELSE NULL END, $5::jsonb,$6)
      RETURNING id::text AS id`,
-    [args.book, args.sample, status, requestedBy, JSON.stringify({ strategies, grid: args.grid, only: args.only ?? null, sample: args.sample, identity: identity ?? null }), identity?.engineSha || engineSha()]
+    [args.book, args.sample, status, requestedBy, JSON.stringify({ strategies, variants: args.variants ?? [], grid: args.grid, only: args.only ?? null, sample: args.sample, identity: identity ?? null }), identity?.engineSha || engineSha()]
   );
   return Number(rows[0].id);
 }
@@ -690,12 +700,14 @@ export async function researchIdentityFor(input: {
   grid: boolean;
   only?: string[];
   strategies: string[];
+  variants?: SwingVariantName[];
 }): Promise<ResearchIdentity> {
   const last = input.book === "swing" ? await lastDailyDate() : todayIst();
   return makeIdentity({
     book: input.book,
     sample: input.sample,
     strategies: input.strategies,
+    variants: input.variants,
     grid: input.grid,
     engineSha: engineSha(),
     lastCandle: last ?? "",

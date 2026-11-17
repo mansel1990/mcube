@@ -23,6 +23,8 @@ export type Signal = {
   priceStop?: boolean;
   /** Size to the order cap even when `stop` is a real price. Momentum never uses 1% risk. */
   sizeToCap?: boolean;
+  /** ATR known at the signal close. Used only by declarative exposure sizing variants. */
+  sizingAtr?: number;
   range?: number;
 };
 

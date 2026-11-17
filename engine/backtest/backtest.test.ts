@@ -179,6 +179,44 @@ describe("research backtest", () => {
     expect(result.minCash).toBeGreaterThanOrEqual(-0.01);
   });
 
+  it("sizes the volatility variant from 0.5% of current equity divided by ATR20", () => {
+    const row = { ...capCandidate("ATR", 1, "2024-01-02"), sizingAtr: 10 };
+    const result = runSwingPortfolio([row], {
+      capital: 80_000,
+      riskPct: 0.01,
+      maxOrderPct: 0.15,
+      minOrderInr: 4_000,
+      cashReserve: 500,
+      maxNewBuys: 2,
+      maxOpen: 8,
+      maxPerSector: 2,
+      maxDailyDeployPct: 0.5,
+      maxGrossExposurePct: 0.8,
+      atrExposurePct: 0.005,
+    }, ["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"]);
+    expect(result.trades[0].qty).toBe(40);
+    expect(result.trades[0].qty * result.trades[0].entryPx).toBe(4_000);
+  });
+
+  it("records the gross exposure cap separately from other portfolio blocks", () => {
+    const first = capCandidate("ONE", 2, "2024-01-02");
+    const second = capCandidate("TWO", 1, "2024-01-02");
+    const result = runSwingPortfolio([first, second], {
+      capital: 80_000,
+      riskPct: 0.01,
+      maxOrderPct: 0.1,
+      minOrderInr: 4_000,
+      cashReserve: 500,
+      maxNewBuys: 2,
+      maxOpen: 8,
+      maxPerSector: 2,
+      maxDailyDeployPct: 0.5,
+      maxGrossExposurePct: 0.1,
+    }, ["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"]);
+    expect(result.trades).toHaveLength(1);
+    expect(result.blocks).toMatchObject({ filled: 1, grossExposure: 1, cappedOpen: 0, deploy: 0 });
+  });
+
   it("rebalances momentum on the session before a Friday holiday and keeps the top N", () => {
     const bars = daily(320);
     const friday = bars.findIndex((bar, index) => index > 250 && weekdayUtc(bar.t) === 5);
@@ -326,6 +364,20 @@ describe("research backtest", () => {
       only: ["INFY", "TCS"],
       anytime: false,
     });
+  });
+
+  it("parses only declared swing variants and rejects ambiguous variant runs", () => {
+    expect(parseResearchArgs([
+      "--book", "swing", "--variant", "M15-control,M10-10,TB+M10", "--no-grid",
+    ])).toMatchObject({
+      book: "swing",
+      variants: ["M15-control", "M10-10", "TB+M10"],
+      grid: false,
+    });
+    expect(() => parseResearchArgs(["--book", "swing", "--variant", "M7-12", "--no-grid"])).toThrow(/Unknown swing variant/);
+    expect(() => parseResearchArgs(["--book", "intraday", "--variant", "M10-8", "--no-grid"])).toThrow(/only with --book swing/);
+    expect(() => parseResearchArgs(["--book", "swing", "--variant", "M10-8"])).toThrow(/requires --no-grid/);
+    expect(() => parseResearchArgs(["--book", "swing", "--variant", "M10-8", "--strategy", "momentum", "--no-grid"])).toThrow(/without --strategy/);
   });
 
   it("lets --anytime skip the window off the server and refuses it on mcube-server", () => {

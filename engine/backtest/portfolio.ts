@@ -15,6 +15,10 @@ export type SwingRules = {
   maxOpen: number;
   maxPerSector: number;
   maxDailyDeployPct: number;
+  /** Gross marked exposure as a fraction of current equity. Unset means no extra cap. */
+  maxGrossExposurePct?: number;
+  /** Shares = floor(this fraction of equity / signal-close ATR20). */
+  atrExposurePct?: number;
   /** Each strategy group may hold at most this many names. Unset means no extra cap. */
   maxPerStrategy?: number;
   rates?: ChargeRates;
@@ -67,9 +71,15 @@ export type SwingBlocks = {
   filled: number;
   cappedBuys: number;
   cappedOpen: number;
+  cappedStrategy: number;
   held: number;
   sector: number;
   deploy: number;
+  grossExposure: number;
+  positionCap: number;
+  insufficientCash: number;
+  minimumOrder: number;
+  unfilledLimit: number;
   size: number;
 };
 
@@ -78,6 +88,11 @@ export type BookResult = {
   equity: { date: string; value: number }[];
   /** Average of invested value ÷ that day's equity. */
   exposurePct: number;
+  maxExposurePct: number;
+  avgOpenCount: number;
+  maxOpenCount: number;
+  avgCashPct: number;
+  avgOrderNotional: number;
   minCash: number;
   blocks: SwingBlocks;
   openPositions: OpenPosition[];
@@ -123,7 +138,22 @@ function combinedSale(
 }
 
 function emptyBlocks(): SwingBlocks {
-  return { candidates: 0, filled: 0, cappedBuys: 0, cappedOpen: 0, held: 0, sector: 0, deploy: 0, size: 0 };
+  return {
+    candidates: 0,
+    filled: 0,
+    cappedBuys: 0,
+    cappedOpen: 0,
+    cappedStrategy: 0,
+    held: 0,
+    sector: 0,
+    deploy: 0,
+    grossExposure: 0,
+    positionCap: 0,
+    insufficientCash: 0,
+    minimumOrder: 0,
+    unfilledLimit: 0,
+    size: 0,
+  };
 }
 
 type Lot = {
@@ -164,6 +194,11 @@ export function runSwingPortfolio(candidates: Candidate[], rules: SwingRules, ca
   const taken: FilledTrade[] = [];
   const equity: { date: string; value: number }[] = [];
   let exposureSum = 0;
+  let maxExposure = 0;
+  let openCountSum = 0;
+  let maxOpenCount = 0;
+  let cashPctSum = 0;
+  let orderNotionalSum = 0;
   const blocks = emptyBlocks();
 
   const closedOn = (lot: Lot, day: string) => lot.trade.exitReason !== "open" && lot.trade.exitDate === day;
@@ -208,6 +243,7 @@ export function runSwingPortfolio(candidates: Candidate[], rules: SwingRules, ca
       const morning = lot.opens.get(day);
       fund += (morning != null && morning > 0 ? morning : lot.last) * lot.openQty;
     }
+    const morningInvested = Math.max(0, fund - cash);
     let newBuys = 0;
     let deployed = 0;
     for (const candidate of byDay.get(day) ?? []) {
@@ -221,7 +257,7 @@ export function runSwingPortfolio(candidates: Candidate[], rules: SwingRules, ca
         continue;
       }
       if (rules.maxPerStrategy && candidate.group && open.filter((lot) => lot.trade.group === candidate.group).length >= rules.maxPerStrategy) {
-        blocks.cappedOpen += 1;
+        blocks.cappedStrategy += 1;
         continue;
       }
       if (open.some((lot) => lot.trade.symbol === candidate.symbol)) {
@@ -239,11 +275,32 @@ export function runSwingPortfolio(candidates: Candidate[], rules: SwingRules, ca
         blocks.deploy += 1;
         continue;
       }
+      const grossRoom = rules.maxGrossExposurePct == null
+        ? Number.POSITIVE_INFINITY
+        : rules.maxGrossExposurePct * fund - morningInvested - deployed;
+      if (grossRoom <= 0) {
+        blocks.grossExposure += 1;
+        continue;
+      }
       const sameDay = candidate.exitReason !== "open" && candidate.entryDate === candidate.exitDate;
       const toCap = candidate.sizeToCap === true || candidate.priceStop === false;
       const sizingStop = candidate.riskStop != null && candidate.riskStop > 0 ? candidate.riskStop : candidate.stop;
-      let qty = toCap
-        ? Math.min(Math.floor((rules.maxOrderPct * fund + 1e-9) / candidate.entryPx), Math.floor((spendable + 1e-9) / candidate.entryPx))
+      const positionQty = Math.floor((rules.maxOrderPct * fund + 1e-9) / candidate.entryPx);
+      if (positionQty < 1) {
+        blocks.positionCap += 1;
+        continue;
+      }
+      const cashQty = Math.floor((spendable + 1e-9) / candidate.entryPx);
+      if (cashQty < 1) {
+        blocks.insufficientCash += 1;
+        continue;
+      }
+      const targetQty = rules.atrExposurePct != null
+        ? candidate.sizingAtr != null && candidate.sizingAtr > 0
+          ? Math.floor((rules.atrExposurePct * fund + 1e-9) / candidate.sizingAtr)
+          : 0
+        : toCap
+          ? positionQty
         : sizeOrder({
             fund,
             entry: candidate.entryPx,
@@ -253,7 +310,13 @@ export function runSwingPortfolio(candidates: Candidate[], rules: SwingRules, ca
             maxOrderPct: rules.maxOrderPct,
             minOrderInr: rules.minOrderInr,
           }).qty;
-      qty = Math.min(qty, Math.floor((room + 1e-9) / candidate.entryPx));
+      let qty = Math.min(
+        targetQty,
+        positionQty,
+        cashQty,
+        Math.floor((room + 1e-9) / candidate.entryPx),
+        Math.floor((grossRoom + 1e-9) / candidate.entryPx)
+      );
       while (qty > 0) {
         const notional = qty * candidate.entryPx;
         const buyCharges = estimateCharges("BUY", notional, rules.rates, sameDay).total;
@@ -261,7 +324,10 @@ export function runSwingPortfolio(candidates: Candidate[], rules: SwingRules, ca
         qty -= 1;
       }
       if (qty < 1) {
-        blocks.size += 1;
+        if (rules.atrExposurePct != null && targetQty < 1) blocks.minimumOrder += 1;
+        else if (room < candidate.entryPx) blocks.deploy += 1;
+        else if (grossRoom < candidate.entryPx) blocks.grossExposure += 1;
+        else blocks.minimumOrder += 1;
         continue;
       }
       const notional = qty * candidate.entryPx;
@@ -269,6 +335,7 @@ export function runSwingPortfolio(candidates: Candidate[], rules: SwingRules, ca
       cash -= notional + buyCharges;
       minCash = Math.min(minCash, cash);
       deployed += notional;
+      orderNotionalSum += notional;
       newBuys += 1;
       blocks.filled += 1;
       const partQty = candidate.exitReason !== "open" && candidate.scaleOut && candidate.scaleOut.date < candidate.exitDate ? Math.floor(qty / 2) : 0;
@@ -334,7 +401,12 @@ export function runSwingPortfolio(candidates: Candidate[], rules: SwingRules, ca
       invested += mark * lot.openQty;
     }
     const value = cash + invested;
-    exposureSum += value > 0 ? invested / value : 0;
+    const exposure = value > 0 ? invested / value : 0;
+    exposureSum += exposure;
+    maxExposure = Math.max(maxExposure, exposure);
+    openCountSum += open.length;
+    maxOpenCount = Math.max(maxOpenCount, open.length);
+    cashPctSum += value > 0 ? cash / value : 0;
     equity.push({ date: day, value });
   }
 
@@ -349,6 +421,11 @@ export function runSwingPortfolio(candidates: Candidate[], rules: SwingRules, ca
     trades: taken,
     equity,
     exposurePct: days.length ? (exposureSum / days.length) * 100 : 0,
+    maxExposurePct: maxExposure * 100,
+    avgOpenCount: days.length ? openCountSum / days.length : 0,
+    maxOpenCount,
+    avgCashPct: days.length ? (cashPctSum / days.length) * 100 : 0,
+    avgOrderNotional: blocks.filled ? orderNotionalSum / blocks.filled : 0,
     minCash,
     blocks,
     openPositions,

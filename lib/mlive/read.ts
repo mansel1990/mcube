@@ -403,6 +403,7 @@ export async function homePayload(displayName: string) {
       peak,
       maxOrderPct: num(settings.max_order_pct ?? 0.25) * 100,
     },
+    enabledStrategies: Array.isArray(settings.strategies_enabled) ? settings.strategies_enabled : [],
     kite: {
       connected,
       at: kiteStatus.connectedAt
@@ -465,6 +466,7 @@ export async function homePayload(displayName: string) {
       stop: num(row.trend_stop),
       high: highBySymbol.get(String(row.symbol)) ?? 0,
       gtt: gttIds.has(num(row.id)),
+      exitMode: String(row.strategy) === "momentum" ? "weekly" : "gtt",
       stopReason: gttIds.has(num(row.id)) ? null : stopReasonBySymbol.get(String(row.symbol).toUpperCase()) || null,
       sellProposed: needsYou.some((item) => item.side === "SELL" && item.symbol === row.symbol),
       since: day(row.opened_at),

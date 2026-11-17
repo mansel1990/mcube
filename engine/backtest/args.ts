@@ -1,8 +1,10 @@
 import type { ResearchBook, ResearchSample } from "@/lib/mlive/research-bar";
+import { isSwingVariant, SWING_VARIANTS, type SwingVariantName } from "./swing-variants";
 
 export type ResearchArgs = {
   book: ResearchBook;
   strategies?: string[];
+  variants?: SwingVariantName[];
   sample: ResearchSample;
   force: boolean;
   grid: boolean;
@@ -14,6 +16,7 @@ export type ResearchArgs = {
 export function parseResearchArgs(argv: readonly string[]): ResearchArgs {
   let book: ResearchBook | null = null;
   let strategies: string[] | undefined;
+  let variants: SwingVariantName[] | undefined;
   let sample: ResearchSample = "building";
   let force = false;
   let grid = true;
@@ -27,11 +30,20 @@ export function parseResearchArgs(argv: readonly string[]): ResearchArgs {
     else if (arg === "--no-grid") grid = false;
     else if (arg === "--book") book = readBook(argv[++i], arg);
     else if (arg === "--strategy") strategies = readList(argv[++i], arg);
+    else if (arg === "--variant") {
+      const requested = readList(argv[++i], arg);
+      const unknown = requested.filter((value) => !isSwingVariant(value));
+      if (unknown.length) throw new Error(`Unknown swing variant: ${unknown.join(", ")}. Valid variants: ${SWING_VARIANTS.join(", ")}`);
+      variants = [...new Set(requested)] as SwingVariantName[];
+    }
     else if (arg === "--only") only = readList(argv[++i], arg).map((symbol) => symbol.toUpperCase());
     else throw new Error(`Unknown research option ${arg}`);
   }
   if (!book) throw new Error("research needs --book swing|intraday");
-  return { book, strategies, sample, force, grid, only, anytime };
+  if (variants?.length && book !== "swing") throw new Error("--variant is supported only with --book swing");
+  if (variants?.length && grid) throw new Error("--variant requires --no-grid");
+  if (variants?.length && strategies?.length) throw new Error("Use --variant without --strategy; each variant declares its strategy inputs");
+  return { book, strategies, variants, sample, force, grid, only, anytime };
 }
 
 /** The overnight queue keeps the trading-hour window, even if a payload asks to skip it. */
@@ -39,6 +51,7 @@ export function queueResearchArgs(args: Omit<ResearchArgs, "anytime"> & { anytim
   return {
     book: args.book,
     strategies: args.strategies,
+    variants: args.variants,
     sample: args.sample,
     force: args.force,
     grid: args.grid,

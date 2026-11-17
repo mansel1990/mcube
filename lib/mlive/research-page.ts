@@ -41,6 +41,7 @@ export type ResearchIdentity = {
   book: ResearchBook;
   sample: ResearchSample;
   strategies: string[];
+  variants: string[];
   grid: boolean;
   engineSha: string;
   lastCandle: string;
@@ -78,6 +79,7 @@ export function makeIdentity(input: {
   book: ResearchBook;
   sample: ResearchSample;
   strategies: readonly string[];
+  variants?: readonly string[];
   grid: boolean;
   engineSha: string;
   lastCandle: string;
@@ -87,6 +89,7 @@ export function makeIdentity(input: {
     book: input.book,
     sample: input.sample,
     strategies: uniqueSorted(input.strategies),
+    variants: uniqueSorted(input.variants ?? []),
     grid: input.grid,
     engineSha: input.engineSha,
     lastCandle: input.lastCandle.slice(0, 10),
@@ -102,6 +105,7 @@ export function readIdentity(params: unknown, engineSha = ""): ResearchIdentity 
     book: raw.book,
     sample: raw.sample === "heldback" ? "heldback" : "building",
     strategies: stringsOf(raw.strategies),
+    variants: stringsOf(raw.variants),
     grid: raw.grid !== false,
     engineSha: typeof raw.engineSha === "string" && raw.engineSha ? raw.engineSha : engineSha,
     lastCandle: typeof raw.lastCandle === "string" ? raw.lastCandle : "",
@@ -128,6 +132,7 @@ export function identityFromRun(input: {
     book: input.book,
     sample: input.sample === "heldback" ? "heldback" : "building",
     strategies,
+    variants: stringsOf(params.variants),
     grid: params.grid !== false,
     engineSha: input.engineSha,
     lastCandle: last,
@@ -140,7 +145,7 @@ export function sameIdentity(a: ResearchIdentity, b: ResearchIdentity): boolean 
 }
 
 export function sameSetup(a: ResearchIdentity, b: ResearchIdentity): boolean {
-  return a.book === b.book && a.sample === b.sample && a.grid === b.grid && sameList(a.strategies, b.strategies) && sameList(a.only, b.only);
+  return a.book === b.book && a.sample === b.sample && a.grid === b.grid && sameList(a.strategies, b.strategies) && sameList(a.variants, b.variants) && sameList(a.only, b.only);
 }
 
 export function alreadyRunMessage(finishedAt: string | null): string {

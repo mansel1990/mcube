@@ -15,6 +15,7 @@ import { sells } from "./jobs/sells";
 import { intraday } from "./jobs/intraday";
 import { marketBackfill, marketDaily, parseMarketArgs } from "./jobs/market";
 import { marketCheck } from "./jobs/market-check";
+import { momentumEod } from "./jobs/momentum-eod";
 import { quotes } from "./jobs/quotes";
 import { researchJob } from "./jobs/research";
 import { researchQueue } from "./jobs/research-queue";
@@ -40,6 +41,7 @@ const jobs: Record<string, () => Promise<void>> = {
   "market-backfill": marketBackfill,
   "market-daily": marketDaily,
   "market-check": marketCheck,
+  "momentum-eod": momentumEod,
   research: () => researchJob(process.argv.slice(3)),
   "research-queue": researchQueue,
   quotes,

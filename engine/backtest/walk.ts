@@ -25,6 +25,7 @@ export type WalkTrade = {
   priceStop?: boolean;
   /** Size to the order cap. Set on momentum, including when it has a price stop. */
   sizeToCap?: boolean;
+  sizingAtr?: number;
   /** Half the position leaves at this next open. The rest keeps the trail. */
   scaleOut?: { date: string; px: number };
   /** Adverse exit used for sizing. RS is the trend stop times 0.97 times 0.99. */
@@ -242,6 +243,7 @@ function filled(
     protective: level,
     priceStop: pos.signal.priceStop !== false,
     sizeToCap: pos.signal.sizeToCap === true,
+    sizingAtr: pos.signal.sizingAtr,
     scaleOut: pos.scale,
     riskStop: riskPrice(pos.signal.stop, pos.signal.side, opts),
     fill: pos.fill,
@@ -468,6 +470,7 @@ function walkFlexible(strategy: StrategyDef, ctx: SignalContext, opts: WalkOptio
         protective: stopPx > 0 ? stopPx : signal.stop,
         priceStop: stopPx > 0 || signal.priceStop !== false,
         sizeToCap: signal.sizeToCap === true,
+        sizingAtr: signal.sizingAtr,
         fill: resolved?.fill,
         entryLimit: resolved?.limit,
         entryRaw: resolved?.raw,

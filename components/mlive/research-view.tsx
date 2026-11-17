@@ -166,9 +166,10 @@ export function ResearchView() {
     return () => window.clearInterval(timer);
   }, [active]);
 
-  const defaults = (payload?.results ?? []).filter((row) => row.isDefault);
-  const selected = defaults.find((row) => row.strategy === strategy) ?? null;
-  const settings = (payload?.results ?? []).filter((row) => row.strategy === strategy);
+  const variantRun = stringsOf(payload?.run?.params.variants).length > 0;
+  const defaults = variantRun ? (payload?.results ?? []) : (payload?.results ?? []).filter((row) => row.isDefault);
+  const selected = defaults.find((row) => resultKey(row) === strategy) ?? null;
+  const settings = selected ? (payload?.results ?? []).filter((row) => row.strategy === selected.strategy) : [];
   const runSample = (payload?.run?.sample === "heldback" ? "heldback" : "building") as ResearchSample;
   const bar = barFor(book, payload?.run ? runSample : "building");
   const span = paramsWindow(payload?.run?.params);
@@ -176,7 +177,7 @@ export function ResearchView() {
   const held = new Map((payload?.heldback ?? []).map((row) => [row.strategy, row.at]));
   const cards = sortStrategies(defaults.map((row) => ({
     ...row,
-    name: strategyName(row.strategy),
+    name: typeof row.params.variant === "string" ? row.params.variant : strategyName(row.strategy),
     band: resultBand(row.passed, row.failReasons.length),
   })));
   const counts = bandCounts(cards);
@@ -402,16 +403,16 @@ export function ResearchView() {
             const others = (payload?.results ?? []).filter((item) => item.strategy === row.strategy && !item.isDefault).map((item) => item.profitFactor);
             return (
               <article
-                key={row.strategy}
-                className={`card research-card${strategy === row.strategy ? " on" : ""}`}
+                key={resultKey(row)}
+                className={`card research-card${strategy === resultKey(row) ? " on" : ""}`}
                 role="button"
                 tabIndex={0}
-                aria-expanded={strategy === row.strategy}
-                onClick={() => { setStrategy(row.strategy); setPage(1); setSymbol(""); setResult(""); }}
+                aria-expanded={strategy === resultKey(row)}
+                onClick={() => { setStrategy(resultKey(row)); setPage(1); setSymbol(""); setResult(""); }}
                 onKeyDown={(event) => {
                   if (event.key !== "Enter" && event.key !== " ") return;
                   event.preventDefault();
-                  setStrategy(row.strategy);
+                  setStrategy(resultKey(row));
                   setPage(1);
                 }}
               >
@@ -443,7 +444,7 @@ export function ResearchView() {
         </div>
       )}
 
-      {showCards && (
+      {showCards && !variantRun && (
         <OverlapBlock rows={cards.map((row) => ({ strategy: row.strategy, name: row.name, band: row.band }))} cells={payload?.overlap ?? []} />
       )}
 
@@ -531,6 +532,7 @@ function StrategyDetail(props: {
   csvHref: string;
 }) {
   const { onClose } = props;
+  const title = typeof props.row.params.variant === "string" ? props.row.params.variant : strategyName(props.row.strategy);
   const pages = Math.max(1, Math.ceil(props.total / 40));
   const hasNifty = props.series.some((point) => point.nifty != null);
   useEffect(() => {
@@ -542,10 +544,10 @@ function StrategyDetail(props: {
   }, [onClose]);
   return (
     <div className="drawer-back" onClick={props.onClose}>
-      <div className="drawer research-detail" role="dialog" aria-modal="true" aria-label={strategyName(props.row.strategy)} onClick={(event) => event.stopPropagation()}>
+      <div className="drawer research-detail" role="dialog" aria-modal="true" aria-label={title} onClick={(event) => event.stopPropagation()}>
         <div className="chart-head">
           <div>
-            <h2>{strategyName(props.row.strategy)}</h2>
+            <h2>{title}</h2>
             <p className="sub">{strategyIdea(props.row.strategy)}</p>
           </div>
           <button type="button" className="btn" onClick={props.onClose}>Close</button>
@@ -596,7 +598,7 @@ function StrategyDetail(props: {
             <tbody>
               {props.grid.map((row) => (
                 <tr key={row.paramsKey} className={row.isDefault ? "is-default" : undefined}>
-                  <td>{row.isDefault ? "Default" : row.paramsKey}</td>
+                  <td>{row.isDefault ? "Default" : typeof row.params.variant === "string" ? row.params.variant : row.paramsKey}</td>
                   <td className="r n">{row.profitFactor == null ? "—" : row.profitFactor.toFixed(2)}</td>
                   <td className="r n">{row.avgNetPct == null ? "—" : `${row.avgNetPct.toFixed(2)}%`}</td>
                   <td className="r n">{row.trades}</td>
@@ -723,6 +725,10 @@ function objectOf(value: unknown): Record<string, unknown> {
 function stringsOf(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string");
+}
+
+function resultKey(row: Result): string {
+  return `${row.strategy}|${row.paramsKey}`;
 }
 
 function equityPoints(value: unknown): { date: string; value: number }[] {

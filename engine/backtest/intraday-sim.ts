@@ -190,6 +190,7 @@ export function selectIntraday(candidates: SessionTrade[], rules: DayRules, cale
   let equityValue = rules.capital;
   let minCash = equityValue;
   let exposureSum = 0;
+  let maxExposure = 0;
   const trades: FilledTrade[] = [];
   const equity: { date: string; value: number }[] = [];
 
@@ -298,7 +299,9 @@ export function selectIntraday(candidates: SessionTrade[], rules: DayRules, cale
     release("99:99");
     equityValue += dayPnl;
     minCash = Math.min(minCash, equityValue);
-    exposureSum += dayStart > 0 ? peakUsed / dayStart : 0;
+    const dayExposure = dayStart > 0 ? peakUsed / dayStart : 0;
+    exposureSum += dayExposure;
+    maxExposure = Math.max(maxExposure, dayExposure);
     equity.push({ date: day, value: equityValue });
   }
 
@@ -306,8 +309,28 @@ export function selectIntraday(candidates: SessionTrade[], rules: DayRules, cale
     trades,
     equity,
     exposurePct: days.length ? (exposureSum / days.length) * 100 : 0,
+    maxExposurePct: maxExposure * 100,
+    avgOpenCount: 0,
+    maxOpenCount: 0,
+    avgCashPct: days.length ? Math.max(0, 100 - (exposureSum / days.length) * 100) : 100,
+    avgOrderNotional: trades.length ? trades.reduce((sum, trade) => sum + trade.entryPx * trade.qty, 0) / trades.length : 0,
     minCash,
-    blocks: { candidates: 0, filled: trades.length, cappedBuys: 0, cappedOpen: 0, held: 0, sector: 0, deploy: 0, size: 0 },
+    blocks: {
+      candidates: 0,
+      filled: trades.length,
+      cappedBuys: 0,
+      cappedOpen: 0,
+      cappedStrategy: 0,
+      held: 0,
+      sector: 0,
+      deploy: 0,
+      grossExposure: 0,
+      positionCap: 0,
+      insufficientCash: 0,
+      minimumOrder: 0,
+      unfilledLimit: 0,
+      size: 0,
+    },
     openPositions: [],
     unrealised: 0,
     unrealisedIncludesExitCharges: false,

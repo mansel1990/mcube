@@ -49,6 +49,9 @@ export type GuardContext = {
   deployed?: number;
   /** 50% of Engine can use now, locked at the first buy step. */
   deployCap?: number;
+  currentGross?: number;
+  committedGross?: number;
+  maxGrossExposurePct?: number;
 };
 
 export type GuardVerdict = { ok: true; reason: "ok" } | { ok: false; reason: string };
@@ -89,6 +92,10 @@ export function guardOrder(intent: GuardIntent, ctx: GuardContext): GuardVerdict
     if (ctx.maxBuysPerStrategy != null && (ctx.strategyBuys ?? 0) >= ctx.maxBuysPerStrategy) return fail("pacing_strategy");
     if (ctx.maxOpenPerStrategy != null && ctx.isNewSymbol && (ctx.openInStrategy ?? 0) >= ctx.maxOpenPerStrategy) return fail("strategy_full");
     if (ctx.deployCap != null && (ctx.deployed ?? 0) + notional > ctx.deployCap + 1e-6) return fail("pacing_cash");
+    if (
+      ctx.maxGrossExposurePct != null &&
+      (ctx.currentGross ?? 0) + (ctx.committedGross ?? 0) + notional > ctx.maxGrossExposurePct * ctx.fund + 1e-6
+    ) return fail("gross_exposure");
     return { ok: true, reason: "ok" };
   }
 

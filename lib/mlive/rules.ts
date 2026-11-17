@@ -47,7 +47,7 @@ export const EXIT_EMA: ExitParams = {
 };
 
 export type Side = "BUY" | "SELL";
-export type Strategy = "rs" | "ema";
+export type Strategy = "rs" | "ema" | "momentum";
 
 export type Bar = {
   date?: string;
@@ -164,6 +164,33 @@ export function sizeOrder(input: SizingInput): SizingResult {
     reason,
     riskBudget,
     qtyRisk,
+    qtyCap,
+    qtyCash,
+    notional: reason === "ok" ? notional : 0,
+    text,
+  };
+}
+
+/** Fixed exposure sizing for stopless momentum. Cash should already reserve estimated charges. */
+export function sizeCapOrder(input: Pick<SizingInput, "fund" | "entry" | "spendable" | "maxOrderPct" | "minOrderInr">): SizingResult {
+  const maxOrderPct = input.maxOrderPct ?? DEFAULT_MAX_ORDER_PCT;
+  const minOrder = input.minOrderInr ?? DEFAULT_MIN_ORDER;
+  const capValue = maxOrderPct * input.fund;
+  const qtyCap = floorDiv(capValue, input.entry);
+  const qtyCash = floorDiv(Math.max(0, input.spendable), input.entry);
+  const rawQty = Math.min(qtyCap, qtyCash);
+  const notional = rawQty * input.entry;
+  let reason: SizingReason = "ok";
+  if (!(input.entry > 0)) reason = "bad_stop";
+  else if (input.entry > capValue + 1e-6) reason = "too_expensive";
+  else if (rawQty < 1 || notional + 1e-6 < minOrder) reason = qtyCash <= qtyCap ? "no_funds" : "too_small";
+  const qty = reason === "ok" ? rawQty : 0;
+  const text = `cap ${qtyCap} · cash ${qtyCash} → ${reason === "ok" ? qty : reason}`;
+  return {
+    qty,
+    reason,
+    riskBudget: 0,
+    qtyRisk: qtyCap,
     qtyCap,
     qtyCash,
     notional: reason === "ok" ? notional : 0,
@@ -388,10 +415,11 @@ export function normaliseScores(ideas: readonly ScoredIdea[]): RankedIdea[] {
 export function rankIdeas(ideas: readonly ScoredIdea[], live?: LiveEdge): RankedIdea[] {
   const useLive = !!live && live.rsTrades >= 20 && live.emaTrades >= 20;
   const stratOrder = (strategy: Strategy): number => {
-    if (!useLive || !live) return strategy === "rs" ? 0 : 1;
-    if (live.rsPerTrade === live.emaPerTrade) return strategy === "rs" ? 0 : 1;
+    if (strategy === "momentum") return 0;
+    if (!useLive || !live) return strategy === "rs" ? 1 : 2;
+    if (live.rsPerTrade === live.emaPerTrade) return strategy === "rs" ? 1 : 2;
     const better: Strategy = live.rsPerTrade > live.emaPerTrade ? "rs" : "ema";
-    return strategy === better ? 0 : 1;
+    return strategy === better ? 1 : 2;
   };
   return normaliseScores(ideas).sort((a, b) => b.norm - a.norm || stratOrder(a.strategy) - stratOrder(b.strategy));
 }
@@ -450,6 +478,7 @@ export function emaLast(closes: readonly number[], period: number): number | nul
  * EMA: the 20-day EMA. Caller skips the idea when the limit entry is below it.
  */
 export function initialStop(strategy: Strategy, bars: readonly Bar[], signalClose: number, params: ExitParams): number | null {
+  if (strategy === "momentum") return null;
   if (strategy === "ema" || params.trend_stop_rule === "close_below_ema") {
     return emaLast(bars.map((bar) => bar.close), params.ema_period ?? 20);
   }
@@ -486,6 +515,7 @@ export function nextTrendStop(args: {
   previousStop: number | null;
   params: ExitParams;
 }): StopUpdate | null {
+  if (args.strategy === "momentum") return null;
   const { bars, entryIndex, previousStop, params } = args;
   if (bars.length === 0 || entryIndex < 0 || entryIndex >= bars.length) return null;
   const last = bars[bars.length - 1];
@@ -781,7 +811,7 @@ export type DecisionSentenceInput = {
   sectorCount?: number | null;
   minOrderInr?: number | null;
   limitCount?: number | null;
-  strategy?: "rs" | "ema" | null;
+  strategy?: Strategy | null;
   /** Exchange status when this sentence is about an order, not a decision. */
   status?: string | null;
   orderedQty?: number | null;
@@ -874,7 +904,8 @@ export function ledgerOutcome(
   return label;
 }
 
-function strategyName(strategy: "rs" | "ema" | null | undefined): string {
+function strategyName(strategy: Strategy | null | undefined): string {
+  if (strategy === "momentum") return "Momentum";
   return strategy === "ema" ? "EMA" : strategy === "rs" ? "RS" : "strategy";
 }
 
@@ -1064,7 +1095,7 @@ export function ledgerDay(rows: readonly LedgerDecision[]): LedgerDay {
 export const CASH_RECHECK_CODES = ["no_funds", "too_small", "limit"] as const;
 
 /** A rejected or cancelled buy can free one of these the same day. */
-export const PACING_RECHECK_CODES = ["pacing_day", "pacing_strategy", "pacing_cash"] as const;
+export const PACING_RECHECK_CODES = ["pacing_day", "pacing_strategy", "pacing_cash", "gross_exposure"] as const;
 
 /** The live price can move away from the stop later the same day. */
 export const PRICE_RECHECK_CODES = ["too_close_to_stop"] as const;
@@ -1076,12 +1107,13 @@ export function recheckEligible(outcome: string | null, reasonCode: string | nul
   return outcome === "skipped" && reasonCode != null && (RECHECK_REASON_CODES as readonly string[]).includes(reasonCode);
 }
 
-export type PaceIdea = { symbol: string; strategy: "rs" | "ema"; notional: number };
+export type PaceIdea = { symbol: string; strategy: Strategy; notional: number };
+export type StrategyCounts = { rs: number; ema: number; momentum?: number };
 
 export type PaceBook = {
   newBuys: number;
-  strategyBuys: { rs: number; ema: number };
-  openInStrategy: { rs: number; ema: number };
+  strategyBuys: StrategyCounts;
+  openInStrategy: StrategyCounts;
   /** Committed buys plus proposals already accepted in this pass. The cap uses this. */
   deployed: number;
   /** Deployed before this pass. The baseline uses this so proposals do not inflate it. */
@@ -1122,7 +1154,7 @@ export function deployBaseline(saved: number | null | undefined, deployed: numbe
  * and the engine can use cash. Open positions are not increased here: a proposal is not a fill.
  */
 export function paceBuys(ideas: readonly PaceIdea[], book: PaceBook, limits: PaceLimits): {
-  results: { symbol: string; strategy: "rs" | "ema"; outcome: "proposed" | "skipped"; reason: PaceReason }[];
+  results: { symbol: string; strategy: Strategy; outcome: "proposed" | "skipped"; reason: PaceReason }[];
   book: PaceBook;
 } {
   const committed = book.committed ?? book.deployed;
@@ -1141,16 +1173,16 @@ export function paceBuys(ideas: readonly PaceIdea[], book: PaceBook, limits: Pac
   };
   const cap = (baseline ?? 0) * limits.maxDailyDeployPct;
   const dayCap = dayBuyCap(limits.maxNewBuysPerDay, limits.maxBuysPerDay);
-  const results: { symbol: string; strategy: "rs" | "ema"; outcome: "proposed" | "skipped"; reason: PaceReason }[] = [];
+  const results: { symbol: string; strategy: Strategy; outcome: "proposed" | "skipped"; reason: PaceReason }[] = [];
   for (const idea of ideas) {
     let reason: PaceReason = "ok";
     if (next.newBuys >= dayCap) reason = limits.maxNewBuysPerDay <= limits.maxBuysPerDay ? "pacing_day" : "limit";
-    else if (next.strategyBuys[idea.strategy] >= limits.maxBuysPerStrategyPerDay) reason = "pacing_strategy";
-    else if (next.openInStrategy[idea.strategy] >= limits.maxOpenPerStrategy) reason = "strategy_full";
+    else if ((next.strategyBuys[idea.strategy] ?? 0) >= limits.maxBuysPerStrategyPerDay) reason = "pacing_strategy";
+    else if ((next.openInStrategy[idea.strategy] ?? 0) >= limits.maxOpenPerStrategy) reason = "strategy_full";
     else if (next.deployed + idea.notional > cap + 1e-6) reason = "pacing_cash";
     if (reason === "ok") {
       next.newBuys += 1;
-      next.strategyBuys[idea.strategy] += 1;
+      next.strategyBuys[idea.strategy] = (next.strategyBuys[idea.strategy] ?? 0) + 1;
       next.deployed += idea.notional;
       results.push({ symbol: idea.symbol, strategy: idea.strategy, outcome: "proposed", reason });
     } else {

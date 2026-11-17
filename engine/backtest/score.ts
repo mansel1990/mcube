@@ -19,6 +19,8 @@ export type StressReport = {
 
 export type ScoredRun = {
   strategy: string;
+  /** Declarative experiment name. It is persisted with params but never changes strategy logic. */
+  variant?: string;
   params: Record<string, number>;
   paramsKey: string;
   isDefault: boolean;

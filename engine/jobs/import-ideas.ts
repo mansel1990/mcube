@@ -59,7 +59,7 @@ export async function importIdeas(): Promise<void> {
         });
       }
     }
-    if (staged.length === 0 && istMinutes() >= 18 * 60 + 40) {
+    if (staged.length === 0 && batches.some((batch) => settings.strategies.includes(batch.strategy)) && istMinutes() >= 18 * 60 + 40) {
       await raiseAlert({
         level: "problem",
         code: "bad_data",

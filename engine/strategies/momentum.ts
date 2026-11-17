@@ -1,4 +1,5 @@
 import { indexAllows } from "./index-filter";
+import { atr } from "./math";
 import type { Signal, StrategyDef } from "./types";
 
 /**
@@ -27,7 +28,16 @@ export const momentum: StrategyDef = {
       if (!isWeekEnd(ctx.bars, i)) continue;
       if (!inMomentum(ctx, i, topN)) continue;
       if (!indexAllows(ctx.indexClose, i, ctx.params.indexDays ?? 0)) continue;
-      out.push({ at: i, side: "long", score: ctx.rank[i], stop: 0, priceStop: false, useLimit: true, sizeToCap: true });
+      out.push({
+        at: i,
+        side: "long",
+        score: ctx.rank[i],
+        stop: 0,
+        priceStop: false,
+        useLimit: true,
+        sizeToCap: true,
+        sizingAtr: atr(ctx.bars, i, 20) ?? undefined,
+      });
     }
     return out;
   },

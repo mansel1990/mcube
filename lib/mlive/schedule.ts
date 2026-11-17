@@ -24,6 +24,7 @@ export const SCHEDULE: ScheduleStep[] = [
   { kind: "eod-final", time: "19:50", title: "Daily report", description: "Closes the day and writes the report.", group: "evening" },
   { kind: "research-queue", time: "20:00", title: "Research queue", description: "Runs queued backtests overnight.", group: "evening" },
   { kind: "market-daily", time: "20:05", title: "Save today's candles", description: "Stores today's daily and 5-minute candles, including NIFTY 50.", group: "evening" },
+  { kind: "momentum-eod", time: "20:40", title: "Momentum weekly list", description: "Builds or carries the M10-6 cohort after fresh daily candles.", group: "evening" },
 ];
 
 export const SCHEDULE_KINDS = SCHEDULE.map((step) => step.kind);

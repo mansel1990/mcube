@@ -1,5 +1,5 @@
 import { DEFAULT_CHARGE_RATES, type ChargeRates } from "@/lib/mlive/charges";
-import { EXIT_EMA, EXIT_RS, type ExitParams } from "@/lib/mlive/rules";
+import { EXIT_EMA, EXIT_RS, type ExitParams, type Strategy } from "@/lib/mlive/rules";
 import { asDate, jsonValue, num, q } from "./db";
 
 export type MliveSettings = {
@@ -19,7 +19,7 @@ export type MliveSettings = {
   chasePct: number;
   limitOffset: number;
   exclude: string[];
-  strategies: string[];
+  strategies: Strategy[];
   dryRun: boolean;
   exitRs: ExitParams;
   exitEma: ExitParams;
@@ -55,10 +55,10 @@ function asExit(value: unknown, fallback: ExitParams): ExitParams {
 export async function loadSettings(): Promise<MliveSettings> {
   const rows = await q<{ key: string; value: unknown }>(`SELECT key, value FROM mlive.mlive_settings`);
   const map = new Map(rows.map((row) => [row.key, jsonValue(row.value)]));
-  const known = new Set(["rs", "ema", "trend_breakout", "rsi2", "momentum", "ema_v2", "orb", "vwap"]);
+  const known = new Set<Strategy>(["rs", "ema", "momentum"]);
   const strategies = Array.isArray(map.get("strategies_enabled"))
-    ? (map.get("strategies_enabled") as string[]).filter((name) => known.has(name))
-    : ["rs", "ema"];
+    ? (map.get("strategies_enabled") as string[]).filter((name): name is Strategy => known.has(name as Strategy))
+    : (["rs", "ema"] as Strategy[]);
   const chargesRaw = map.get("charges");
   return {
     riskPct: num(map.get("risk_pct") ?? 0.01),

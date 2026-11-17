@@ -2,6 +2,7 @@ import { istMinutes } from "@/lib/mlive/calendar";
 import type { ResearchBook, ResearchSample } from "@/lib/mlive/research-bar";
 import { queueResearchArgs } from "../backtest/args";
 import { duplicateIdentityError, researchIdentityFor, runResearch } from "../backtest/run";
+import { isSwingVariant, type SwingVariantName } from "../backtest/swing-variants";
 import { researchWindowOpen } from "../backtest/schedule";
 import { jsonValue, q } from "../db";
 
@@ -48,6 +49,7 @@ export async function researchQueue(): Promise<void> {
   const args = queueResearchArgs({
     book: payload.book,
     strategies: payload.strategies,
+    variants: payload.variants,
     sample: payload.sample,
     force: payload.force,
     grid: payload.grid,
@@ -59,6 +61,7 @@ export async function researchQueue(): Promise<void> {
         sample: payload.sample,
         grid: payload.grid,
         strategies: payload.strategies,
+        variants: payload.variants,
       });
       const blocked = await duplicateIdentityError(identity, payload.runId);
       if (blocked) {
@@ -85,12 +88,13 @@ function done(id: string): Promise<unknown> {
   return q(`UPDATE mlive.mlive_requests SET done_at = now() WHERE id = $1 AND done_at IS NULL`, [id]);
 }
 
-function asPayload(value: unknown): { runId: number; book: ResearchBook; strategies: string[]; sample: ResearchSample; force: boolean; grid: boolean } | null {
+function asPayload(value: unknown): { runId: number; book: ResearchBook; strategies: string[]; variants?: SwingVariantName[]; sample: ResearchSample; force: boolean; grid: boolean } | null {
   if (!value || typeof value !== "object") return null;
-  const row = value as { runId?: unknown; book?: unknown; strategies?: unknown; sample?: unknown; force?: unknown; grid?: unknown };
+  const row = value as { runId?: unknown; book?: unknown; strategies?: unknown; variants?: unknown; sample?: unknown; force?: unknown; grid?: unknown };
   if ((row.book !== "swing" && row.book !== "intraday") || (row.sample !== "building" && row.sample !== "heldback")) return null;
   const runId = Number(row.runId);
   if (!Number.isFinite(runId)) return null;
   const strategies = Array.isArray(row.strategies) ? row.strategies.filter((item): item is string => typeof item === "string") : [];
-  return { runId, book: row.book, strategies, sample: row.sample, force: row.force === true, grid: row.grid !== false };
+  const variants = Array.isArray(row.variants) ? row.variants.filter((item): item is SwingVariantName => typeof item === "string" && isSwingVariant(item)) : undefined;
+  return { runId, book: row.book, strategies, variants, sample: row.sample, force: row.force === true, grid: row.grid !== false };
 }

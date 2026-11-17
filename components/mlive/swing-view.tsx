@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import type { PnlModel } from "@/lib/mlive/pnl";
 import { inr, signed } from "./format";
 
-type Holding = { symbol: string; strategy: string; qty: number; avg: number; stop: number; since: string | null; gtt?: boolean };
+type Holding = { symbol: string; strategy: string; qty: number; avg: number; stop: number; since: string | null; gtt?: boolean; exitMode?: "gtt" | "weekly" };
 type Idea = { symbol: string; strategy: string; result: string; reason: string };
 type Home = {
   today: string;
@@ -17,6 +17,7 @@ type Home = {
   trades?: { buys: number; maxBuys: number };
   state?: { status: string };
   todayMove?: { beforeOpen: boolean; amount: number; note: string | null };
+  enabledStrategies?: string[];
 };
 type ResearchRow = { strategy: string; sample: string; profitFactor: number | null; averageNet: number | null; trades: number; passed: boolean; note: string; isDefault?: boolean };
 
@@ -96,10 +97,10 @@ export function SwingView() {
   const todayLabel = data.todayMove?.beforeOpen ? "Yesterday" : "Today";
   const monthPnl = monthMove(data.spark, data.today);
   const held = new Set(data.holdings.map((row) => row.symbol));
-  const stopsLive = data.holdings.filter((row) => row.gtt).length;
+  const exitsArmed = data.holdings.filter((row) => row.gtt || row.exitMode === "weekly").length;
   const bought = data.ideas.rows.filter((row) => row.result === "sent" || held.has(row.symbol)).length;
   const paused = data.state?.status.startsWith("paused");
-  const strategies = ["rs", "ema", ...new Set((research ?? []).map((row) => row.strategy))].filter((name, index, list) => list.indexOf(name) === index);
+  const strategies = ["rs", "ema", ...(data.enabledStrategies ?? []), ...new Set((research ?? []).map((row) => row.strategy))].filter((name, index, list) => list.indexOf(name) === index);
 
   return (
     <section className="page">
@@ -116,8 +117,8 @@ export function SwingView() {
       <article className="card" style={{ marginTop: 16, overflow: "auto" }}>
         <div className="card-h" style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
           <h2>Positions</h2>
-          <span className={`chip ${data.holdings.length > 0 && stopsLive < data.holdings.length ? "loss" : ""}`}>
-            {data.holdings.length === 0 ? "No positions" : `${stopsLive} of ${data.holdings.length} stops in Kite`}
+          <span className={`chip ${data.holdings.length > 0 && exitsArmed < data.holdings.length ? "loss" : ""}`}>
+            {data.holdings.length === 0 ? "No positions" : `${exitsArmed} of ${data.holdings.length} exits configured`}
           </span>
         </div>
         {data.holdings.length === 0 ? <p className="sub">No open positions.</p> : (
@@ -134,11 +135,11 @@ export function SwingView() {
                 const width = room == null ? 0 : Math.max(0, Math.min(100, room));
                 return (
                   <tr key={row.symbol}>
-                    <td><b>{row.symbol}</b><div className="muted">{nameOf(row.strategy)}{row.since ? ` · since ${shortDay(row.since)}` : ""}</div></td>
+                    <td><b>{row.symbol}</b><div className="muted">{nameOf(row.strategy)}{row.exitMode === "weekly" ? " · weekly exit, no price stop" : ""}{row.since ? ` · since ${shortDay(row.since)}` : ""}</div></td>
                     <td className="r n">{row.qty}</td>
                     <td className="r n">{inr(row.avg, 2)}</td>
                     <td className="r n">{last ? inr(last, 2) : "—"}</td>
-                    <td className="r n">{row.stop ? inr(row.stop, 2) : "—"}</td>
+                    <td className="r n">{row.exitMode === "weekly" ? "Weekly" : row.stop ? inr(row.stop, 2) : "—"}</td>
                     <td className="r">{room == null ? "—" : <span className="room"><i><span className={room < 0 ? "down" : ""} style={{ width: `${width}%` }} /></i><span className="n">{room.toFixed(1)}%</span></span>}</td>
                     <td className="r"><span className={`pnl-chip ${pnl >= 0 ? "up" : "down"}`}>{signed(pnl)}</span></td>
                   </tr>
@@ -178,12 +179,13 @@ export function SwingView() {
               const rows = (research ?? []).filter((row) => row.strategy === name);
               const picked = rows.find((row) => row.sample === "heldback" || row.sample === "held") ?? rows.find((row) => row.sample === "building") ?? rows[0];
               const passed = rows.filter((row) => row.passed).length;
-              const status = rows.length === 0 ? "Off" : passed === rows.length ? "On" : passed > 0 ? "Retiring" : "Off";
+              const livePilot = data.enabledStrategies?.includes(name) === true;
+              const status = livePilot ? (name === "momentum" ? "Pilot" : "On") : rows.length === 0 ? "Off" : passed === rows.length ? "On" : passed > 0 ? "Retiring" : "Off";
               return (
                 <div key={name} className="card" style={{ padding: 14 }}>
                   <div className="book-top">
                     <b>{nameOf(name)}</b>
-                    <span className={`chip ${status === "On" ? "bought" : status === "Retiring" ? "sold" : "dead"}`}>{status}</span>
+                    <span className={`chip ${status === "On" || status === "Pilot" ? "bought" : status === "Retiring" ? "sold" : "dead"}`}>{status}</span>
                   </div>
                   <p className="sub">Profit factor {picked?.profitFactor == null ? "—" : picked.profitFactor.toFixed(2)} · per trade {picked?.averageNet == null ? "—" : `${(picked.averageNet * 100).toFixed(2)}%`} · {picked ? `${picked.trades} trades` : "—"}</p>
                   <p className="muted">{picked?.note || "Live delivery book"}</p>

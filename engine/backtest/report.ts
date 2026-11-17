@@ -12,6 +12,7 @@ const FROZEN_LABELS: Record<string, string> = {
 };
 
 export function formatComparison(rows: readonly ScoredRun[]): string {
+  if (rows.some((row) => row.variant)) return formatVariantComparison(rows);
   const header = [
     "strategy",
     "cap",
@@ -75,10 +76,129 @@ export function formatComparison(rows: readonly ScoredRun[]): string {
   return lines.join("\n");
 }
 
+function formatVariantComparison(rows: readonly ScoredRun[]): string {
+  const header = [
+    "variant", "strategy", "trades", "PF", "avg net %", "win %", "CAGR %", "max DD %",
+    "DD peak", "DD trough", "recovered", "DD ₹", "profitable half-years", "gates",
+    "avg gross %", "max gross %", "avg open", "max open", "avg cash %", "avg order ₹",
+    "closed charges ₹", "charges/gross profit %",
+    "held", "daily buy cap", "max open", "per strategy", "sector", "daily deploy",
+    "gross cap", "position cap", "cash", "min/whole-share", "unfilled limit",
+    "drop1 PF", "drop1 CAGR", "drop3 PF", "drop3 CAGR", "drop5 PF", "drop5 CAGR",
+    "exec PF", "exec CAGR",
+  ];
+  const lines = [
+    "Historical reference only — Run 4 Momentum 15%: 247 trades, PF 2.145, avg net 3.4661%, CAGR 33.1286%, max DD 23.4895%, 6/10 profitable half-years, exposure 59.6145%. It is not rerun or stored as a new row.",
+    header.join("\t"),
+  ];
+  for (const row of rows) {
+    const stress = row.stress;
+    const drop = (n: number) => stress?.concentration.find((item) => item.n === n);
+    const dd = drawdown(row.book.equity);
+    const charges = row.book.trades.reduce((sum, trade) => sum + trade.charges, 0);
+    const grossProfit = row.book.trades.reduce((sum, trade) => sum + Math.max(0, trade.gross), 0);
+    const blocks = row.book.blocks;
+    const gates = [
+      row.score.profitFactor >= 1.4,
+      row.score.trades >= 150,
+      row.score.avgNetPct >= 0.8,
+      row.score.halfYearsProfitablePct >= 70,
+      row.score.worstDrawdownPct <= 15,
+    ].filter(Boolean).length;
+    lines.push([
+      row.variant ?? row.paramsKey,
+      FROZEN_LABELS[row.strategy] ?? row.strategy,
+      row.score.trades,
+      row.score.profitFactor.toFixed(3),
+      row.score.avgNetPct.toFixed(4),
+      (row.score.winRate * 100).toFixed(1),
+      row.score.cagrPct.toFixed(2),
+      row.score.worstDrawdownPct.toFixed(2),
+      dd.peakDate,
+      dd.troughDate,
+      dd.recoveryDate,
+      Math.round(dd.rupeeLoss),
+      `${Math.round(row.score.halfYearsProfitablePct / 10)}/10`,
+      `${gates}/5`,
+      row.book.exposurePct.toFixed(1),
+      row.book.maxExposurePct.toFixed(1),
+      row.book.avgOpenCount.toFixed(2),
+      row.book.maxOpenCount,
+      row.book.avgCashPct.toFixed(1),
+      Math.round(row.book.avgOrderNotional),
+      Math.round(charges),
+      grossProfit > 0 ? ((charges / grossProfit) * 100).toFixed(2) : "",
+      blocks.held,
+      blocks.cappedBuys,
+      blocks.cappedOpen,
+      blocks.cappedStrategy,
+      blocks.sector,
+      blocks.deploy,
+      blocks.grossExposure,
+      blocks.positionCap,
+      blocks.insufficientCash,
+      blocks.minimumOrder,
+      blocks.unfilledLimit,
+      num(drop(1)?.profitFactor),
+      num(drop(1)?.cagrPct),
+      num(drop(3)?.profitFactor),
+      num(drop(3)?.cagrPct),
+      num(drop(5)?.profitFactor),
+      num(drop(5)?.cagrPct),
+      num(stress?.execution.profitFactor),
+      num(stress?.execution.cagrPct),
+    ].join("\t"));
+  }
+  lines.push("Official gates: PF ≥1.4; trades ≥150; average net ≥0.8%; profitable half-years ≥70% (7/10); max drawdown ≤15%.");
+  for (const row of rows) {
+    const worstTrades = [...row.book.trades].sort((a, b) => a.net - b.net).slice(0, 5).map((trade) => `${trade.symbol} ₹${Math.round(trade.net)}`).join(", ");
+    const sectors = new Map<string, number>();
+    for (const trade of row.book.trades) sectors.set(trade.sector, (sectors.get(trade.sector) ?? 0) + trade.net);
+    const worstSectors = [...sectors].sort((a, b) => a[1] - b[1]).slice(0, 3).map(([sector, net]) => `${sector} ₹${Math.round(net)}`).join(", ");
+    const annual = row.stress?.years.map((year) => `${year.year}: PF ${year.profitFactor.toFixed(2)}, ret ${year.bookReturnPct.toFixed(1)}%`).join("; ") ?? "";
+    lines.push(`${row.variant}: worst closed contributors ${worstTrades || "none"}; worst sectors ${worstSectors || "none"}; annual ${annual || "none"}.`);
+  }
+  return lines.join("\n");
+}
+
+function drawdown(equity: readonly { date: string; value: number }[]): {
+  peakDate: string;
+  troughDate: string;
+  recoveryDate: string;
+  rupeeLoss: number;
+} {
+  if (!equity.length) return { peakDate: "", troughDate: "", recoveryDate: "", rupeeLoss: 0 };
+  let peak = equity[0].value;
+  let peakAt = 0;
+  let worstPeak = 0;
+  let troughAt = 0;
+  let worstLoss = 0;
+  for (let i = 1; i < equity.length; i++) {
+    if (equity[i].value > peak) {
+      peak = equity[i].value;
+      peakAt = i;
+    }
+    const loss = peak - equity[i].value;
+    if (loss > worstLoss) {
+      worstLoss = loss;
+      worstPeak = peakAt;
+      troughAt = i;
+    }
+  }
+  const peakValue = equity[worstPeak].value;
+  const recovered = equity.slice(troughAt + 1).find((point) => point.value >= peakValue);
+  return {
+    peakDate: equity[worstPeak].date,
+    troughDate: equity[troughAt].date,
+    recoveryDate: recovered?.date ?? "not recovered",
+    rupeeLoss: worstLoss,
+  };
+}
+
 export function formatOpens(rows: readonly ScoredRun[]): string {
   const lines = ["Open at end. Unrealised is mark-to-market at the session close and does not include estimated exit charges."];
   for (const row of rows) {
-    lines.push(`${FROZEN_LABELS[row.strategy] ?? row.strategy}: ${row.book.openPositions.length} positions, unrealised ₹${Math.round(row.book.unrealised)}`);
+    lines.push(`${row.variant ?? FROZEN_LABELS[row.strategy] ?? row.strategy}: ${row.book.openPositions.length} positions, unrealised ₹${Math.round(row.book.unrealised)}`);
     for (const lot of row.book.openPositions) {
       lines.push(`  ${lot.symbol} qty ${lot.qty} entry ${lot.entryPx} mark ${lot.mark} unrealised ₹${Math.round(lot.unrealised)}${lot.pendingExit ? " pending exit" : ""}`);
     }

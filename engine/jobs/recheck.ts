@@ -1,4 +1,5 @@
 import { todayIst } from "@/lib/mlive/calendar";
+import { estimateCharges } from "@/lib/mlive/charges";
 import {
   buyTooCloseToStop,
   decisionSentence,
@@ -13,6 +14,8 @@ import {
   RECHECK_REASON_CODES,
   recheckPlan,
   sizeOrder,
+  type PaceBook,
+  type Strategy,
 } from "@/lib/mlive/rules";
 import { audit } from "../audit";
 import { raiseAlert } from "../alerts";
@@ -20,13 +23,15 @@ import { buyPace, openCost, openPositions, pendingBuyValue, saveDeployBaseline, 
 import { num, q } from "../db";
 import { MliveKite } from "../kite";
 import { fundBalance, loadSettings, loadState } from "../load";
+import { grossAllows, markedSwingBook, pendingGrossCommitment, sizeMomentumOrder } from "../live-portfolio";
+import { liveSwingPolicy } from "../live-strategies";
 import { livePrice, loadBars, previousClose, yahooPreviousClose } from "../market";
 
 type Candidate = {
   id: number | null;
   ideaId: number;
   symbol: string;
-  strategy: "rs" | "ema";
+  strategy: Strategy;
   sector: string;
   signalClose: number;
   stop: number | null;
@@ -45,6 +50,7 @@ export async function recheckBuys(runId: number): Promise<number> {
   let kiteCash = 0;
   if (await kite.sessionOk()) kiteCash = await kite.equityCash();
   const fund = await fundBalance(settings.dryRun);
+  const marked = await markedSwingBook(fund, settings.dryRun);
   const positions = await openPositions(settings.dryRun);
   let spendable = engineSpendable(
     fund,
@@ -117,7 +123,7 @@ export async function recheckBuys(runId: number): Promise<number> {
       id: num(row.id),
       ideaId: num(row.idea_id),
       symbol: String(row.symbol),
-      strategy: row.strategy === "ema" ? "ema" as const : "rs" as const,
+      strategy: row.strategy === "ema" ? "ema" as const : row.strategy === "momentum" ? "momentum" as const : "rs" as const,
       sector: String(row.sector ?? ""),
       signalClose: num(row.signal_close),
       stop: row.initial_stop == null ? null : num(row.initial_stop),
@@ -127,7 +133,7 @@ export async function recheckBuys(runId: number): Promise<number> {
     })),
   ];
   for (const idea of fresh) {
-    const strategy = idea.strategy === "ema" ? "ema" : "rs";
+    const strategy = idea.strategy === "ema" ? "ema" : idea.strategy === "momentum" ? "momentum" : "rs";
     if (!settings.strategies.includes(strategy)) continue;
     const symbol = String(idea.symbol);
     candidates.push({
@@ -145,8 +151,9 @@ export async function recheckBuys(runId: number): Promise<number> {
   }
 
   let promoted = 0;
+  let grossCommitted = await pendingGrossCommitment(today, settings.dryRun);
   const pace = await buyPace(today, settings.dryRun, { proposed: true, approved: true });
-  let paceBook = {
+  let paceBook: PaceBook = {
     newBuys: Math.max(pace.newBuys, buysSent),
     strategyBuys: pace.strategyBuys,
     openInStrategy: pace.openInStrategy,
@@ -163,28 +170,38 @@ export async function recheckBuys(runId: number): Promise<number> {
     engineCanUseNow: engineNow,
   };
   for (const candidate of candidates) {
-    if (candidate.stop == null || !(candidate.signalClose > 0)) continue;
+    if ((candidate.strategy !== "momentum" && candidate.stop == null) || !(candidate.signalClose > 0)) continue;
     const entry = limitPrice(candidate.signalClose, settings.limitOffset);
     const live = await livePrice(candidate.symbol);
-    if (live != null && buyTooCloseToStop(live, candidate.stop)) {
+    if (live != null && buyTooCloseToStop(live, candidate.stop ?? 0)) {
       await rememberSkip(candidate, "too_close_to_stop", decisionSentence({ outcome: "skipped", reasonCode: "too_close_to_stop" }), runId, today, settings.dryRun);
       continue;
     }
-    const sized = sizeOrder({
-      fund,
-      entry,
-      stop: candidate.stop,
-      spendable,
-      riskPct: settings.riskPct,
-      maxOrderPct: settings.maxOrderPct,
-      minOrderInr: settings.minOrderInr,
-    });
+    const policy = liveSwingPolicy(candidate.strategy, settings);
+    const sized = candidate.strategy === "momentum"
+      ? sizeMomentumOrder({
+          equity: marked.equity,
+          entry,
+          spendable,
+          maxOrderPct: policy.maxOrderPct,
+          minOrderInr: policy.minOrderInr,
+          rates: settings.charges,
+        })
+      : sizeOrder({
+          fund,
+          entry,
+          stop: candidate.stop ?? 0,
+          spendable,
+          riskPct: settings.riskPct,
+          maxOrderPct: policy.maxOrderPct,
+          minOrderInr: policy.minOrderInr,
+        });
     if (sized.reason !== "ok") {
       const would = Math.min(sized.qtyRisk, sized.qtyCap);
       await rememberSkip(
         candidate,
         sized.reason,
-        decisionSentence({ outcome: "skipped", reasonCode: sized.reason, qty: would, notional: would * entry, minOrderInr: settings.minOrderInr }),
+        decisionSentence({ outcome: "skipped", reasonCode: sized.reason, qty: would, notional: would * entry, minOrderInr: policy.minOrderInr }),
         runId,
         today,
         settings.dryRun,
@@ -192,14 +209,25 @@ export async function recheckBuys(runId: number): Promise<number> {
       );
       continue;
     }
-    const paced = paceBuys([{ symbol: candidate.symbol, strategy: candidate.strategy, notional: sized.notional }], paceBook, paceLimits);
+    if (
+      policy.maxGrossExposurePct != null &&
+      !grossAllows(marked.gross, grossCommitted, sized.notional, marked.equity, policy.maxGrossExposurePct)
+    ) {
+      await rememberSkip(candidate, "gross_exposure", "The order would take marked swing exposure above 60%.", runId, today, settings.dryRun);
+      continue;
+    }
+    const paced = paceBuys(
+      [{ symbol: candidate.symbol, strategy: candidate.strategy, notional: sized.notional }],
+      paceBook,
+      { ...paceLimits, maxOpenPerStrategy: candidate.strategy === "momentum" ? policy.maxOpen : paceLimits.maxOpenPerStrategy }
+    );
     const paceReason = paced.results[0]?.reason ?? "ok";
     if (paceReason !== "ok") {
       const text = decisionSentence({
         outcome: "skipped",
         reasonCode: paceReason,
         strategy: candidate.strategy,
-        limitCount: paceReason === "strategy_full" ? settings.maxOpenPerStrategy : paceReason === "pacing_strategy" ? settings.maxBuysPerStrategy : settings.maxNewBuys,
+        limitCount: paceReason === "strategy_full" ? policy.maxOpen : paceReason === "pacing_strategy" ? settings.maxBuysPerStrategy : settings.maxNewBuys,
       });
       await rememberSkip(candidate, paceReason, text, runId, today, settings.dryRun);
       continue;
@@ -211,7 +239,7 @@ export async function recheckBuys(runId: number): Promise<number> {
       buysSent,
       maxBuys: settings.maxBuys,
       openPositions: openCount,
-      maxPositions: settings.maxOpen,
+      maxPositions: Math.min(settings.maxOpen, policy.maxOpen),
       sectorCount: sectorCounts.get(candidate.sector) ?? 0,
       maxPerSector: settings.maxPerSector,
     });
@@ -260,7 +288,11 @@ export async function recheckBuys(runId: number): Promise<number> {
         runId,
       });
     }
-    spendable = Math.max(0, spendable - sized.notional);
+    spendable = Math.max(
+      0,
+      spendable - sized.notional - (candidate.strategy === "momentum" ? estimateCharges("BUY", sized.notional, settings.charges).total : 0)
+    );
+    grossCommitted += sized.notional;
     buysSent += 1;
     openCount += 1;
     if (candidate.sector) sectorCounts.set(candidate.sector, (sectorCounts.get(candidate.sector) ?? 0) + 1);
@@ -353,7 +385,7 @@ export async function skipUnviableFreshIdeas(runId: number, ready?: FreshBook): 
   );
   let written = 0;
   for (const idea of fresh) {
-    const strategy = idea.strategy === "ema" ? "ema" : "rs";
+    const strategy = idea.strategy === "ema" ? "ema" : idea.strategy === "momentum" ? "momentum" : "rs";
     if (!settings.strategies.includes(strategy)) continue;
     const symbol = String(idea.symbol);
     const sector = String(idea.sector ?? "");
@@ -401,7 +433,7 @@ export async function skipUnviableFreshIdeas(runId: number, ready?: FreshBook): 
 
 async function ideaIsViable(args: {
   symbol: string;
-  strategy: "rs" | "ema";
+  strategy: Strategy;
   signalClose: number;
   stop: number | null;
   sector: string;
@@ -430,7 +462,7 @@ async function ideaIsViable(args: {
     sectorCount: args.sectorCounts.get(args.sector) ?? 0,
     maxPerSector: args.settings.maxPerSector,
     historyDays: bars.length,
-    badData: bad != null || args.stop == null,
+    badData: bad != null || (args.strategy !== "momentum" && args.stop == null),
     chasing: false,
     belowMinAfterSizing: false,
     entryBelowStop: args.strategy === "ema" && args.stop != null && entryBelowEma(entry, args.stop),

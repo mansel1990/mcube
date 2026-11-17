@@ -46,6 +46,7 @@ $(run_line "15 15 * * 1-5" "cancel")
 $(run_line "45 15 * * 1-5" "eod")
 $(run_line "50 19 * * 1-5" "eod-final")
 $(run_line "5 20 * * 1-5" "market-daily")
+$(run_line "40 20 * * 1-5" "momentum-eod")
 */10 0-6,16,20-23 * * * root bash -lc 'set -a; source /etc/mcube/mlive.env; set +a; cd $ROOT && NODE_OPTIONS=--max-old-space-size=600 $TSX engine/cli.ts research-queue' >> $LOG 2>&1
 EOF
 chmod 644 /etc/cron.d/mlive

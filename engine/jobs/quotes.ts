@@ -29,7 +29,7 @@ async function onFill(order: { order_id?: string; status?: string; transaction_t
     filledQty: row.qty,
     avgPrice: Number(row.avg_price),
     stop: row.trend_stop == null ? null : Number(row.trend_stop),
-    strategy: row.strategy === "ema" ? "ema" : row.strategy === "rs" ? "rs" : null,
+    strategy: row.strategy === "ema" ? "ema" : row.strategy === "rs" ? "rs" : row.strategy === "momentum" ? "momentum" : null,
     settings,
     kite,
     runId: quoteRunId,

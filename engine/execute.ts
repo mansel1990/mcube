@@ -2,8 +2,9 @@ import {
   guardOrder,
   type GuardContext,
 } from "@/engine/guard";
+import { estimateCharges } from "@/lib/mlive/charges";
 import { todayIst } from "@/lib/mlive/calendar";
-import { buyTooCloseToStop, coversDecision, decisionSentence, deployBaseline, engineSpendable, floorToTick, gttExitPlan, isChasing, isExcluded, kiteErrorMessage, limitCrossed, makeTag, sizeOrder, spendableCash, systemCash } from "@/lib/mlive/rules";
+import { buyTooCloseToStop, coversDecision, decisionSentence, deployBaseline, engineSpendable, floorToTick, gttExitPlan, isChasing, isExcluded, kiteErrorMessage, limitCrossed, makeTag, sizeOrder, spendableCash, systemCash, type Strategy } from "@/lib/mlive/rules";
 import { audit } from "./audit";
 import { raiseAlert } from "./alerts";
 import {
@@ -25,6 +26,8 @@ import {
 import { num, q } from "./db";
 import { MliveKite } from "./kite";
 import { fundBalance, loadSettings, loadState, setState, type MliveSettings, type MliveState } from "./load";
+import { grossAllows, markedSwingBook, pendingGrossCommitment, sizeMomentumOrder } from "./live-portfolio";
+import { liveSwingPolicy, requiresProtectiveGtt } from "./live-strategies";
 import { livePrice } from "./market";
 
 type SendOpts = { side: "BUY" | "SELL"; chase: boolean; runId: number };
@@ -46,6 +49,7 @@ export async function sendReady(opts: SendOpts): Promise<Record<string, unknown>
   const max = opts.side === "BUY" ? settings.maxBuys : settings.maxSells;
   const positions = await openPositions(settings.dryRun);
   const fund = await fundBalance(settings.dryRun);
+  const marked = await markedSwingBook(fund, settings.dryRun);
   // A sell does not spend cash. Reading Kite cash here would block the sell when the figure is missing.
   let spendable = 0;
   if (opts.side === "BUY") spendable = await currentSpendable(fund, settings, kite);
@@ -70,8 +74,15 @@ export async function sendReady(opts: SendOpts): Promise<Record<string, unknown>
   const results: string[] = [];
 
   for (const decision of decisions) {
+    const strategy = decision.side === "BUY"
+      ? await ideaStrategy(decision.ideaId)
+      : await positionStrategy(decision.positionId);
+    const grossCommitted = decision.side === "BUY"
+      ? await pendingGrossCommitment(day, settings.dryRun, decision.id)
+      : 0;
     const sent = opts.side === "BUY" ? buysSent : sellsSent;
-    if (sent >= max) {
+    const decisionMax = decision.side === "SELL" && strategy === "momentum" ? Math.max(max, 6) : max;
+    if (sent >= decisionMax) {
       await skip(decision, "limit", "daily limit", opts.runId);
       results.push(`${decision.symbol} limit`);
       continue;
@@ -79,20 +90,37 @@ export async function sendReady(opts: SendOpts): Promise<Record<string, unknown>
     let qty = decision.sizing?.qty ?? 0;
     const limit = decision.sizing?.limit ?? 0;
     if (decision.side === "BUY") {
-      const rawStrategy = await ideaStrategyRaw(decision.ideaId);
-      const sized = sizeOrder({
-        fund,
-        entry: limit,
-        stop: decision.sizing?.stop ?? 0,
-        spendable,
-        riskPct: settings.riskPct,
-        maxOrderPct: settings.maxOrderPct,
-        minOrderInr: settings.minOrderInr,
-        half: settings.swingHalfSize && rawStrategy !== "rs" && rawStrategy !== "ema",
-      });
+      const policy = liveSwingPolicy(strategy, settings);
+      const sized = strategy === "momentum"
+        ? sizeMomentumOrder({
+            equity: marked.equity,
+            entry: limit,
+            spendable,
+            maxOrderPct: policy.maxOrderPct,
+            minOrderInr: policy.minOrderInr,
+            rates: settings.charges,
+          })
+        : sizeOrder({
+            fund,
+            entry: limit,
+            stop: decision.sizing?.stop ?? 0,
+            spendable,
+            riskPct: settings.riskPct,
+            maxOrderPct: policy.maxOrderPct,
+            minOrderInr: policy.minOrderInr,
+            half: settings.swingHalfSize && strategy !== "rs" && strategy !== "ema",
+          });
       if (sized.reason !== "ok") {
         await skip(decision, sized.reason, sized.text, opts.runId);
         results.push(`${decision.symbol} ${sized.reason}`);
+        continue;
+      }
+      if (
+        policy.maxGrossExposurePct != null &&
+        !grossAllows(marked.gross, grossCommitted, sized.notional, marked.equity, policy.maxGrossExposurePct)
+      ) {
+        await skip(decision, "gross_exposure", "marked swing exposure cap", opts.runId);
+        results.push(`${decision.symbol} gross_exposure`);
         continue;
       }
       qty = sized.qty;
@@ -122,35 +150,38 @@ export async function sendReady(opts: SendOpts): Promise<Record<string, unknown>
     }
     const position = positions.find((row) => row.symbol === decision.symbol);
     const sectorCount = await sectorCountFor(decision.symbol, positions);
-    const strategy = await ideaStrategy(decision.ideaId);
+    const policy = liveSwingPolicy(strategy, settings);
     const ctx: GuardContext = {
       mode: state.mode,
       status: state.status,
       approved: decision.outcome === "approved" || state.mode === "auto",
-      fund,
+      fund: strategy === "momentum" ? marked.equity : fund,
       spendable,
-      maxOrderPct: settings.maxOrderPct,
+      maxOrderPct: policy.maxOrderPct,
       excluded: await excludedSymbol(decision.symbol, settings),
       systemQty: position?.qty ?? 0,
       buysSent,
       sellsSent,
       maxBuys: settings.maxBuys,
-      maxSells: settings.maxSells,
+      maxSells: strategy === "momentum" ? Math.max(settings.maxSells, 6) : settings.maxSells,
       decisionAlreadySent: await decisionIsSent(decision, day),
       frozen: position?.frozen ?? false,
       openPositions: positions.length,
-      maxOpenPositions: settings.maxOpen,
+      maxOpenPositions: Math.min(settings.maxOpen, policy.maxOpen),
       isNewSymbol: !position,
       sectorCount,
       maxPerSector: settings.maxPerSector,
       newBuys,
       maxNewBuys: settings.maxNewBuys,
-      strategyBuys: strategyBuys[strategy],
+      strategyBuys: strategyBuys[strategy] ?? 0,
       maxBuysPerStrategy: settings.maxBuysPerStrategy,
-      openInStrategy: openInStrategy[strategy],
-      maxOpenPerStrategy: settings.maxOpenPerStrategy,
+      openInStrategy: openInStrategy[strategy] ?? 0,
+      maxOpenPerStrategy: strategy === "momentum" ? policy.maxOpen : settings.maxOpenPerStrategy,
       deployed,
       deployCap,
+      currentGross: marked.gross,
+      committedGross: grossCommitted,
+      maxGrossExposurePct: policy.maxGrossExposurePct ?? undefined,
     };
     const verdict = guardOrder(
       {
@@ -204,10 +235,13 @@ export async function sendReady(opts: SendOpts): Promise<Record<string, unknown>
       if (decision.side === "BUY") {
         buysSent += 1;
         newBuys += 1;
-        strategyBuys[strategy] += 1;
+        strategyBuys[strategy] = (strategyBuys[strategy] ?? 0) + 1;
         deployed += qty * price;
       } else sellsSent += 1;
-      if (decision.side === "BUY") spendable -= qty * price;
+      if (decision.side === "BUY") {
+        const notional = qty * price;
+        spendable -= notional + (strategy === "momentum" ? estimateCharges("BUY", notional, settings.charges).total : 0);
+      }
       results.push(`${decision.symbol} sent ${placed.orderId}`);
     } catch (error) {
       const message = kiteErrorMessage(error);
@@ -238,9 +272,18 @@ async function ideaStrategyRaw(ideaId: number | null): Promise<string> {
   return rows[0]?.strategy ?? "rs";
 }
 
-async function ideaStrategy(ideaId: number | null): Promise<"rs" | "ema"> {
-  const raw = await ideaStrategyRaw(ideaId);
-  return raw === "ema" ? "ema" : "rs";
+function strategyOf(raw: string): Strategy {
+  return raw === "ema" ? "ema" : raw === "momentum" ? "momentum" : "rs";
+}
+
+async function ideaStrategy(ideaId: number | null): Promise<Strategy> {
+  return strategyOf(await ideaStrategyRaw(ideaId));
+}
+
+async function positionStrategy(positionId: number | null): Promise<Strategy> {
+  if (positionId == null) return "rs";
+  const rows = await q<{ strategy: string | null }>(`SELECT strategy FROM mlive.mlive_positions WHERE id = $1`, [positionId]);
+  return strategyOf(rows[0]?.strategy ?? "rs");
 }
 
 async function decisionIsSent(decision: Decision, day: string): Promise<boolean> {
@@ -359,7 +402,13 @@ async function settleFill(
   const idea = decision[0]?.idea_id
     ? await q(`SELECT strategy, initial_stop FROM mlive.mlive_ideas WHERE id = $1`, [num(decision[0].idea_id)])
     : [];
-  const strategy = idea[0]?.strategy === "ema" ? "ema" : idea[0]?.strategy === "rs" ? "rs" : null;
+  const strategy = idea[0]?.strategy === "ema"
+    ? "ema"
+    : idea[0]?.strategy === "momentum"
+      ? "momentum"
+      : idea[0]?.strategy === "rs"
+        ? "rs"
+        : null;
   const stop = idea[0]?.initial_stop == null ? null : num(idea[0].initial_stop);
   await applyFill({
     orderId: num(row.id),
@@ -521,15 +570,27 @@ export async function freshBuySizing(decision: Decision, settings: MliveSettings
   const spendable = await currentSpendable(fund, settings, kite);
   const entry = decision.sizing?.limit ?? 0;
   const stop = decision.sizing?.stop ?? 0;
-  const sized = sizeOrder({
-    fund,
-    entry,
-    stop,
-    spendable,
-    riskPct: settings.riskPct,
-    maxOrderPct: settings.maxOrderPct,
-    minOrderInr: settings.minOrderInr,
-  });
+  const strategy = await ideaStrategy(decision.ideaId);
+  const policy = liveSwingPolicy(strategy, settings);
+  const marked = await markedSwingBook(fund, settings.dryRun);
+  const sized = strategy === "momentum"
+    ? sizeMomentumOrder({
+        equity: marked.equity,
+        entry,
+        spendable,
+        maxOrderPct: policy.maxOrderPct,
+        minOrderInr: policy.minOrderInr,
+        rates: settings.charges,
+      })
+    : sizeOrder({
+        fund,
+        entry,
+        stop,
+        spendable,
+        riskPct: settings.riskPct,
+        maxOrderPct: policy.maxOrderPct,
+        minOrderInr: policy.minOrderInr,
+      });
   await q(`UPDATE mlive.mlive_decisions SET sizing = $2::jsonb WHERE id = $1`, [
     decision.id,
     JSON.stringify({ ...decision.sizing, qty: sized.qty, text: sized.text, reason: sized.reason }),
@@ -549,7 +610,7 @@ export async function coverUnguardedPositions(runId: number): Promise<number> {
     qty: unknown;
     avg_price: unknown;
     trend_stop: unknown;
-    strategy: "rs" | "ema" | null;
+    strategy: Strategy | null;
   }>(
     `SELECT p.id, p.symbol, p.qty, p.avg_price, p.trend_stop, p.strategy
        FROM mlive.mlive_positions p
@@ -572,6 +633,7 @@ export async function coverUnguardedPositions(runId: number): Promise<number> {
   const positions = await openPositions(settings.dryRun);
   let sent = 0;
   for (const row of rows) {
+    if (!requiresProtectiveGtt(row.strategy)) continue;
     const positionId = num(row.id);
     const qty = num(row.qty);
     const avg = num(row.avg_price);

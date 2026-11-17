@@ -15,7 +15,7 @@ export async function eodStops(): Promise<void> {
     const positions = await openPositions(settings.dryRun);
     let sells = 0;
     for (const position of positions) {
-      if (!position.strategy) continue;
+      if (!position.strategy || position.strategy === "momentum") continue;
       const bars = await loadBars(position.symbol, 280);
       const opened = position.openedAt.slice(0, 10);
       const found = bars.findIndex((bar) => (bar.date ?? "") >= opened);

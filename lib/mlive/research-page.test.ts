@@ -53,6 +53,11 @@ describe("research run identity", () => {
     expect(identity({ strategies: ["ema", "rs"] })).toEqual(identity({ strategies: ["rs", "ema"] }));
   });
 
+  it("normalises variant order and keeps different variant sets distinct", () => {
+    expect(identity({ variants: ["M10-8", "M15-control"] })).toEqual(identity({ variants: ["M15-control", "M10-8"] }));
+    expect(duplicateBlock(identity({ variants: ["M10-8"] }), [stored({})], false)).toBeNull();
+  });
+
   it("refuses an ok run with the same code and data", () => {
     const message = duplicateBlock(identity(), [stored({})], false);
     expect(message).toBe(alreadyRunMessage("2026-11-17T06:41:00.000Z"));

@@ -78,6 +78,29 @@ describe("order guard", () => {
     expect(guardOrder(intent({ qty: 9, limitPrice: 2065 }), ctx({ spendable: 10_000 })).reason).toBe("spendable");
   });
 
+  it("enforces the M10-6 gross exposure cap at send time", () => {
+    expect(guardOrder(
+      intent({ qty: 80, limitPrice: 100 }),
+      ctx({
+        fund: 80_000,
+        maxOrderPct: 0.1,
+        currentGross: 40_000,
+        committedGross: 1_000,
+        maxGrossExposurePct: 0.6,
+      })
+    ).reason).toBe("gross_exposure");
+    expect(guardOrder(
+      intent({ qty: 70, limitPrice: 100 }),
+      ctx({
+        fund: 80_000,
+        maxOrderPct: 0.1,
+        currentGross: 40_000,
+        committedGross: 1_000,
+        maxGrossExposurePct: 0.6,
+      })
+    ).ok).toBe(true);
+  });
+
   it("refuses orders when paused, halted, unapproved, frozen, or already sent", () => {
     expect(guardOrder(intent(), ctx({ mode: "paused", status: "paused_by_user" })).reason).toBe("paused_by_user");
     expect(guardOrder(intent(), ctx({ status: "paused_by_breaker" })).reason).toBe("paused_by_breaker");

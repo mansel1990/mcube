@@ -1,7 +1,7 @@
 import { randomBytes } from "crypto";
 import { todayIst } from "@/lib/mlive/calendar";
 import { chargeDifference, estimateCharges, withDp, type ChargeSplit } from "@/lib/mlive/charges";
-import { clampSellQty, fillDeltaPrice, floorToTick, gttLastPrice, gttPrices, gttQtyAction, kiteErrorMessage, makeTag, rejectIsKnown, type ExitParams, type Side } from "@/lib/mlive/rules";
+import { clampSellQty, fillDeltaPrice, floorToTick, gttLastPrice, gttPrices, gttQtyAction, kiteErrorMessage, makeTag, rejectIsKnown, type ExitParams, type Side, type Strategy } from "@/lib/mlive/rules";
 import { audit } from "./audit";
 import { raiseAlert } from "./alerts";
 import { asDate, jsonValue, num, q } from "./db";
@@ -12,7 +12,7 @@ import type { MliveSettings } from "./load";
 export type OpenPosition = {
   id: number;
   symbol: string;
-  strategy: "rs" | "ema" | null;
+  strategy: Strategy | null;
   qty: number;
   avgPrice: number;
   trendStop: number | null;
@@ -51,7 +51,7 @@ export async function openPositions(includeDry = false): Promise<OpenPosition[]>
   return rows.map((row) => ({
     id: num(row.id),
     symbol: String(row.symbol),
-    strategy: row.strategy === "rs" || row.strategy === "ema" ? row.strategy : null,
+    strategy: row.strategy === "rs" || row.strategy === "ema" || row.strategy === "momentum" ? row.strategy : null,
     qty: num(row.qty),
     avgPrice: num(row.avg_price),
     trendStop: row.trend_stop == null ? null : num(row.trend_stop),
@@ -81,8 +81,8 @@ export async function decisionsFor(day: string, side?: Side): Promise<Decision[]
 
 export type BuyPace = {
   newBuys: number;
-  strategyBuys: { rs: number; ema: number };
-  openInStrategy: { rs: number; ema: number };
+  strategyBuys: Record<Strategy, number>;
+  openInStrategy: Record<Strategy, number>;
   deployed: number;
   baseline: number | null;
 };
@@ -138,18 +138,18 @@ export async function buyPace(
   );
   const summary = jsonValue(report[0]?.decision_summary);
   const baselineRaw = summary && typeof summary === "object" ? (summary as { deployBaseline?: unknown }).deployBaseline : null;
-  const strategyBuys = { rs: 0, ema: 0 };
+  const strategyBuys: Record<Strategy, number> = { rs: 0, ema: 0, momentum: 0 };
   let deployed = 0;
   let newBuys = 0;
   for (const row of orders) {
     const n = num(row.n);
     newBuys += n;
     deployed += num(row.notional);
-    if (row.strategy === "rs" || row.strategy === "ema") strategyBuys[row.strategy] += n;
+    if (row.strategy === "rs" || row.strategy === "ema" || row.strategy === "momentum") strategyBuys[row.strategy] += n;
   }
-  const openInStrategy = { rs: 0, ema: 0 };
+  const openInStrategy: Record<Strategy, number> = { rs: 0, ema: 0, momentum: 0 };
   for (const row of open) {
-    if (row.strategy === "rs" || row.strategy === "ema") openInStrategy[row.strategy] = num(row.n);
+    if (row.strategy === "rs" || row.strategy === "ema" || row.strategy === "momentum") openInStrategy[row.strategy] = num(row.n);
   }
   return {
     newBuys,
@@ -288,7 +288,7 @@ export async function applyFill(args: {
   orderStatus: string;
   dryRun: boolean;
   gttExit?: boolean;
-  strategy: "rs" | "ema" | null;
+  strategy: Strategy | null;
   stop: number | null;
   settings: MliveSettings;
   kite: MliveKite;
@@ -472,7 +472,7 @@ async function positionIdFor(symbol: string, dryRun: boolean): Promise<number | 
 }
 
 async function addBuyPosition(
-  args: { symbol: string; strategy: "rs" | "ema" | null; avgPrice: number; stop: number | null; dryRun: boolean },
+  args: { symbol: string; strategy: Strategy | null; avgPrice: number; stop: number | null; dryRun: boolean },
   delta: number,
   charges: number
 ): Promise<number> {
@@ -507,7 +507,7 @@ export async function ensurePositionGtt(
     filledQty: number;
     avgPrice: number;
     stop: number | null;
-    strategy: "rs" | "ema" | null;
+    strategy: Strategy | null;
     settings: MliveSettings;
     kite: MliveKite;
     runId: number;
@@ -525,7 +525,7 @@ async function ensureGtt(
     filledQty: number;
     avgPrice: number;
     stop: number | null;
-    strategy: "rs" | "ema" | null;
+    strategy: Strategy | null;
     settings: MliveSettings;
     kite: MliveKite;
     runId: number;
@@ -766,7 +766,7 @@ async function markPrice(symbol: string, avgPrice: number): Promise<number> {
   return gttLastPrice(live, close?.close ?? null, avgPrice);
 }
 
-export function exitFor(strategy: "rs" | "ema" | null, settings: MliveSettings): ExitParams {
+export function exitFor(strategy: Strategy | null, settings: MliveSettings): ExitParams {
   return strategy === "ema" ? settings.exitEma : settings.exitRs;
 }
 
