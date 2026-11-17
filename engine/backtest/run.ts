@@ -23,8 +23,11 @@ import { raiseAlert } from "../alerts";
 import { jsonValue, mq, q } from "../db";
 import { filesRoot, syncUniverse } from "../jobs/market";
 import { loadSettings } from "../load";
+import { longtermDataIdentity } from "../longterm/data";
+import { executeLongtermResearch } from "../longterm/run";
+import { LONGTERM_VARIANT_NAMES } from "../longterm/variants";
 import { strategiesFor } from "../strategies";
-import type { ResearchArgs } from "./args";
+import type { ResearchArgs, ResearchVariantName } from "./args";
 import { strategiesForSwingVariants, type SwingVariantName } from "./swing-variants";
 import { VERIFIED_ACTIONS } from "./actions";
 import { CLEAN_THRESHOLDS, CLEAN_VERSION, cleanSymbol, fingerprintSeries, type CleanedSeries } from "./clean";
@@ -75,8 +78,12 @@ type Capital = SwingRules & {
 
 export async function runResearch(args: ResearchArgs, opts?: { runId?: number; requestedBy?: string }): Promise<number> {
   guardResearchAnytime(args.anytime, hostname());
-  const requested = args.variants?.length ? strategiesForSwingVariants(args.variants) : args.strategies;
-  const names = strategiesFor(args.book, requested).map((strategy) => strategy.name);
+  const names = args.book === "longterm"
+    ? (args.variants?.length ? args.variants : [...LONGTERM_VARIANT_NAMES]).map(String)
+    : strategiesFor(
+      args.book,
+      args.variants?.length ? strategiesForSwingVariants(args.variants.filter(isSwingVariantName)) : args.strategies
+    ).map((strategy) => strategy.name);
   const requestedBy = opts?.requestedBy ?? "cli";
   const identity = await researchIdentityFor({ book: args.book, sample: args.sample, grid: args.grid, only: args.only, strategies: names, variants: args.variants });
   if (!args.force) {
@@ -116,7 +123,9 @@ export async function runResearch(args: ResearchArgs, opts?: { runId?: number; r
       console.log(message);
       return runId;
     }
-    await raiseAlert({ level: "problem", code: "engine_error", message: `research failed: ${message}` }).catch(() => undefined);
+    if (args.book !== "longterm") {
+      await raiseAlert({ level: "problem", code: "engine_error", message: `research failed: ${message}` }).catch(() => undefined);
+    }
     throw error;
   } finally {
     skipResearchWindow = false;
@@ -126,6 +135,11 @@ export async function runResearch(args: ResearchArgs, opts?: { runId?: number; r
 }
 
 async function execute(runId: number, args: ResearchArgs & { strategies: string[] }, noteRss: () => void, identity: ResearchIdentity): Promise<void> {
+  if (args.book === "longterm") {
+    await executeLongtermResearch(runId, args, identity);
+    noteRss();
+    return;
+  }
   const capital = await loadCapital(args.book);
   const last = identity.lastCandle || (args.book === "swing" ? await lastDailyDate() : todayIst());
   const window = sampleWindow(args.book, args.sample, last);
@@ -237,7 +251,7 @@ async function execute(runId: number, args: ResearchArgs & { strategies: string[
       indexClose: built.indexClose,
       indexUp: built.indexUp,
       strategies: strategiesFor("swing", args.strategies),
-      variants: args.variants,
+      variants: args.variants?.filter(isSwingVariantName),
       grid: args.grid,
       sample: args.sample,
       window,
@@ -700,8 +714,25 @@ export async function researchIdentityFor(input: {
   grid: boolean;
   only?: string[];
   strategies: string[];
-  variants?: SwingVariantName[];
+  variants?: ResearchVariantName[];
 }): Promise<ResearchIdentity> {
+  if (input.book === "longterm") {
+    if (input.sample === "heldback") throw new Error("Long Game held-back data is locked for this task.");
+    const data = await longtermDataIdentity();
+    return makeIdentity({
+      book: input.book,
+      sample: input.sample,
+      strategies: input.strategies,
+      variants: input.variants,
+      grid: input.grid,
+      engineSha: engineSha(),
+      lastCandle: data.last,
+      only: [],
+      dataFingerprint: data.fingerprint,
+      rulesVersion: "longgame-frozen-v1",
+      costVersion: "zerodha-delivery-equivalent-v1",
+    });
+  }
   const last = input.book === "swing" ? await lastDailyDate() : todayIst();
   return makeIdentity({
     book: input.book,
@@ -746,12 +777,19 @@ export async function createQueuedRun(input: {
   force: boolean;
   requestedBy: string;
 }): Promise<number> {
+  if (input.book === "longterm") {
+    throw new Error("Queue Long Game with explicit frozen variants; the read-only UI does not enqueue it.");
+  }
   const names = strategiesFor(input.book, input.strategies).map((strategy) => strategy.name);
   if (input.sample === "heldback") {
     const blocked = heldbackBlock(await heldbackUsed(input.book, names), names, input.force);
     if (blocked) throw new Error(blocked);
   }
   return insertRun({ book: input.book, strategies: names, sample: input.sample, force: input.force, grid: true, anytime: false }, names, "queued", input.requestedBy);
+}
+
+function isSwingVariantName(value: ResearchVariantName): value is SwingVariantName {
+  return !LONGTERM_VARIANT_NAMES.includes(value as never);
 }
 
 async function heldbackUsed(book: string, names: string[]): Promise<string[]> {

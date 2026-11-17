@@ -3,7 +3,7 @@
  * Percents are in percentage points: 0.8 means 0.8%, 15 means a 15% drawdown.
  */
 
-export type ResearchBook = "swing" | "intraday";
+export type ResearchBook = "swing" | "intraday" | "longterm";
 export type ResearchSample = "building" | "heldback";
 
 export type ResearchThresholds = {
@@ -17,6 +17,7 @@ export type ResearchThresholds = {
 export const RESEARCH_STRATEGIES: Record<ResearchBook, readonly string[]> = {
   swing: ["trend_breakout", "rsi2", "momentum", "ema_v2", "ema", "rs"],
   intraday: ["orb", "vwap"],
+  longterm: ["STATIC-NEXT", "STATIC-MID", "RADAR-NEXT", "RADAR-MID"],
 };
 
 export function researchThresholds(book: ResearchBook, sample: ResearchSample): ResearchThresholds {
@@ -32,6 +33,10 @@ export function researchThresholds(book: ResearchBook, sample: ResearchSample): 
 export function sampleWindow(book: ResearchBook, sample: ResearchSample, lastCandle: string | null): { from: string; to: string } {
   if (book === "swing") {
     if (sample === "building") return { from: "2019-01-01", to: "2023-12-31" };
+    return { from: "2024-01-01", to: lastCandle && lastCandle >= "2024-01-01" ? lastCandle : "2024-01-01" };
+  }
+  if (book === "longterm") {
+    if (sample === "building") return { from: "2011-01-01", to: "2023-12-31" };
     return { from: "2024-01-01", to: lastCandle && lastCandle >= "2024-01-01" ? lastCandle : "2024-01-01" };
   }
   if (sample === "building") return { from: "2024-11-18", to: "2026-04-30" };

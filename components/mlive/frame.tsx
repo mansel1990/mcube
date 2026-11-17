@@ -21,6 +21,12 @@ const GROUPS = [
     ],
   },
   {
+    label: "Invest",
+    items: [
+      { href: "/live-trade-mansel/long-term", label: "Long Game", icon: "longterm" },
+    ],
+  },
+  {
     label: "Review",
     items: [
       { href: "/live-trade-mansel/research", label: "Research", icon: "research" },
@@ -43,6 +49,7 @@ function NavIcon({ name }: { name: string }) {
   if (name === "intraday") return <svg {...props}><path d="M13 2L4 14h7l-1 8 9-12h-7z" /></svg>;
   if (name === "reports") return <svg {...props}><path d="M4 19V5" /><path d="M4 19h16" /><path d="M8 16v-5" /><path d="M12 16V8" /><path d="M16 16v-3" /></svg>;
   if (name === "charts") return <svg {...props}><path d="M4 16l5-5 3 3 7-8" /><path d="M14 6h6v6" /></svg>;
+  if (name === "longterm") return <svg {...props}><path d="M4 19V9" /><path d="M10 19V5" /><path d="M16 19v-7" /><path d="M3 19h18" /><path d="M16 5l2-2 2 2" /></svg>;
   if (name === "research") return <svg {...props}><path d="M9 3h6" /><path d="M10 3v6l-5 9a2 2 0 002 3h10a2 2 0 002-3l-5-9V3" /><path d="M8 15h8" /></svg>;
   if (name === "audit") return <svg {...props}><path d="M6 3h9l3 3v15H6z" /><path d="M9 11h6M9 15h6" /></svg>;
   return <svg {...props}><path d="M4 6h8M18 6h2M4 12h2M12 12h8M4 18h10" /><circle cx="15" cy="6" r="2" /><circle cx="9" cy="12" r="2" /><circle cx="17" cy="18" r="2" /></svg>;
@@ -160,6 +167,7 @@ export function MliveFrame({
       </nav>
       {more && (
         <div className="more-pop">
+          <Link href="/live-trade-mansel/long-term" onClick={() => setMore(false)}><NavIcon name="longterm" />Long Game</Link>
           <Link href="/live-trade-mansel/audit" onClick={() => setMore(false)}>Audit</Link>
           <Link href="/live-trade-mansel/research" onClick={() => setMore(false)}>Research</Link>
           <Link href="/live-trade-mansel/settings" onClick={() => setMore(false)}>Settings</Link>

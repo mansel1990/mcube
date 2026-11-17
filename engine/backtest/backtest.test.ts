@@ -380,6 +380,21 @@ describe("research backtest", () => {
     expect(() => parseResearchArgs(["--book", "swing", "--variant", "M10-8", "--strategy", "momentum", "--no-grid"])).toThrow(/without --strategy/);
   });
 
+  it("parses only frozen Long Game building variants and refuses held-back", () => {
+    expect(parseResearchArgs([
+      "--book", "longterm", "--sample", "building",
+      "--variant", "STATIC-NEXT,STATIC-MID,RADAR-NEXT,RADAR-MID", "--no-grid", "--anytime",
+    ])).toMatchObject({
+      book: "longterm",
+      sample: "building",
+      variants: ["STATIC-NEXT", "STATIC-MID", "RADAR-NEXT", "RADAR-MID"],
+      grid: false,
+    });
+    expect(() => parseResearchArgs(["--book", "longterm", "--variant", "RADAR-SMALL", "--no-grid"])).toThrow(/Unknown longterm variant/);
+    expect(() => parseResearchArgs(["--book", "longterm", "--heldback", "--no-grid"])).toThrow(/held-back data is locked/);
+    expect(() => parseResearchArgs(["--book", "longterm"])).toThrow(/requires --no-grid/);
+  });
+
   it("lets --anytime skip the window off the server and refuses it on mcube-server", () => {
     expect(parseResearchArgs(["--book", "swing", "--anytime"])).toMatchObject({ book: "swing", anytime: true });
     expect(shouldStopResearch(true, 10 * 60)).toBe(false);

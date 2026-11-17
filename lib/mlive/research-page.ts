@@ -55,6 +55,9 @@ export type ResearchIdentity = {
   engineSha: string;
   lastCandle: string;
   only: string[];
+  dataFingerprint: string;
+  rulesVersion: string;
+  costVersion: string;
 };
 
 export type StoredRun = {
@@ -97,6 +100,9 @@ export function makeIdentity(input: {
   engineSha: string;
   lastCandle: string;
   only?: readonly string[];
+  dataFingerprint?: string;
+  rulesVersion?: string;
+  costVersion?: string;
 }): ResearchIdentity {
   return {
     book: input.book,
@@ -107,13 +113,16 @@ export function makeIdentity(input: {
     engineSha: input.engineSha,
     lastCandle: input.lastCandle.slice(0, 10),
     only: uniqueSorted((input.only ?? []).map((symbol) => symbol.toUpperCase())),
+    dataFingerprint: input.dataFingerprint ?? "",
+    rulesVersion: input.rulesVersion ?? "",
+    costVersion: input.costVersion ?? "",
   };
 }
 
 export function readIdentity(params: unknown, engineSha = ""): ResearchIdentity | null {
   const row = objectOf(params);
   const raw = objectOf(row.identity);
-  if (raw.book !== "swing" && raw.book !== "intraday") return null;
+  if (raw.book !== "swing" && raw.book !== "intraday" && raw.book !== "longterm") return null;
   return makeIdentity({
     book: raw.book,
     sample: raw.sample === "heldback" ? "heldback" : "building",
@@ -123,6 +132,9 @@ export function readIdentity(params: unknown, engineSha = ""): ResearchIdentity 
     engineSha: typeof raw.engineSha === "string" && raw.engineSha ? raw.engineSha : engineSha,
     lastCandle: typeof raw.lastCandle === "string" ? raw.lastCandle : "",
     only: stringsOf(raw.only),
+    dataFingerprint: typeof raw.dataFingerprint === "string" ? raw.dataFingerprint : "",
+    rulesVersion: typeof raw.rulesVersion === "string" ? raw.rulesVersion : "",
+    costVersion: typeof raw.costVersion === "string" ? raw.costVersion : "",
   });
 }
 
@@ -136,7 +148,7 @@ export function identityFromRun(input: {
 }): ResearchIdentity | null {
   const stored = readIdentity(input.params, input.engineSha);
   if (stored?.lastCandle) return stored;
-  if (input.book !== "swing" && input.book !== "intraday") return null;
+  if (input.book !== "swing" && input.book !== "intraday" && input.book !== "longterm") return null;
   const params = objectOf(input.params);
   const strategies = stringsOf(params.strategies);
   const last = input.dataLast?.slice(0, 10) ?? "";
@@ -154,11 +166,23 @@ export function identityFromRun(input: {
 }
 
 export function sameIdentity(a: ResearchIdentity, b: ResearchIdentity): boolean {
-  return sameSetup(a, b) && a.engineSha === b.engineSha && a.lastCandle === b.lastCandle && a.engineSha !== "" && a.lastCandle !== "";
+  return sameSetup(a, b)
+    && a.engineSha === b.engineSha
+    && a.lastCandle === b.lastCandle
+    && a.engineSha !== ""
+    && a.lastCandle !== "";
 }
 
 export function sameSetup(a: ResearchIdentity, b: ResearchIdentity): boolean {
-  return a.book === b.book && a.sample === b.sample && a.grid === b.grid && sameList(a.strategies, b.strategies) && sameList(a.variants, b.variants) && sameList(a.only, b.only);
+  return a.book === b.book
+    && a.sample === b.sample
+    && a.grid === b.grid
+    && a.dataFingerprint === b.dataFingerprint
+    && a.rulesVersion === b.rulesVersion
+    && a.costVersion === b.costVersion
+    && sameList(a.strategies, b.strategies)
+    && sameList(a.variants, b.variants)
+    && sameList(a.only, b.only);
 }
 
 export function alreadyRunMessage(finishedAt: string | null): string {
