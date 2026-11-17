@@ -170,6 +170,12 @@ export class MliveKite {
     await kc.cancelOrder("regular", orderId);
   }
 
+  async modifyOrder(orderId: string, price: number): Promise<void> {
+    if (orderId.startsWith("DRY-")) return;
+    const kc = await this.client();
+    await kc.modifyOrder("regular", orderId, { price, order_type: "LIMIT", validity: "DAY" });
+  }
+
   async placeGtt(params: { symbol: string; qty: number; trigger: number; limit: number; lastPrice: number }): Promise<string> {
     if (this.dryRun) return `DRY-GTT-${params.symbol}-${Date.now()}`;
     const kc = await this.client();

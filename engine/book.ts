@@ -28,6 +28,7 @@ export type Decision = {
   sizing: { qty?: number; limit?: number; stop?: number; text?: string; signalClose?: number } | null;
   ideaId: number | null;
   positionId: number | null;
+  reasonCode: string | null;
 };
 
 export function shortId(): string {
@@ -62,7 +63,7 @@ export async function openPositions(includeDry = false): Promise<OpenPosition[]>
 
 export async function decisionsFor(day: string, side?: Side): Promise<Decision[]> {
   const rows = await q(
-    `SELECT id, side, symbol, outcome, sizing, idea_id, position_id
+    `SELECT id, side, symbol, outcome, sizing, idea_id, position_id, reason_code
        FROM mlive.mlive_decisions
       WHERE trade_date = $1::date AND ($2::text IS NULL OR side = $2)
       ORDER BY rank NULLS LAST, id`,
@@ -76,6 +77,7 @@ export async function decisionsFor(day: string, side?: Side): Promise<Decision[]
     sizing: sizingOf(row.sizing),
     ideaId: row.idea_id == null ? null : num(row.idea_id),
     positionId: row.position_id == null ? null : num(row.position_id),
+    reasonCode: row.reason_code == null ? null : String(row.reason_code),
   }));
 }
 

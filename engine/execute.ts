@@ -29,6 +29,7 @@ import { fundBalance, loadSettings, loadState, setState, type MliveSettings, typ
 import { grossAllows, markedSwingBook, pendingGrossCommitment, sizeMomentumOrder } from "./live-portfolio";
 import { liveSwingPolicy, requiresProtectiveGtt } from "./live-strategies";
 import { livePrice } from "./market";
+import { initialMomentumWeeklySell } from "./momentum-sell-watch";
 
 type SendOpts = { side: "BUY" | "SELL"; chase: boolean; runId: number };
 
@@ -88,7 +89,11 @@ export async function sendReady(opts: SendOpts): Promise<Record<string, unknown>
       continue;
     }
     let qty = decision.sizing?.qty ?? 0;
-    const limit = decision.sizing?.limit ?? 0;
+    let limit = decision.sizing?.limit ?? 0;
+    let preparedPrice: number | null = null;
+    const position = positions.find((row) =>
+      decision.positionId != null ? row.id === decision.positionId : row.symbol === decision.symbol
+    );
     if (decision.side === "BUY") {
       const policy = liveSwingPolicy(strategy, settings);
       const sized = strategy === "momentum"
@@ -130,7 +135,46 @@ export async function sendReady(opts: SendOpts): Promise<Record<string, unknown>
       ]);
     }
     let live: number | null = null;
-    if (decision.side === "BUY") {
+    if (decision.side === "SELL" && decision.reasonCode === "momentum_weekly") {
+      const currentQty = position?.qty ?? 0;
+      if (currentQty <= 0) {
+        await skip(decision, "position_closed", "momentum position is already closed", opts.runId);
+        results.push(`${decision.symbol} position_closed`);
+        continue;
+      }
+      live = await livePrice(decision.symbol);
+      if (live == null) {
+        await raiseAlert({
+          level: "problem",
+          code: "momentum_sell_quote_missing",
+          symbol: decision.symbol,
+          message: `${decision.symbol}: live quote unavailable; momentum sell remains queued.`,
+          runId: opts.runId,
+        });
+        results.push(`${decision.symbol} quote_missing`);
+        continue;
+      }
+      const tick = await kite.tickSize(decision.symbol);
+      const prepared = tick == null ? null : initialMomentumWeeklySell(qty, currentQty, live, tick);
+      if (!prepared) {
+        await raiseAlert({
+          level: "problem",
+          code: "tick_unknown",
+          symbol: decision.symbol,
+          message: `${decision.symbol}: tick size unavailable; momentum sell remains queued.`,
+          runId: opts.runId,
+        });
+        results.push(`${decision.symbol} tick_unknown`);
+        continue;
+      }
+      qty = prepared.qty;
+      limit = prepared.limit;
+      preparedPrice = prepared.limit;
+      await q(`UPDATE mlive.mlive_decisions SET sizing = $2::jsonb WHERE id = $1 AND outcome IN ('proposed', 'approved')`, [
+        decision.id,
+        JSON.stringify({ ...decision.sizing, qty, limit, text: "live quote - 0.5%" }),
+      ]);
+    } else if (decision.side === "BUY") {
       live = await livePrice(decision.symbol);
       const stop = decision.sizing?.stop ?? 0;
       if (live != null && buyTooCloseToStop(live, stop)) {
@@ -148,7 +192,6 @@ export async function sendReady(opts: SendOpts): Promise<Record<string, unknown>
         continue;
       }
     }
-    const position = positions.find((row) => row.symbol === decision.symbol);
     const sectorCount = await sectorCountFor(decision.symbol, positions);
     const policy = liveSwingPolicy(strategy, settings);
     const ctx: GuardContext = {
@@ -205,15 +248,18 @@ export async function sendReady(opts: SendOpts): Promise<Record<string, unknown>
     const tag = makeTag(decision.side, shortId());
     const already = await q(`SELECT id FROM mlive.mlive_orders WHERE decision_id = $1`, [decision.id]);
     if (already[0]) continue;
-    const price = await kiteLimit(kite, decision.symbol, limit);
+    const price = preparedPrice ?? await kiteLimit(kite, decision.symbol, limit);
     if (price == null) {
       const text = decisionSentence({ outcome: "skipped", reasonCode: "tick_unknown" });
-      await skip(decision, "tick_unknown", text, opts.runId);
+      const queuedMomentumSell = decision.side === "SELL" && decision.reasonCode === "momentum_weekly";
+      if (!queuedMomentumSell) await skip(decision, "tick_unknown", text, opts.runId);
       await raiseAlert({
         level: "problem",
         code: "tick_unknown",
         symbol: decision.symbol,
-        message: `${decision.symbol}: ${text}`,
+        message: queuedMomentumSell
+          ? `${decision.symbol}: tick size unavailable; momentum sell remains queued.`
+          : `${decision.symbol}: ${text}`,
         runId: opts.runId,
       });
       results.push(`${decision.symbol} tick_unknown`);
@@ -351,6 +397,18 @@ export async function syncBroker(runId: number): Promise<Record<string, unknown>
     if (!remote) continue;
     const filled = num(remote.filled_quantity);
     const previous = num(row.filled_qty);
+    if (filled > previous) {
+      await settleFill(row, {
+        kiteOrderId: remote.order_id,
+        filled,
+        avgPrice: num(remote.average_price),
+        status: remote.status,
+        settings,
+        kite,
+        runId,
+      });
+      synced += 1;
+    }
     if (remote.status === "REJECTED" || remote.status === "CANCELLED") {
       await q(`UPDATE mlive.mlive_orders SET status = $2, reject_reason = $3, updated_at = now() WHERE id = $1`, [
         num(row.id),
@@ -364,18 +422,7 @@ export async function syncBroker(runId: number): Promise<Record<string, unknown>
       }
       continue;
     }
-    if (filled > previous) {
-      await settleFill(row, {
-        kiteOrderId: remote.order_id,
-        filled,
-        avgPrice: num(remote.average_price),
-        status: remote.status,
-        settings,
-        kite,
-        runId,
-      });
-      synced += 1;
-    } else if (remote.status !== row.status) {
+    if (filled <= previous && remote.status !== row.status) {
       await q(`UPDATE mlive.mlive_orders SET status = $2, updated_at = now() WHERE id = $1`, [num(row.id), remote.status]);
     }
   }
