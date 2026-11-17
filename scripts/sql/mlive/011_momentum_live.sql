@@ -7,6 +7,24 @@ ALTER TABLE mlive.mlive_ideas
   ADD CONSTRAINT mlive_ideas_strategy_check
   CHECK (strategy IN ('rs', 'ema', 'momentum'));
 
+ALTER TABLE mlive.mlive_positions
+  DROP CONSTRAINT IF EXISTS mlive_positions_strategy_check;
+
+ALTER TABLE mlive.mlive_positions
+  ADD CONSTRAINT mlive_positions_strategy_check
+  CHECK (strategy IN ('rs', 'ema', 'momentum'));
+
+ALTER TABLE mlive.mlive_runs
+  DROP CONSTRAINT IF EXISTS mlive_runs_kind_check;
+
+ALTER TABLE mlive.mlive_runs
+  ADD CONSTRAINT mlive_runs_kind_check CHECK (kind IN (
+    'preflight', 'sells', 'refresh', 'buys', 'approvals',
+    'sync', 'cancel', 'eod', 'eod-final', 'eod-stops', 'import-ideas', 'remind', 'reset-dry',
+    'market-backfill', 'market-daily', 'market-check', 'research', 'quotes', 'intraday', 'swing-switch',
+    'momentum-eod'
+  ));
+
 CREATE TABLE IF NOT EXISTS mlive.mlive_momentum_cohorts (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   signal_date date NOT NULL,
