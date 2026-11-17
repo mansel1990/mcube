@@ -214,7 +214,7 @@ export function LongTermView() {
 
               <section className="long-chart-grid">
                 <ChartCard title="Growth of ₹100" note="All variants, normalized at the first session.">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                     <LineChart data={equity}>
                       <CartesianGrid stroke="var(--line)" vertical={false} />
                       <XAxis dataKey="date" tickFormatter={shortDate} minTickGap={36} />
@@ -225,7 +225,7 @@ export function LongTermView() {
                   </ResponsiveContainer>
                 </ChartCard>
                 <ChartCard title={`${variantLabel(result?.variant ?? "")} allocation`} note="Portfolio weights through the building sample.">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                     <AreaChart data={allocations}>
                       <CartesianGrid stroke="var(--line)" vertical={false} />
                       <XAxis dataKey="date" tickFormatter={shortDate} minTickGap={36} />
@@ -239,7 +239,7 @@ export function LongTermView() {
                   </ResponsiveContainer>
                 </ChartCard>
                 <ChartCard title="Drawdown" note="Decline from each variant's prior peak.">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                     <LineChart data={drawdowns}>
                       <CartesianGrid stroke="var(--line)" vertical={false} />
                       <XAxis dataKey="date" tickFormatter={shortDate} minTickGap={36} />
