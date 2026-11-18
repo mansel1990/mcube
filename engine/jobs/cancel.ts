@@ -17,6 +17,7 @@ export async function cancel(): Promise<void> {
          JOIN mlive.mlive_decisions d ON d.id = o.decision_id
         WHERE d.trade_date = $1::date
           AND o.status IN ('OPEN', 'DRY', 'TRIGGER PENDING')
+          AND coalesce(o.book, 'swing') = 'swing'
           AND o.filled_qty < o.qty`,
       [todayIst()]
     );

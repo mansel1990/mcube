@@ -365,7 +365,7 @@ async function sectorCountFor(symbol: string, positions: { symbol: string }[]): 
   const held = await q<{ n: unknown }>(
     `SELECT COUNT(*)::int AS n FROM mlive.mlive_positions p
       JOIN mlive.mlive_instruments i ON i.symbol = p.symbol
-     WHERE p.closed_at IS NULL AND i.sector = $1 AND p.symbol <> $2`,
+     WHERE p.closed_at IS NULL AND coalesce(p.book, 'swing') = 'swing' AND i.sector = $1 AND p.symbol <> $2`,
     [sector, symbol]
   );
   return num(held[0]?.n);
@@ -665,6 +665,7 @@ export async function coverUnguardedPositions(runId: number): Promise<number> {
     `SELECT p.id, p.symbol, p.qty, p.avg_price, p.trend_stop, p.strategy
        FROM mlive.mlive_positions p
       WHERE p.closed_at IS NULL
+        AND coalesce(p.book, 'swing') = 'swing'
         AND p.frozen = false
         AND ($1::boolean OR p.dry_run = false)
         AND p.opened_at < now() - interval '10 minutes'

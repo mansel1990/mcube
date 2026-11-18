@@ -29,6 +29,7 @@ import { audit } from "../audit";
 import { raiseAlert } from "../alerts";
 import { buyPace, openCost, openPositions, pendingBuyValue, saveDeployBaseline } from "../book";
 import { jsonValue, num, q } from "../db";
+import { syncLongGameHoldings } from "../longterm/reconcile";
 import { MliveKite, type KiteHolding } from "../kite";
 import { fundBalance, holidaySet, loadSettings, loadState, setState } from "../load";
 import { grossAllows, markedSwingBook, pendingGrossCommitment, sizeMomentumOrder } from "../live-portfolio";
@@ -75,6 +76,12 @@ export async function preflight(): Promise<void> {
       try {
         holdings = await kite.holdings();
         holdingsReadable = true;
+        try {
+          await syncLongGameHoldings(holdings);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (!message.includes("mlive_longgame_holdings")) throw error;
+        }
       } catch {
         holdingsReadable = false;
       }

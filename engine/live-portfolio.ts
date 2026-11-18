@@ -45,6 +45,7 @@ export async function pendingGrossCommitment(day: string, includeDry: boolean, e
           WHERE o.side = 'BUY'
             AND d.trade_date = $1::date
             AND o.status NOT IN ('CANCELLED', 'REJECTED', 'COMPLETE')
+            AND coalesce(o.book, 'swing') = 'swing'
             AND ($2::boolean OR o.dry_run = false)
        ), 0)
        +
@@ -54,6 +55,7 @@ export async function pendingGrossCommitment(day: string, includeDry: boolean, e
           WHERE d.trade_date = $1::date
             AND d.side = 'BUY'
             AND d.outcome IN ('proposed', 'approved')
+            AND coalesce(d.book, 'swing') = 'swing'
             AND ($2::boolean OR d.dry_run = false)
             AND ($3::bigint IS NULL OR d.id <> $3)
             AND NOT EXISTS (

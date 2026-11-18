@@ -99,9 +99,9 @@ export async function dailyReport(requested: string | null, now = new Date()): P
             OR (timezone('Asia/Kolkata', connected_at))::date = ${day}::date
          ORDER BY connected_at ASC`,
     sql`SELECT key, value FROM mlive.mlive_settings`,
-    sql`SELECT count(*) FILTER (WHERE coalesce(book, 'swing') <> 'intraday')::int AS swing,
+    sql`SELECT count(*) FILTER (WHERE coalesce(book, 'swing') = 'swing')::int AS swing,
                count(*) FILTER (WHERE book = 'intraday')::int AS intra,
-               count(*) FILTER (WHERE coalesce(book, 'swing') <> 'intraday' AND EXISTS (
+               count(*) FILTER (WHERE coalesce(book, 'swing') = 'swing' AND EXISTS (
                  SELECT 1 FROM mlive.mlive_gtts g WHERE g.position_id = p.id AND g.status NOT IN ('cancelled', 'rejected')
                ))::int AS stopped
           FROM mlive.mlive_positions p WHERE closed_at IS NULL`,
@@ -112,7 +112,7 @@ export async function dailyReport(requested: string | null, now = new Date()): P
     sql`SELECT trade_date::text AS trade_date, side, symbol, outcome, reason_code, coalesce(reason_text, '') AS reason_text
           FROM mlive.mlive_decisions
          WHERE trade_date BETWEEN ${from}::date AND ${end}::date`,
-    sql`SELECT count(*)::int AS n FROM mlive.mlive_ideas WHERE valid_for = ${day}::date AND coalesce(book, 'swing') <> 'intraday'`,
+    sql`SELECT count(*)::int AS n FROM mlive.mlive_ideas WHERE valid_for = ${day}::date AND coalesce(book, 'swing') = 'swing'`,
     sql`SELECT count(*) FILTER (WHERE r.result = 'ok')::int AS matched,
                count(*)::int AS checked
           FROM mlive.mlive_reconciliations r

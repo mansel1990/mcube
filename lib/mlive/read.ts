@@ -135,7 +135,7 @@ export async function loadSwingToday(now = new Date()): Promise<SwingToday> {
     sql`SELECT symbol, qty, avg_price, opened_at
           FROM mlive.mlive_positions
          WHERE closed_at IS NULL AND qty > 0
-           AND coalesce(book, 'swing') <> 'intraday'
+           AND coalesce(book, 'swing') = 'swing'
            AND (${includeDry}::boolean OR dry_run = false)`,
     sql`SELECT COALESCE(SUM(l.amount), 0) AS net, COUNT(*)::int AS n
           FROM mlive.mlive_fund_ledger l
@@ -143,10 +143,10 @@ export async function loadSwingToday(now = new Date()): Promise<SwingToday> {
          WHERE l.kind = 'realised_pnl'
            AND (timezone('Asia/Kolkata', l.ts))::date = ${today}::date
            AND (${includeDry}::boolean OR l.dry_run = false)
-           AND (o.id IS NULL OR coalesce(o.book, 'swing') <> 'intraday')`,
+           AND (o.id IS NULL OR coalesce(o.book, 'swing') = 'swing')`,
     sql`SELECT COALESCE(SUM(realised_pnl), 0) AS net
           FROM mlive.mlive_positions
-         WHERE coalesce(book, 'swing') <> 'intraday'
+         WHERE coalesce(book, 'swing') = 'swing'
            AND closed_at IS NOT NULL
            AND (timezone('Asia/Kolkata', closed_at))::date = ${today}::date
            AND (${includeDry}::boolean OR dry_run = false)`,
@@ -156,7 +156,7 @@ export async function loadSwingToday(now = new Date()): Promise<SwingToday> {
          WHERE l.kind = 'charges'
            AND (timezone('Asia/Kolkata', l.ts))::date = ${today}::date
            AND (${includeDry}::boolean OR l.dry_run = false)
-           AND coalesce(o.book, 'swing') <> 'intraday'
+           AND coalesce(o.book, 'swing') = 'swing'
          GROUP BY o.side`,
     sql`SELECT trade_date::text AS trade_date, system_value FROM mlive.mlive_equity_daily ORDER BY trade_date`,
     sql`SELECT (timezone('Asia/Kolkata', ts))::date::text AS d, kind, COALESCE(SUM(amount), 0) AS amount
@@ -226,7 +226,7 @@ export async function swingBuysOn(day: string): Promise<number> {
       JOIN mlive.mlive_decisions d ON d.id = o.decision_id
      WHERE d.trade_date = ${day}::date
        AND o.side = 'BUY'
-       AND coalesce(o.book, 'swing') <> 'intraday'
+       AND coalesce(o.book, 'swing') = 'swing'
        AND (${includeDry}::boolean OR d.dry_run = false)
        AND (${includeDry}::boolean OR o.dry_run = false)`;
   return rows.filter((row) => isCountedBuy(String(row.status ?? ""))).length;
@@ -905,8 +905,8 @@ export async function cashPicture() {
   const settings = await settingsMap();
   const [fundRows, positionRows, pendingRows, kiteFunds] = await Promise.all([
     sql`SELECT COALESCE(SUM(amount), 0) AS total FROM mlive.mlive_fund_ledger WHERE (${includeDry}::boolean OR dry_run = false)`,
-    sql`SELECT COALESCE(SUM(qty * avg_price), 0) AS invested FROM mlive.mlive_positions WHERE closed_at IS NULL AND COALESCE(book, 'swing') <> 'longterm' AND (${includeDry}::boolean OR dry_run = false)`,
-    sql`SELECT COALESCE(SUM((qty - filled_qty) * limit_price), 0) AS pending FROM mlive.mlive_orders WHERE side = 'BUY' AND status NOT IN ('CANCELLED', 'REJECTED', 'COMPLETE') AND COALESCE(book, 'swing') <> 'longterm' AND (${includeDry}::boolean OR dry_run = false)`,
+    sql`SELECT COALESCE(SUM(qty * avg_price), 0) AS invested FROM mlive.mlive_positions WHERE closed_at IS NULL AND COALESCE(book, 'swing') = 'swing' AND (${includeDry}::boolean OR dry_run = false)`,
+    sql`SELECT COALESCE(SUM((qty - filled_qty) * limit_price), 0) AS pending FROM mlive.mlive_orders WHERE side = 'BUY' AND status NOT IN ('CANCELLED', 'REJECTED', 'COMPLETE') AND COALESCE(book, 'swing') = 'swing' AND (${includeDry}::boolean OR dry_run = false)`,
     readKiteFunds(),
   ]);
   const tradingLimit = num(fundRows[0]?.total);

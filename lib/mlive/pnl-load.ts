@@ -101,7 +101,7 @@ export async function pnlPayload(range: PnlRange, strategy: PnlStrategyFilter, b
     id: num(row.id),
     symbol: String(row.symbol),
     strategy: row.strategy == null ? null : String(row.strategy),
-    book: row.book === "intraday" ? "intraday" : "swing",
+    book: row.book === "intraday" ? "intraday" : row.book === "longterm" ? "longterm" : "swing",
     side: row.side === "short" ? "short" : "long",
     qty: num(row.qty),
     avgPrice: num(row.avg_price),

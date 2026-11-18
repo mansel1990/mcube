@@ -47,7 +47,7 @@ export async function quotes(): Promise<void> {
   if (!apiKey) throw new Error("KITE_API_KEY is not set");
   const kite = new MliveKite(false);
   const token = await kite.accessToken();
-  const positions = await q<{ symbol: string }>(`SELECT symbol FROM mlive.mlive_positions WHERE closed_at IS NULL`);
+  const positions = await q<{ symbol: string }>(`SELECT symbol FROM mlive.mlive_positions WHERE closed_at IS NULL AND coalesce(book, 'swing') = 'swing'`);
   const symbols = positions.map((row) => row.symbol);
   let tokens: number[] = [];
   try {

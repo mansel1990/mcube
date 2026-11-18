@@ -26,7 +26,7 @@ export type PnlPosition = {
   id: number;
   symbol: string;
   strategy: "rs" | "ema" | string | null;
-  book?: "swing" | "intraday";
+  book?: "swing" | "intraday" | "longterm";
   side?: "long" | "short";
   qty: number;
   avgPrice: number;
@@ -719,7 +719,7 @@ export function buildPnl(input: BuildPnlInput): PnlModel {
   const includeDry = input.dryRun === true;
   const holidays = new Set(input.holidays ?? []);
   const today = input.today;
-  const positions = input.positions.filter((row) => includeDry || row.dryRun !== true);
+  const positions = input.positions.filter((row) => (includeDry || row.dryRun !== true) && row.book !== "longterm");
   const ids = new Set(positions.map((row) => row.id));
   const fills = input.fills.filter((row) => ids.has(row.positionId));
   const items = input.chargeItems.filter((row) => ids.has(row.positionId) && (includeDry || row.dryRun !== true));
