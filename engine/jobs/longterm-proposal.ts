@@ -10,6 +10,7 @@ import {
   markProposal,
   readProposalGate,
 } from "../longterm/proposal-db";
+import { considerLongGameSuggestions } from "../longterm/suggest-db";
 import { afterClose, buildAllocationChange, type AllocationChange } from "../longterm/proposal";
 import { DEFAULT_REPRESENTATIVE_ETFS, LONGTERM_VARIANT_NAMES, type LongtermVariantName, type Sleeve } from "../longterm/variants";
 import { num, q } from "../db";
@@ -25,6 +26,11 @@ export async function longtermProposal(): Promise<void> {
 }
 
 export async function runLongtermProposal(): Promise<Record<string, unknown>> {
+  try {
+    await considerLongGameSuggestions();
+  } catch (error) {
+    console.error("long game suggestions skipped", error instanceof Error ? error.message : error);
+  }
   const gate = await readProposalGate();
   if (!gate.allowed || !gate.variant) return { skipped: "guard", proposals: 0, decisions: 0 };
   const today = todayIst();

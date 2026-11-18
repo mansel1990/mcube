@@ -1,12 +1,16 @@
-import { floorToTick, makeTag } from "@/lib/mlive/rules";
+import { estimateCharges } from "@/lib/mlive/charges";
+import { makeTag } from "@/lib/mlive/rules";
 import { istMinutes, todayIst } from "@/lib/mlive/calendar";
+import { raiseAlert } from "../alerts";
 import { guardOrder, type GuardContext } from "../guard";
 import { recordOrder, shortId } from "../book";
 import { num, q } from "../db";
 import { MliveKite } from "../kite";
-import { fundBalance, loadSettings, loadState } from "../load";
+import { loadSettings, loadState } from "../load";
+import { livePrice } from "../market";
 import { readProposalGate } from "./proposal-db";
 import { isLongtermEtf } from "./proposal";
+import { fundsShortfall, orderLimit, repricedBuyFits } from "./suggest";
 
 const LONGTERM_REASON = "longterm_allocation";
 
@@ -32,16 +36,25 @@ export async function sendLongtermDecisions(side: "BUY" | "SELL", runId: number)
       [day, side, LONGTERM_REASON]
     );
     if (rows.length === 0) return { sent: 0 };
-    const fund = await fundBalance(settings.dryRun);
     const kite = new MliveKite(settings.dryRun);
-    let spendable = fund;
+    let spendable = Number.POSITIVE_INFINITY;
     if (side === "BUY") {
+      let cash = 0;
       try {
-        const cash = await kite.equityCash();
-        spendable = cash == null ? 0 : Math.min(fund, cash);
+        cash = (await kite.equityCash()) ?? 0;
       } catch {
-        spendable = 0;
+        cash = 0;
       }
+      const needed = rows.reduce((sum, row) => {
+        const sizing = sizingOf(row.sizing);
+        return sum + Math.max(0, sizing.qty * sizing.limit);
+      }, 0);
+      const short = fundsShortfall(cash, needed);
+      if (short) {
+        await raiseAlert({ level: "needs_you", code: "longgame_funds", message: short });
+        return { sent: 0, skipped: "funds" };
+      }
+      spendable = cash;
     }
     let sent = 0;
     for (const row of rows) {
@@ -56,7 +69,7 @@ export async function sendLongtermDecisions(side: "BUY" | "SELL", runId: number)
         mode: state.mode,
         status: state.status,
         approved: true,
-        fund: Math.max(fund, qty * limit),
+        fund: qty * limit,
         spendable,
         maxOrderPct: 1,
         excluded: false,
@@ -89,8 +102,16 @@ export async function sendLongtermDecisions(side: "BUY" | "SELL", runId: number)
         ctx
       );
       if (!verdict.ok) continue;
-      const price = await kiteLimit(kite, row.symbol, limit);
+      const last = await livePrice(row.symbol);
+      const tick = await kite.tickSize(row.symbol);
+      const price = orderLimit(side, last, tick, last == null ? null : 0);
       if (price == null) continue;
+      if (side === "BUY") {
+        const charges = estimateCharges("BUY", qty * price).total;
+        const cap = sizing.allocation > 0 ? sizing.allocation : qty * price + charges;
+        const approved = sizing.approved > 0 ? sizing.approved : cap;
+        if (!repricedBuyFits(qty, price, charges, cap, approved)) continue;
+      }
       const placed = await kite.placeOrder({ symbol: row.symbol, side, qty, price, tag, product: "CNC" });
       await recordOrder({
         decisionId: num(row.id),
@@ -124,16 +145,10 @@ async function ownedQty(symbol: string, dryRun: boolean): Promise<number> {
   return num(rows[0]?.qty);
 }
 
-async function kiteLimit(kite: MliveKite, symbol: string, price: number): Promise<number | null> {
-  const tick = await kite.tickSize(symbol);
-  if (tick == null) return null;
-  return floorToTick(price, tick);
-}
-
-function sizingOf(value: unknown): { qty: number; limit: number } {
+function sizingOf(value: unknown): { qty: number; limit: number; allocation: number; approved: number } {
   const parsed = typeof value === "string" ? safeJson(value) : value;
-  const row = parsed && typeof parsed === "object" ? parsed as { qty?: unknown; limit?: unknown } : {};
-  return { qty: num(row.qty), limit: num(row.limit) };
+  const row = parsed && typeof parsed === "object" ? parsed as { qty?: unknown; limit?: unknown; allocation?: unknown; approved?: unknown } : {};
+  return { qty: num(row.qty), limit: num(row.limit), allocation: num(row.allocation), approved: num(row.approved) };
 }
 
 function safeJson(value: string): unknown {

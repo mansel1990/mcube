@@ -1,6 +1,7 @@
 import { istMinutes } from "@/lib/mlive/calendar";
 import { coverUnguardedPositions, syncBroker } from "../execute";
 import { carryUnfilledMomentumSells, maintainMomentumWeeklySells } from "../momentum-sell-watch";
+import { maintainLongGameOrders } from "../longterm/watch";
 import { runJob } from "../run";
 import { skipIfNoSession } from "../session";
 
@@ -18,6 +19,7 @@ export async function sync(): Promise<void> {
   await runJob("sync", async (runId) => {
     let synced = await syncBroker(runId);
     const watch = await maintainMomentumWeeklySells(runId);
+    await maintainLongGameOrders();
     if (watch.cancellationsRequested) synced = await syncBroker(runId);
     await carryUnfilledMomentumSells(runId);
     const covered = await coverUnguardedPositions(runId);
