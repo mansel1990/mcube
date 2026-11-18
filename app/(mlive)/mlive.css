@@ -1,40 +1,49 @@
 .mlive {
-  --bg: #F5F4F1;
+  --bg: #F6F4EF;
   --surface: #FFFFFF;
-  --surface2: #EFEDE8;
-  --line: #E6E3DD;
-  --line2: #E6E3DD;
-  --row-line: #F0EEE9;
-  --ink: #1B1A21;
-  --ink2: #676470;
-  --ink3: #676470;
-  --brand: #C8430D;
-  --brand-ink: #ffffff;
-  --brand-soft: #FCEBDD;
-  --up: #0F7A55;
-  --down: #B92D1E;
-  --warn: #9A5B00;
-  --warn-bg: #FAEFD4;
-  --rs: #4050C4;
-  --ema: #5C4B8A;
-  --swing: #4050C4;
-  --intraday: #0B7472;
-  --intraday-bg: #DBF0EF;
-  --profit: #0F7A55;
-  --profit-bg: #DFF2E9;
-  --loss: #B92D1E;
-  --loss-bg: #FBE6E2;
-  --charges: #676470;
-  --charges-bg: #EFEDE8;
-  --open: #4050C4;
-  --open-bg: #E6E9FA;
-  --neutral: #676470;
-  --rail-bg: #1B1A21;
-  --rail-ink: #F3F1EC;
-  --rail-muted: #A7A3B1;
-  --rail-line: #34323D;
-  --rail-active: #2E2B37;
-  --rail-card: #25232D;
+  --surface2: #F6F4EF;
+  --line: #E4DFD3;
+  --line2: #E4DFD3;
+  --row-line: #E4DFD3;
+  --ink: #14161C;
+  --raised: #2A2D36;
+  --ink2: #55524B;
+  --ink3: #55524B;
+  --brand: #14161C;
+  --brand-ink: #FFFFFF;
+  --brand-soft: #E4DFD3;
+  --up: #2F7D4F;
+  --down: #B3261E;
+  --warn: #6B3F00;
+  --warn-bg: #FCEBC8;
+  --rs: #2F6FB5;
+  --ema: #1E4F86;
+  --swing: #2F6FB5;
+  --swing-tint: #E3EDF8;
+  --swing-ink: #1E4F86;
+  --swing-on-dark: #5B9BE0;
+  --longgame: #F2A20C;
+  --longgame-tint: #FCEBC8;
+  --longgame-ink: #6B3F00;
+  --intraday: #2F6FB5;
+  --intraday-bg: #E3EDF8;
+  --profit: #2F7D4F;
+  --profit-bg: #E3F1E8;
+  --profit-ink: #1F5E3A;
+  --loss: #B3261E;
+  --loss-bg: #F6E3DC;
+  --loss-ink: #8A2E12;
+  --charges: #55524B;
+  --charges-bg: #F6F4EF;
+  --open: #2F6FB5;
+  --open-bg: #E3EDF8;
+  --neutral: #55524B;
+  --rail-bg: #14161C;
+  --rail-ink: #F6F4EF;
+  --rail-muted: #E4DFD3;
+  --rail-line: #2A2D36;
+  --rail-active: #2A2D36;
+  --rail-card: #2A2D36;
   --shadow: none;
   min-height: 100vh;
   background: var(--bg);
@@ -49,11 +58,11 @@
 .mlive .n, .mlive .num, .mlive .acct, .mlive .sum-num, .mlive .net-num { font-family: inherit; font-variant-numeric: tabular-nums; }
 .mlive .wrap { max-width: 1680px; margin: 0 auto; padding: 0 32px; }
 .mlive .top { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(14px); border-bottom: 1px solid var(--line); }
-.mlive .dry-banner { margin: 0; padding: 8px 16px; text-align: center; font-size: 13px; font-weight: 700; letter-spacing: 0.04em; background: #fff4d6; color: #8a5a00; }
-.mlive .dry-tag { margin-top: 4px; font-size: 12px; font-weight: 700; letter-spacing: 0.03em; color: #8a5a00; }
+.mlive .dry-banner { margin: 0; padding: 8px 16px; text-align: center; font-size: 13px; font-weight: 700; letter-spacing: 0.04em; background: var(--warn-bg); color: var(--warn); }
+.mlive .dry-tag { margin-top: 4px; font-size: 12px; font-weight: 700; letter-spacing: 0.03em; color: var(--warn); }
 .mlive .top .wrap { display: flex; align-items: center; gap: 20px; height: 64px; }
 .mlive .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -0.01em; font-size: 17px; color: inherit; text-decoration: none; }
-.mlive .logo i { width: 28px; height: 28px; border-radius: 8px; background: var(--brand); display: grid; place-items: center; color: #fff; font-style: normal; }
+.mlive .logo i { width: 28px; height: 28px; border-radius: 8px; background: var(--longgame); display: grid; place-items: center; color: var(--ink); font-style: normal; }
 .mlive .nav { display: flex; gap: 4px; margin-left: 12px; }
 .mlive .nav a, .mlive .mnav a { text-decoration: none; }
 .mlive .nav a { color: var(--ink3); font-size: 14px; font-weight: 600; padding: 10px 14px; border-radius: 10px; min-height: 40px; display: inline-flex; align-items: center; }
@@ -118,7 +127,7 @@
 .mlive .buy { background: color-mix(in srgb, var(--up) 16%, transparent); color: var(--up); }
 .mlive .sell { background: color-mix(in srgb, var(--down) 16%, transparent); color: var(--down); }
 .mlive .btn { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; height: 44px; padding: 0 18px; border-radius: 10px; font-weight: 600; font-size: 14px; line-height: 1; text-decoration: none; cursor: pointer; border: 1px solid var(--line2); background: var(--surface); color: var(--ink); }
-.mlive .btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+.mlive .btn.primary { background: var(--ink); border-color: var(--ink); color: var(--brand-ink); }
 .mlive .btn.warn { background: var(--warn); border-color: var(--warn); color: #1a1408; }
 .mlive[data-theme="light"] .btn.warn { color: #fff; }
 .mlive .btn:focus-visible, .mlive .nav a:focus-visible, .mlive .icon-btn:focus-visible, .mlive .mode:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
@@ -511,14 +520,14 @@
 .mlive .idea-moves { color: var(--ink2); }
 .mlive .shell { display: flex; min-height: 100vh; }
 .mlive .rail { width: 112px; flex: none; position: sticky; top: 0; height: 100vh; background: var(--surface); border-right: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; padding: 28px 18px 32px; gap: 14px; z-index: 20; }
-.mlive .rail .mark { width: 44px; height: 44px; border-radius: 14px; background: var(--brand); display: grid; place-items: center; margin: 0 0 28px; }
+.mlive .rail .mark { width: 44px; height: 44px; border-radius: 14px; background: var(--longgame); color: var(--ink); display: grid; place-items: center; margin: 0 0 28px; }
 .mlive .today-grid { display: grid; grid-template-columns: 1.25fr 1fr 1fr; gap: 16px; margin-top: 22px; }
 .mlive .today-more { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
 .mlive .today-lower { display: grid; grid-template-columns: 1.6fr 0.9fr; gap: 16px; margin-top: 16px; align-items: start; }
 .mlive .split { height: 8px; border-radius: 99px; display: flex; overflow: hidden; background: var(--surface2); margin: 18px 0 10px; }
 .mlive .split i { display: block; height: 100%; }
-.mlive .split i.swing { background: #3f51b5; }
-.mlive .split i.intraday { background: #0b6e6e; }
+.mlive .split i.swing { background: var(--swing); }
+.mlive .split i.intraday { background: var(--intraday); }
 .mlive .pair { display: flex; gap: 32px; margin-top: 16px; }
 .mlive .pair b { display: block; font-size: 20px; margin-top: 2px; }
 .mlive .pnl-chip { display: inline-block; min-width: 64px; text-align: center; padding: 4px 8px; border-radius: 8px; font-weight: 700; }
@@ -547,8 +556,9 @@
 .mlive .more-pop { position: fixed; right: 12px; bottom: 72px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 8px; display: flex; flex-direction: column; z-index: 40; }
 .mlive .more-pop a { min-height: 44px; padding: 0 16px; display: flex; align-items: center; color: var(--ink); text-decoration: none; font-weight: 600; }
 .mlive .book-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-.mlive .book-dot.swing { background: #3F51B5; }
-.mlive .book-dot.intraday { background: #0B6E6E; }
+.mlive .book-dot.swing { background: var(--swing); }
+.mlive .book-dot.intraday { background: var(--intraday); }
+.mlive .book-dot.longgame { background: var(--longgame); }
 .mlive .seg.lev button:disabled { opacity: 0.4; cursor: not-allowed; }
 .mlive .field .unit { color: var(--ink3); font-size: 12px; margin-right: 6px; }
 @media (min-width: 1700px) {
@@ -595,7 +605,7 @@
   gap: 0;
 }
 .mlive .rail .brand { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 0 8px 18px; color: var(--rail-ink); text-decoration: none; font-weight: 700; }
-.mlive .rail .mark { width: 36px; height: 36px; border-radius: 10px; background: var(--brand); display: grid; place-items: center; margin: 0; flex: none; }
+.mlive .rail .mark { width: 36px; height: 36px; border-radius: 10px; background: var(--longgame); color: var(--ink); display: grid; place-items: center; margin: 0; flex: none; }
 .mlive .rail .brand-name { font-size: 15px; letter-spacing: -0.02em; }
 .mlive .rail-nav { display: flex; flex-direction: column; gap: 16px; flex: 1; min-height: 0; overflow: auto; }
 .mlive .rail-group { display: flex; flex-direction: column; gap: 2px; }
@@ -629,8 +639,8 @@
 .mlive .split i.intraday, .mlive .book-dot.intraday { background: var(--intraday); }
 .mlive .hero-card .big { font-size: 44px; }
 .mlive .chg-pill { display: inline-flex; align-items: center; min-height: 28px; margin-top: 8px; padding: 0 10px; border-radius: 999px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.mlive .chg-pill.up { background: var(--profit-bg); color: var(--profit); }
-.mlive .chg-pill.down { background: var(--loss-bg); color: var(--loss); }
+.mlive .chg-pill.up { background: var(--profit-bg); color: var(--profit-ink); }
+.mlive .chg-pill.down { background: var(--loss-bg); color: var(--loss-ink); }
 .mlive .sparkline { width: 100%; height: 72px; margin-top: 14px; }
 .mlive .sparkline .put { stroke: var(--ink3); stroke-dasharray: 4 4; fill: none; }
 .mlive .sparkline .value { stroke: var(--ink); fill: none; stroke-width: 2; }
@@ -638,9 +648,10 @@
 .mlive .figure-row b { display: block; margin-top: 4px; font-size: 16px; font-variant-numeric: tabular-nums; }
 .mlive .book-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
 .mlive .book-card { position: relative; overflow: hidden; }
-.mlive .book-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--line); }
+.mlive .book-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px; background: var(--line); }
 .mlive .book-card.swing::before { background: var(--swing); }
 .mlive .book-card.intraday::before { background: var(--intraday); }
+.mlive .book-card.longgame::before { background: var(--longgame); }
 .mlive .book-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .mlive .book-pnl { font-size: 32px; font-weight: 700; letter-spacing: -0.03em; margin: 8px 0 4px; font-variant-numeric: tabular-nums; }
 .mlive .trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
@@ -894,8 +905,8 @@
 .mlive .long-target-bar { display: flex; height: 28px; overflow: hidden; border-radius: 9px; background: var(--surface2); }
 .mlive .long-target-bar i { display: block; height: 100%; }
 .mlive .long-target .equity { background: var(--open); }
-.mlive .long-target .gold { background: #C89B16; }
-.mlive .long-target .liquid { background: #8B8792; }
+.mlive .long-target .gold { background: var(--longgame); }
+.mlive .long-target .liquid { background: var(--longgame); opacity: 0.45; }
 .mlive .long-target-legend { grid-column: 2; display: flex; gap: 16px; flex-wrap: wrap; color: var(--ink2); font-size: 12px; }
 .mlive .long-target-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .mlive .long-target-legend i { width: 9px; height: 9px; border-radius: 3px; }

@@ -14,6 +14,7 @@ function istClock(): string {
 export async function intraday(): Promise<void> {
   await runJob("intraday", async (runId) => {
     const settings = await loadSettings();
+    if (settings.intradayRetired) return { job: "intraday", retired: true };
     const state = await loadState();
     const kite = new MliveKite(settings.dryRun);
     const day = todayIst();

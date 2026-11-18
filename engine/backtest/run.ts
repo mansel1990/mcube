@@ -31,7 +31,8 @@ import { filesRoot, syncUniverse } from "../jobs/market";
 import { loadSettings } from "../load";
 import { longtermDataIdentity } from "../longterm/data";
 import { loadGuardedHeldbackDataset } from "../longterm/heldback";
-import { LONGTERM_FROZEN_V2 } from "../longterm/rules";
+import { frozenV3OverrideCommand } from "../longterm/override";
+import { LONGTERM_FROZEN_V2, LONGTERM_FROZEN_V3 } from "../longterm/rules";
 import { executeLongtermResearch } from "../longterm/run";
 import { LONGTERM_VARIANT_NAMES } from "../longterm/variants";
 import { strategiesFor } from "../strategies";
@@ -102,6 +103,7 @@ export async function runResearch(args: ResearchArgs, opts?: { runId?: number; r
     strategies: names,
     variants: args.variants,
     force: args.force,
+    ownerOverride: args.ownerOverride,
   });
   if (!args.force) {
     const blocked = await duplicateIdentityError(identity, opts?.runId);
@@ -764,7 +766,7 @@ async function insertRun(args: ResearchArgs, strategies: string[], status: strin
        (book, sample, status, requested_by, started_at, params, engine_sha)
      VALUES ($1,$2,$3,$4, CASE WHEN $3 = 'running' THEN now() ELSE NULL END, $5::jsonb,$6)
      RETURNING id::text AS id`,
-    [args.book, args.sample, status, requestedBy, JSON.stringify({ strategies, variants: args.variants ?? [], grid: args.grid, only: args.only ?? null, sample: args.sample, identity: identity ?? null }), identity?.engineSha || engineSha()]
+    [args.book, args.sample, status, requestedBy, JSON.stringify({ strategies, variants: args.variants ?? [], grid: args.grid, only: args.only ?? null, sample: args.sample, ownerOverride: args.ownerOverride ?? null, identity: identity ?? null }), identity?.engineSha || engineSha()]
   );
   return Number(rows[0].id);
 }
@@ -777,10 +779,19 @@ export async function researchIdentityFor(input: {
   strategies: string[];
   variants?: ResearchVariantName[];
   force?: boolean;
+  ownerOverride?: string | null;
 }): Promise<ResearchIdentity> {
   if (input.book === "longterm") {
+    const inspection = input.sample === "heldback" && frozenV3OverrideCommand({
+      book: input.book,
+      sample: input.sample,
+      confirmHeldback: true,
+      ownerOverride: input.ownerOverride,
+      grid: input.grid,
+      variants: input.variants,
+    });
     if (input.sample === "heldback") {
-      const dataset = await loadGuardedHeldbackDataset(input.force === true);
+      const dataset = await loadGuardedHeldbackDataset(input.force === true, input.ownerOverride);
       const last = dataset.dates.filter((date) => date >= "2024-01-01").at(-1) ?? "";
       return makeIdentity({
         book: input.book,
@@ -792,7 +803,7 @@ export async function researchIdentityFor(input: {
         lastCandle: last,
         only: [],
         dataFingerprint: dataset.fingerprint,
-        rulesVersion: LONGTERM_FROZEN_V2.version,
+        rulesVersion: inspection ? LONGTERM_FROZEN_V3.version : LONGTERM_FROZEN_V2.version,
         costVersion: "zerodha-delivery-equivalent-v1",
       });
     }

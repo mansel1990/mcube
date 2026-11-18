@@ -7,7 +7,7 @@ import { addDays, istMinutes, previousTradingDay, todayIst } from "@/lib/mlive/c
 import { INTRADAY_BUILDING_END, INTRADAY_BUILDING_FROM } from "@/lib/mlive/research-bar";
 import { mq } from "../db";
 import { MliveKite } from "../kite";
-import { holidaySet } from "../load";
+import { holidaySet, loadSettings } from "../load";
 import { runJob } from "../run";
 import {
   assertFreeDisk,
@@ -167,6 +167,11 @@ export function seriesPlans(end: string): SeriesPlan[] {
       barsPerDay: 375,
     },
   ];
+}
+
+/** Daily job series. Retired Intraday keeps daily candles and drops the 5-minute plan. */
+export function dailyCandlePlanIds(retired: boolean): SeriesId[] {
+  return retired ? ["daily"] : ["daily", "5m-neon"];
 }
 
 function plansForRun(end: string, oneSession: boolean, series?: SeriesId, sessionFrom = end): SeriesPlan[] {
@@ -980,7 +985,7 @@ async function minuteSessions(symbol: string, from: string, to: string): Promise
   return present;
 }
 
-async function run(options: { oneSession: boolean; only?: string[]; series?: SeriesId }): Promise<void> {
+async function run(options: { oneSession: boolean; only?: string[]; series?: SeriesId; intradayRetired?: boolean }): Promise<void> {
   const minutes = istMinutes();
   if (minutes >= 9 * 60 + 15 && minutes <= 15 * 60 + 30) throw new Error("Market data does not run between 09:15 and 15:30 IST.");
   await ensureSchema();
@@ -989,7 +994,14 @@ async function run(options: { oneSession: boolean; only?: string[]; series?: Ser
   await refreshInstruments(kite, universe);
   const end = todayIst();
   const sessionFrom = options.oneSession ? await sessionStart(end) : end;
-  const plans = plansForRun(end, options.oneSession, options.series, sessionFrom);
+  let plans = plansForRun(end, options.oneSession, options.series, sessionFrom);
+  if (options.oneSession && !options.series) {
+    const allowed = new Set(dailyCandlePlanIds(options.intradayRetired === true));
+    plans = plans.filter((plan) => allowed.has(plan.id));
+  }
+  if (options.oneSession && plans.some((plan) => plan.id === "1m-files" || plan.id === "5m-files")) {
+    throw new Error("The daily market job cannot run a file plan.");
+  }
   if (plans.length === 0) throw new Error("--series did not match a download");
   for (const plan of plans) await runSeries(kite, plan, options.only, options.oneSession);
   console.log(options.oneSession ? "market-daily finished" : "market-backfill finished");
@@ -1082,7 +1094,8 @@ export async function marketBackfill(args: MarketArgs = {}): Promise<void> {
 
 export async function marketDaily(): Promise<void> {
   await runJob("market-daily", async () => {
-    await run({ oneSession: true });
+    const settings = await loadSettings();
+    await run({ oneSession: true, intradayRetired: settings.intradayRetired });
     return { job: "market-daily" };
   });
 }

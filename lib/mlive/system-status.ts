@@ -2,7 +2,8 @@ import { isTradingDay, istMinutes, previousTradingDay, todayIst } from "./calend
 import { marketSql } from "./market";
 import { loadNiftyCloses } from "./nifty";
 import type { NiftyReason } from "./nifty-reason";
-import { SCHEDULE, markStep, minutesOf, systemBanner, withNext, yesterdayLine, type StepMark } from "./schedule";
+import { intradayRetired } from "./capabilities";
+import { scheduleForRetirement, markStep, minutesOf, systemBanner, withNext, yesterdayLine, type StepMark } from "./schedule";
 import { sql } from "../sql";
 
 type RunRow = { kind: string; status: string; started_at: unknown; finished_at: unknown; summary: unknown };
@@ -51,13 +52,14 @@ export async function systemStatus(now = new Date()): Promise<SystemStatus> {
   const holidays = new Set((await sql`SELECT trade_date::text AS trade_date FROM mlive.mlive_holidays`).map((row) => String(row.trade_date).slice(0, 10)));
   const closed = !isTradingDay(today, holidays);
   const yesterday = previousTradingDay(today, holidays);
-  const [runs, kite, tables, mainSize] = await Promise.all([
+  const [runs, kite, tables, mainSize, retiredRows] = await Promise.all([
     sql`SELECT kind, status, started_at, finished_at, summary FROM mlive.mlive_runs
          WHERE (timezone('Asia/Kolkata', coalesce(finished_at, started_at)))::date IN (${today}::date, ${yesterday}::date)
          ORDER BY id`,
     sql`SELECT token_date::text AS token_date, connected_at FROM mlive.mlive_kite_sessions ORDER BY connected_at DESC LIMIT 1`,
     sql`SELECT to_regclass('mlive.mlive_heartbeat')::text AS beat, to_regclass('mlive.mlive_deploys')::text AS deploy`,
     sql`SELECT pg_database_size(current_database())::bigint AS bytes`,
+    sql`SELECT value FROM mlive.mlive_settings WHERE key = 'intraday_retired'`,
   ]);
   const todayRuns = (runs as RunRow[]).filter((row) => clock(row.finished_at ?? row.started_at) && dayOf(row.finished_at ?? row.started_at) === today);
   const yRuns = (runs as RunRow[]).filter((row) => dayOf(row.finished_at ?? row.started_at) === yesterday);
@@ -68,7 +70,7 @@ export async function systemStatus(now = new Date()): Promise<SystemStatus> {
     byKind.set(String(row.kind), list);
   }
   const repeat = new Set(["approvals", "sync"]);
-  const steps: SystemStep[] = SCHEDULE.map((step) => {
+  const steps: SystemStep[] = scheduleForRetirement(intradayRetired(retiredRows[0]?.value)).map((step) => {
     const list = byKind.get(step.kind) ?? [];
     const last = list.at(-1) ?? null;
     const errors = list.filter((row) => /fail|error/i.test(String(row.status))).length;

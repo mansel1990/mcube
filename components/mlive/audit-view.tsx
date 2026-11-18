@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { DailyReport } from "@/lib/mlive/daily";
+import { useIntradayRetired } from "./capabilities";
 import { AuditDaily } from "./audit-daily";
 import { AuditLog } from "./audit-log";
 import { SystemView } from "./system-view";
@@ -24,7 +25,9 @@ export function AuditView() {
   const view = params.get("view") === "log" || params.get("view") === "system" ? params.get("view")! : "daily";
   const type = params.get("type") || "decisions";
   const who = params.get("who") === "engine" || params.get("who") === "you" ? params.get("who")! : "everyone";
-  const book = params.get("book") === "swing" || params.get("book") === "intraday" ? params.get("book")! : "all";
+  const intradayOff = useIntradayRetired();
+  const requestedBook = params.get("book");
+  const book = requestedBook === "swing" || (!intradayOff && requestedBook === "intraday") ? requestedBook : "all";
   const q = params.get("q") ?? "";
   const from = params.get("from") ?? "";
   const to = params.get("to") ?? "";

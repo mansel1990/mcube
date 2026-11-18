@@ -1,5 +1,6 @@
 import { heldbackBlock } from "@/lib/mlive/research-bar";
 import { q } from "../db";
+import { FROZEN_V3_OVERRIDE, FROZEN_V3_VARIANTS, overrideBlocksSecondUse, sameVariantSet } from "./override";
 import {
   latestCommonCompleteSession,
   loadLongtermDataset,
@@ -67,37 +68,88 @@ export async function openHeldbackDataset(deps: {
   requested: readonly string[];
   force: boolean;
   loadHeldback: () => Promise<LongtermDataset>;
+  ownerOverride?: string | null;
+  overrideState?: () => Promise<{ consumed: boolean; runningLease: boolean }>;
 }): Promise<LongtermDataset> {
   const building = await deps.loadBuilding();
   if (building.dates.some((date) => date >= LONGTERM_HELD_BACK_FROM)) {
     throw new Error("Building load observed a held-back date.");
   }
-  const pairs = heldbackPairs(await deps.buildingRows(building.fingerprint));
-  if (!pairs) {
-    throw new Error("Held-back stopped before loading held-back data. A corrected all-four building run on the current fingerprint is required.");
+  const inspection = deps.ownerOverride === FROZEN_V3_OVERRIDE;
+  if (deps.ownerOverride && !inspection) {
+    throw new Error("Long Game owner override must be exactly longgame-frozen-v3.");
   }
-  const gate = heldbackAccessGate(pairs);
-  if (!gate.pass) {
-    throw new Error(`Held-back stopped before loading held-back data. ${gate.failures.join(" ")}`);
+  if (inspection && !sameVariantSet(deps.requested, FROZEN_V3_VARIANTS)) {
+    throw new Error("The longgame-frozen-v3 override runs exactly STATIC-MID,RADAR-MID.");
+  }
+  const pairs = heldbackPairs(await deps.buildingRows(building.fingerprint));
+  if (!inspection) {
+    if (!pairs) {
+      throw new Error("Held-back stopped before loading held-back data. A corrected all-four building run on the current fingerprint is required.");
+    }
+    const gate = heldbackAccessGate(pairs);
+    if (!gate.pass) {
+      throw new Error(`Held-back stopped before loading held-back data. ${gate.failures.join(" ")}`);
+    }
+  }
+  if (inspection) {
+    const state = deps.overrideState ? await deps.overrideState() : { consumed: false, runningLease: false };
+    const blockedOverride = overrideBlocksSecondUse({ consumed: state.consumed, runningLease: state.runningLease, force: deps.force });
+    if (blockedOverride) throw new Error(blockedOverride);
   }
   const blocked = heldbackBlock(await deps.usedVariants(), deps.requested, deps.force);
   if (blocked) throw new Error(blocked);
   return deps.loadHeldback();
 }
 
-export async function loadGuardedHeldbackDataset(force: boolean): Promise<LongtermDataset> {
+export async function loadGuardedHeldbackDataset(force: boolean, ownerOverride?: string | null, exceptRunId?: number): Promise<LongtermDataset> {
+  const inspection = ownerOverride === FROZEN_V3_OVERRIDE;
   return openHeldbackDataset({
     loadBuilding: () => loadLongtermDataset("building", { annotate: false }),
     buildingRows: (fingerprint) => storedBuildingRows(fingerprint),
     usedVariants: () => longtermHeldbackUsed(),
-    requested: [...LONGTERM_VARIANT_NAMES],
+    requested: inspection ? [...FROZEN_V3_VARIANTS] : [...LONGTERM_VARIANT_NAMES],
     force,
+    ownerOverride,
+    overrideState: () => readOverrideLease(exceptRunId),
     loadHeldback: () => loadLongtermDataset("heldback"),
   });
 }
 
+export async function readOverrideLease(exceptRunId?: number): Promise<{ consumed: boolean; runningLease: boolean }> {
+  const rows = await q<{ id: string; status: string; consumed: string; variants: string; fresh: boolean }>(
+    `SELECT u.id::text AS id, u.status,
+            COALESCE(u.data->'override'->>'consumed', 'false') AS consumed,
+            (SELECT count(DISTINCT r.variant)::text
+               FROM mlive.mlive_longterm_results r
+              WHERE r.run_id = u.id AND r.variant IN ('STATIC-MID', 'RADAR-MID')) AS variants,
+            (u.status = 'running' AND u.started_at > now() - interval '6 hours') AS fresh
+       FROM mlive.mlive_research_runs u
+      WHERE u.book = 'longterm'
+        AND u.sample = 'heldback'
+        AND (u.params->>'ownerOverride' = $1 OR u.data->'override'->>'override' = $1)`,
+    [FROZEN_V3_OVERRIDE]
+  );
+  let consumed = false;
+  let runningLease = false;
+  for (const row of rows) {
+    if (exceptRunId != null && Number(row.id) === exceptRunId) continue;
+    const fresh = row.fresh === true || String(row.fresh) === "true" || String(row.fresh) === "t";
+    if (row.status === "ok" && row.consumed === "true" && Number(row.variants) >= 2) consumed = true;
+    if (row.status === "running" && fresh) runningLease = true;
+  }
+  return { consumed, runningLease };
+}
+
 export function heldbackDatasetWindow(dataset: LongtermDataset): { from: string; to: string } {
   return sharedHeldbackWindow([...LONGTERM_VARIANT_NAMES], latestCommonCompleteSession(dataset.dates));
+}
+
+export function inspectionHeldbackWindow(lastSession: string): { from: string; to: string } {
+  if (lastSession < LONGTERM_HELD_BACK_FROM) {
+    throw new Error("Held-back window has no common complete session.");
+  }
+  return { from: LONGTERM_HELD_BACK_FROM, to: lastSession };
 }
 
 async function storedBuildingRows(fingerprint: string): Promise<{ variant: string; metrics: unknown; stresses: unknown }[]> {

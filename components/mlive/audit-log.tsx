@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { alertBody, alertSections, auditLabel, collapseAlerts, groupAuditByDay } from "@/lib/mlive/rules";
 import { notifyAlertsChanged } from "./alert-count";
+import { useIntradayRetired } from "./capabilities";
 
 type AuditRow = { id: number; ts: string; actor: string; action: string; symbol: string | null; side: "BUY" | "SELL" | null; reason: string; repeat: number };
 type AuditPage = { rows: AuditRow[]; page: number; pageSize: number; total: number };
@@ -40,6 +41,7 @@ export function AuditLog({
   page: number;
   onChange: (next: Record<string, string>) => void;
 }) {
+  const intradayOff = useIntradayRetired();
   const [audit, setAudit] = useState<AuditPage | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -124,7 +126,7 @@ export function AuditLog({
             ))}
           </div>
           <div className="seg" role="group" aria-label="Book">
-            {(["all", "swing", "intraday"] as const).map((item) => (
+            {(["all", "swing", "intraday"] as const).filter((item) => item !== "intraday" || !intradayOff).map((item) => (
               <button key={item} type="button" data-tone={item} aria-pressed={book === item} onClick={() => onChange({ book: item })}>{item === "all" ? "All" : item === "swing" ? "Swing" : "Intraday"}</button>
             ))}
           </div>

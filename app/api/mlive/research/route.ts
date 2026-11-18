@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireMliveSession } from "@/lib/mlive/auth";
+import { intradayRetired, intradayRetiredSentence } from "@/lib/mlive/capabilities";
 import { todayIst } from "@/lib/mlive/calendar";
 import { engineSha } from "@/lib/mlive/engine-sha";
 import { marketSql } from "@/lib/mlive/market";
@@ -121,6 +122,18 @@ export async function GET(request: NextRequest) {
         at: stamp(row.finished_at),
       })),
       strategiesEnabled: effectiveStrategiesEnabled(strategySetting[0]?.value),
+      retiredIntraday: intradayRetiredSentence((await sql`
+        SELECT u.id, u.sample, r.strategy, r.profit_factor, r.trades
+          FROM mlive.mlive_research_results r
+          JOIN mlive.mlive_research_runs u ON u.id = r.run_id
+         WHERE u.book = 'intraday' AND u.status = 'ok' AND r.strategy IN ('orb', 'vwap')
+         ORDER BY u.id DESC`).map((row) => ({
+        runId: Number(row.id),
+        sample: String(row.sample),
+        strategy: String(row.strategy),
+        profitFactor: Number(row.profit_factor),
+        trades: Number(row.trades),
+      }))),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -137,6 +150,10 @@ export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => null)) as { book?: string; strategies?: string[]; sample?: string; confirmHeldback?: boolean; force?: boolean; grid?: boolean } | null;
   const book: ResearchBook = body?.book === "intraday" ? "intraday" : body?.book === "swing" ? "swing" : "swing";
   if (body?.book !== "swing" && body?.book !== "intraday") return NextResponse.json({ error: "Choose swing or intraday." }, { status: 400 });
+  if (book === "intraday") {
+    const flag = await sql`SELECT value FROM mlive.mlive_settings WHERE key = 'intraday_retired'`;
+    if (intradayRetired(flag[0]?.value)) return NextResponse.json({ error: "Intraday is retired." }, { status: 400 });
+  }
   const allowed = new Set(RESEARCH_STRATEGIES[book]);
   const strategies = (body.strategies ?? []).filter((name) => allowed.has(name));
   if (strategies.length === 0) return NextResponse.json({ error: "Pick at least one strategy." }, { status: 400 });

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { homeStatusPill } from "@/lib/mlive/rules";
 import { inr, signed } from "./format";
+import { useIntradayRetired } from "./capabilities";
 import { LongtermProposalBanner, type LongtermProposalView } from "./longterm-proposal-banner";
 
 type Holding = {
@@ -86,6 +87,7 @@ function Spark({ points, putIn }: { points: { value: number }[]; putIn: number }
 }
 
 export function HomeView() {
+  const intradayOff = useIntradayRetired();
   const [data, setData] = useState<Home | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [prices, setPrices] = useState<Record<string, number>>({});
@@ -186,12 +188,12 @@ export function HomeView() {
         {move.note && <p className="sub">{move.note}</p>}
         <span className={`chg-pill ${todayPnl >= 0 ? "up" : "down"}`}>{move.beforeOpen ? `Yesterday ${signed(todayPnl)}` : `${signed(todayPnl)} · ${todayPct >= 0 ? "+" : "−"}${Math.abs(todayPct).toFixed(2)}%`}</span>
         <div className="split" aria-hidden="true">
-          <i className="swing" style={{ width: `${swingShare}%` }} />
-          <i className="intraday" style={{ width: `${100 - swingShare}%` }} />
+          <i className="swing" style={{ width: intradayOff ? "100%" : `${swingShare}%` }} />
+          {!intradayOff && <i className="intraday" style={{ width: `${100 - swingShare}%` }} />}
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", color: "var(--ink3)", fontSize: 13 }}>
           <span>Swing {inr(swingValue)}</span>
-          <span>{planned ? `Intraday ${inr(dayCapital)} planned` : `Intraday ${inr(dayValue)}`}</span>
+          {!intradayOff && <span>{planned ? `Intraday ${inr(dayCapital)} planned` : `Intraday ${inr(dayValue)}`}</span>}
         </div>
         <Spark points={data.spark} putIn={putIn} />
         <div className="figure-row">
@@ -220,7 +222,7 @@ export function HomeView() {
             <div><span className="lbl">Buys today</span><b className="n">{data.trades.buys} of {data.trades.maxBuys}</b></div>
           </div>
         </article>
-        <article className="card book-card intraday">
+        {!intradayOff && <article className="card book-card intraday">
           <div className="book-top">
             <p className="lbl"><span className="book-dot intraday" /> Intraday</p>
             <Link href="/live-trade-mansel/intraday">Open</Link>
@@ -236,7 +238,7 @@ export function HomeView() {
               <div className="meter" aria-hidden="true"><i style={{ width: `${lossPct}%` }} /></div>
             </div>
           </div>
-        </article>
+        </article>}
       </div>
 
       <div className="today-lower">

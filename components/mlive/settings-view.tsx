@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { haltReasonText } from "@/lib/mlive/rules";
+import { useIntradayRetired } from "./capabilities";
 
 type Settings = Record<string, unknown>;
 type Payload = {
@@ -82,6 +83,7 @@ function Field({
 }
 
 export function SettingsView() {
+  const intradayOff = useIntradayRetired();
   const kiteFlag = useSearchParams().get("kite");
   const [payload, setPayload] = useState<Payload | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -263,7 +265,7 @@ export function SettingsView() {
             <Field key={key} label={label} unit={unit} value={draft[key] ?? ""} onChange={(value) => edit(key, value)} />
           ))}
         </div>
-        <div className="card">
+        {!intradayOff && <div className="card">
           <div className="card-h"><h2><i className="book-dot" style={{ background: "var(--intraday)", marginRight: 8 }} />Intraday book</h2></div>
           <Field label="Capital" unit="₹" value={draft.intraday_capital_inr ?? ""} onChange={(value) => edit("intraday_capital_inr", value)} />
           <div className="field">
@@ -293,7 +295,7 @@ export function SettingsView() {
               <Field label="Freeze size after red days" unit="" value={draft.intraday_freeze_days ?? ""} onChange={(value) => edit("intraday_freeze_days", value)} />
             </>
           )}
-        </div>
+        </div>}
       </div>
       <div className="card" style={{ marginTop: 16 }}>
         <div className="card-h"><h2>About</h2></div>

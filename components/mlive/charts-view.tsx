@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { PnlBook, PnlModel, PnlRange, PnlStrategyFilter, PnlTrade } from "@/lib/mlive/pnl";
+import { useIntradayRetired } from "./capabilities";
 import { ChartsBoard } from "./charts-board";
 import { TradePanel } from "./trade-panel";
 
@@ -12,8 +13,9 @@ const BOOKS = ["all", "swing", "intraday"] as const;
 export function ChartsView({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter();
   const params = useSearchParams();
+  const intradayOff = useIntradayRetired();
   const bookParam = params.get("book");
-  const book: PnlBook = bookParam === "swing" || bookParam === "intraday" ? bookParam : "all";
+  const book: PnlBook = bookParam === "swing" || (!intradayOff && bookParam === "intraday") ? bookParam : "all";
   const rangeParam = params.get("range");
   const range: PnlRange = rangeParam === "1m" || rangeParam === "3m" ? rangeParam : "all";
   const choices: PnlStrategyFilter[] = book === "intraday" ? ["all", "orb", "vwap"] : ["all", "rs", "ema"];
@@ -52,7 +54,7 @@ export function ChartsView({ embedded = false }: { embedded?: boolean }) {
           <h1>Charts</h1>
           <div className="pnl-switch">
             <div className="seg" role="group" aria-label="Book">
-              {BOOKS.map((item) => (
+              {BOOKS.filter((item) => item !== "intraday" || !intradayOff).map((item) => (
                 <button key={item} type="button" data-tone={item} aria-pressed={book === item} onClick={() => replace({ book: item, strategy: "all" })}>{item === "all" ? "All" : item === "swing" ? "Swing" : "Intraday"}</button>
               ))}
             </div>

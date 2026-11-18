@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { alertBody, alertSections, auditLabel, collapseAlerts, groupAuditByDay, ENGINE_GROUPS, type AuditView, type EngineGroupId } from "@/lib/mlive/rules";
 import { notifyAlertsChanged } from "./alert-count";
 import { inr } from "./format";
+import { useIntradayRetired } from "./capabilities";
 import { ReportsPnl, TradesTable } from "./reports-pnl";
 import { TradePanel } from "./trade-panel";
 import type { PnlModel, PnlTrade } from "@/lib/mlive/pnl";
@@ -37,7 +38,9 @@ const VIEWS: { id: AuditView; label: string }[] = [
 export function ReportsView({ embedded = false, forced = "pnl" }: { embedded?: boolean; forced?: ReportTab }) {
   const router = useRouter();
   const params = useSearchParams();
-  const book = params.get("book") === "swing" || params.get("book") === "intraday" ? params.get("book")! : "all";
+  const intradayOff = useIntradayRetired();
+  const requestedBook = params.get("book");
+  const book = requestedBook === "swing" || (!intradayOff && requestedBook === "intraday") ? requestedBook : "all";
   const query = params.get("q") ?? "";
   const result = params.get("result") === "won" || params.get("result") === "lost" ? params.get("result")! : "all";
   const requested = params.get("tab");
@@ -145,7 +148,7 @@ export function ReportsView({ embedded = false, forced = "pnl" }: { embedded?: b
                 ))}
               </div>
               <div className="seg" role="group" aria-label="Book">
-                {(["all", "swing", "intraday"] as const).map((item) => (
+                {(["all", "swing", "intraday"] as const).filter((item) => item !== "intraday" || !intradayOff).map((item) => (
                   <button key={item} type="button" data-tone={item} aria-pressed={book === item} onClick={() => replace({ book: item })}>{item === "all" ? "All" : item === "swing" ? "Swing" : "Intraday"}</button>
                 ))}
               </div>

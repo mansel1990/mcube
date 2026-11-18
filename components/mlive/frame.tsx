@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { IntradayRetiredProvider } from "./capabilities";
 
 const GROUPS = [
   {
@@ -68,6 +69,7 @@ export function MliveFrame({
   status,
   mode,
   marketOpen,
+  intradayRetired = false,
   children,
 }: {
   name: string;
@@ -77,6 +79,7 @@ export function MliveFrame({
   status: string;
   mode: string;
   marketOpen: boolean;
+  intradayRetired?: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -86,6 +89,18 @@ export function MliveFrame({
   const [busy, setBusy] = useState(false);
   const paused = engineStatus.startsWith("paused") || engineMode === "paused";
   const label = paused ? "Paused" : engineMode === "approve" ? "Approval" : "Running on Auto";
+  const groups = GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => !(intradayRetired && item.icon === "intraday")),
+  }));
+  const phone = intradayRetired
+    ? [
+      { href: "/live-trade-mansel", label: "Today", icon: "today" },
+      { href: "/live-trade-mansel/swing", label: "Swing", icon: "swing" },
+      { href: "/live-trade-mansel/long-term", label: "Long Game", icon: "longterm" },
+      { href: "/live-trade-mansel/reports", label: "Reports", icon: "reports" },
+    ]
+    : PHONE;
 
   async function toggleEngine() {
     if (busy) return;
@@ -103,17 +118,18 @@ export function MliveFrame({
   }
 
   return (
+    <IntradayRetiredProvider retired={intradayRetired}>
     <div className="mlive" data-theme="light">
       <div className="shell">
         <aside className="rail" aria-label="Main">
           <Link href="/live-trade-mansel" className="brand" aria-label={`Mansel Live, ${name}`}>
             <span className="mark" aria-hidden="true">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17L17 7" /><path d="M9 7h8v8" /></svg>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17L17 7" /><path d="M9 7h8v8" /></svg>
             </span>
             <span className="brand-name">Mansel Live</span>
           </Link>
           <nav className="rail-nav">
-            {GROUPS.map((group) => (
+            {groups.map((group) => (
               <div key={group.label} className="rail-group">
                 <p className="group-label">{group.label}</p>
                 {group.items.map((link) => (
@@ -154,7 +170,7 @@ export function MliveFrame({
         </div>
       </div>
       <nav className="mnav" aria-label="Main mobile">
-        {PHONE.map((link) => (
+        {phone.map((link) => (
           <Link key={link.href} href={link.href} aria-current={current(pathname, link.href) ? "page" : undefined}>
             <NavIcon name={link.icon} />
             {link.label}
@@ -167,12 +183,13 @@ export function MliveFrame({
       </nav>
       {more && (
         <div className="more-pop">
-          <Link href="/live-trade-mansel/long-term" onClick={() => setMore(false)}><NavIcon name="longterm" />Long Game</Link>
+          {!intradayRetired && <Link href="/live-trade-mansel/long-term" onClick={() => setMore(false)}><NavIcon name="longterm" />Long Game</Link>}
           <Link href="/live-trade-mansel/audit" onClick={() => setMore(false)}>Audit</Link>
           <Link href="/live-trade-mansel/research" onClick={() => setMore(false)}>Research</Link>
           <Link href="/live-trade-mansel/settings" onClick={() => setMore(false)}>Settings</Link>
         </div>
       )}
     </div>
+    </IntradayRetiredProvider>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { MLIVE_COLOURS } from "@/lib/mlive/colours";
 import { LongtermProposalBanner, type LongtermProposalView } from "./longterm-proposal-banner";
 import {
   Area,
@@ -64,11 +65,12 @@ type Comparison = {
   details: Record<string, unknown>;
 };
 
+const BOOK = MLIVE_COLOURS.longGame.book;
 const COLORS: Record<string, string> = {
-  "STATIC-NEXT": "#8B8792",
-  "RADAR-NEXT": "#C8430D",
-  "STATIC-MID": "#4050C4",
-  "RADAR-MID": "#0B7472",
+  "STATIC-NEXT": BOOK,
+  "RADAR-NEXT": BOOK,
+  "STATIC-MID": BOOK,
+  "RADAR-MID": BOOK,
 };
 
 const CHECK_NAMES: Record<string, string> = {
@@ -243,7 +245,7 @@ export function LongTermView() {
                       <XAxis dataKey="date" tickFormatter={shortDate} minTickGap={36} />
                       <YAxis domain={["auto", "auto"]} width={44} />
                       <Tooltip />
-                      {shownResults.map((row) => <Line key={row.variant} dataKey={row.variant} stroke={COLORS[row.variant]} dot={false} strokeWidth={row.variant.startsWith("RADAR") ? 2.4 : 1.4} />)}
+                      {shownResults.map((row) => <Line key={row.variant} dataKey={row.variant} stroke={COLORS[row.variant]} dot={false} strokeWidth={row.variant.startsWith("RADAR") ? 2.4 : 1.4} strokeDasharray={row.variant.startsWith("RADAR") ? "5 4" : undefined} strokeOpacity={row.variant.endsWith("NEXT") ? 0.45 : 1} />)}
                     </LineChart>
                   </ResponsiveContainer>
                 </ChartCard>
@@ -254,10 +256,10 @@ export function LongTermView() {
                       <XAxis dataKey="date" tickFormatter={shortDate} minTickGap={36} />
                       <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} width={40} />
                       <Tooltip />
-                      <Area type="monotone" dataKey="nifty50" stackId="weights" stroke="#4050C4" fill="#4050C4" />
-                      <Area type="monotone" dataKey="secondary" stackId="weights" stroke="#0B7472" fill="#0B7472" />
-                      <Area type="monotone" dataKey="gold" stackId="weights" stroke="#C89B16" fill="#C89B16" />
-                      <Area type="monotone" dataKey="liquid" stackId="weights" stroke="#8B8792" fill="#8B8792" />
+                      <Area type="monotone" dataKey="nifty50" stackId="weights" stroke={BOOK} fill={BOOK} fillOpacity={0.9} />
+                      <Area type="monotone" dataKey="secondary" stackId="weights" stroke={BOOK} fill={BOOK} fillOpacity={0.6} />
+                      <Area type="monotone" dataKey="gold" stackId="weights" stroke={BOOK} fill={BOOK} fillOpacity={0.35} />
+                      <Area type="monotone" dataKey="liquid" stackId="weights" stroke={BOOK} fill={BOOK} fillOpacity={0.15} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </ChartCard>
@@ -268,7 +270,7 @@ export function LongTermView() {
                       <XAxis dataKey="date" tickFormatter={shortDate} minTickGap={36} />
                       <YAxis tickFormatter={(value) => `${value}%`} width={44} />
                       <Tooltip />
-                      {shownResults.map((row) => <Line key={row.variant} dataKey={row.variant} stroke={COLORS[row.variant]} dot={false} strokeWidth={row.variant.startsWith("RADAR") ? 2.4 : 1.4} />)}
+                      {shownResults.map((row) => <Line key={row.variant} dataKey={row.variant} stroke={COLORS[row.variant]} dot={false} strokeWidth={row.variant.startsWith("RADAR") ? 2.4 : 1.4} strokeDasharray={row.variant.startsWith("RADAR") ? "5 4" : undefined} strokeOpacity={row.variant.endsWith("NEXT") ? 0.45 : 1} />)}
                     </LineChart>
                   </ResponsiveContainer>
                 </ChartCard>

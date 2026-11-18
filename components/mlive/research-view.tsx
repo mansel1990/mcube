@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Bar, BarChart, Cell, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { istMinutes } from "@/lib/mlive/calendar";
+import { useIntradayRetired } from "./capabilities";
 import { byQuarter, RESEARCH_STRATEGIES, type ResearchBook, type ResearchSample } from "@/lib/mlive/research-bar";
 import {
   aboutGist,
@@ -98,13 +99,15 @@ type Payload = {
   building: { strategy: string; avgNetPct: number | null }[];
   heldback: { strategy: string; at: string | null }[];
   strategiesEnabled: string[];
+  retiredIntraday?: string | null;
   error?: string;
 };
 
 export function ResearchView() {
   const router = useRouter();
   const params = useSearchParams();
-  const book: ResearchBook = params.get("book") === "intraday" ? "intraday" : "swing";
+  const intradayOff = useIntradayRetired();
+  const book: ResearchBook = !intradayOff && params.get("book") === "intraday" ? "intraday" : "swing";
   const runRaw = params.get("run");
   const runId = runRaw && Number.isFinite(Number(runRaw)) ? Number(runRaw) : null;
   const [payload, setPayload] = useState<Payload | null>(null);
@@ -375,11 +378,18 @@ export function ResearchView() {
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <div className="seg">
             <button type="button" data-tone="swing" aria-pressed={book === "swing"} onClick={() => chooseBook("swing")}>Swing</button>
-            <button type="button" data-tone="intraday" aria-pressed={book === "intraday"} onClick={() => chooseBook("intraday")}>Intraday</button>
+            {!intradayOff && <button type="button" data-tone="intraday" aria-pressed={book === "intraday"} onClick={() => chooseBook("intraday")}>Intraday</button>}
           </div>
           <button type="button" className={`btn new-run${open ? " on" : ""}`} aria-expanded={open} disabled={Boolean(active) || busy} title={moving ?? undefined} onClick={() => setOpen((value) => !value)}>New run</button>
         </div>
       </div>
+
+      {intradayOff && payload?.retiredIntraday && (
+        <details className="card" style={{ marginTop: 16 }}>
+          <summary>Retired</summary>
+          <p>{payload.retiredIntraday}</p>
+        </details>
+      )}
 
       {runLoading && <p className="run-switch-status" role="status">Loading selected run…</p>}
 

@@ -3,6 +3,7 @@ import { Inter, Plus_Jakarta_Sans } from "next/font/google";
 import { requireMliveUser } from "@/lib/mlive/auth";
 import { isTradingDay, todayIst } from "@/lib/mlive/calendar";
 import { kiteSessionStatus } from "@/lib/mlive/kite-session";
+import { intradayRetired } from "@/lib/mlive/capabilities";
 import { settingsMap } from "@/lib/mlive/read";
 import { sql } from "@/lib/sql";
 import { getStocksSessionUsername } from "@/lib/stocks/admin";
@@ -42,6 +43,7 @@ export default async function MliveLayout({ children }: { children: React.ReactN
         status={String(stateRows[0]?.status ?? "active")}
         mode={String(stateRows[0]?.mode ?? "approve")}
         marketOpen={isTradingDay(todayIst(), holidays)}
+        intradayRetired={intradayRetired(settings.intraday_retired)}
       >{children}</MliveFrame>
     </div>
   );

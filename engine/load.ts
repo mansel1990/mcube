@@ -35,6 +35,7 @@ export type MliveSettings = {
   intradayExitTime: string;
   intradayShort: boolean;
   intradayLeverage: number;
+  intradayRetired: boolean;
 };
 
 export type MliveState = {
@@ -93,6 +94,7 @@ export async function loadSettings(): Promise<MliveSettings> {
     intradayExitTime: String(map.get("intraday_exit_time") ?? "15:10"),
     intradayShort: map.get("intraday_short") !== false,
     intradayLeverage: 1,
+    intradayRetired: map.get("intraday_retired") === true || map.get("intraday_retired") === "true",
   };
 }
 

@@ -3,9 +3,10 @@ import type { ResearchIdentity } from "@/lib/mlive/research-page";
 import type { ResearchArgs } from "../backtest/args";
 import { q } from "../db";
 import { assertNoUnexplainedJumps } from "./audit";
-import { loadLongtermDataset, longtermSeriesPoints, LONGTERM_BUILDING_FROM, LONGTERM_BUILDING_TO, LONGTERM_HELD_BACK_FROM } from "./data";
-import { heldbackDatasetWindow, isFullLongtermSet, loadGuardedHeldbackDataset } from "./heldback";
-import { CORRECTED_BUILDING_LINK, LONGTERM_FROZEN_V2 } from "./rules";
+import { latestCommonCompleteSession, loadLongtermDataset, longtermSeriesPoints, LONGTERM_BUILDING_FROM, LONGTERM_BUILDING_TO, LONGTERM_HELD_BACK_FROM } from "./data";
+import { heldbackDatasetWindow, inspectionHeldbackWindow, isFullLongtermSet, loadGuardedHeldbackDataset } from "./heldback";
+import { frozenV3OverrideCommand, overrideConsumedByCommit, overrideRecord } from "./override";
+import { CORRECTED_BUILDING_LINK, LONGTERM_FROZEN_V2, LONGTERM_FROZEN_V3 } from "./rules";
 import {
   compareLongterm,
   liveDesignConclusion,
@@ -24,21 +25,29 @@ export async function executeLongtermResearch(
   if (args.grid) throw new Error("Long Game parameter grids are forbidden.");
   const variants = selectedVariants(args.variants);
   const heldback = args.sample === "heldback";
+  const inspection = frozenV3OverrideCommand({
+    book: "longterm",
+    sample: args.sample,
+    confirmHeldback: args.confirmHeldback,
+    ownerOverride: args.ownerOverride,
+    grid: args.grid,
+    variants,
+  });
   if (heldback) {
     if (!args.confirmHeldback) throw new Error("Long Game held-back requires --confirm-heldback.");
-    if (!isFullLongtermSet(variants)) {
+    if (!inspection && !isFullLongtermSet(variants)) {
       throw new Error("Long Game held-back runs exactly all four frozen variants in one shared window.");
     }
   }
   const dataset = heldback
-    ? await loadGuardedHeldbackDataset(args.force)
+    ? await loadGuardedHeldbackDataset(args.force, args.ownerOverride, runId)
     : await loadLongtermDataset("building");
   if (!heldback && dataset.dates.some((date) => date >= LONGTERM_HELD_BACK_FROM)) {
     throw new Error("Long Game data loader exposed held-back dates.");
   }
   if (!heldback && isFullLongtermSet(variants)) assertNoUnexplainedJumps(longtermSeriesPoints(dataset));
   const window = heldback
-    ? heldbackDatasetWindow(dataset)
+    ? (inspection ? inspectionHeldbackWindow(latestCommonCompleteSession(dataset.dates)) : heldbackDatasetWindow(dataset))
     : { from: LONGTERM_BUILDING_FROM, to: LONGTERM_BUILDING_TO };
   const simulation: LongtermSimulationOptions = heldback ? { window, sample: "heldback" } : {};
   console.log(`research sample ${heldback ? "heldback" : "building"} window ${window.from} through ${window.to}`);
@@ -51,7 +60,8 @@ export async function executeLongtermResearch(
     capital: { fund: 100_000, contributions: 0, withdrawals: 0 },
     researchOnly: true,
     liveActivation: false,
-    rulesVersion: LONGTERM_FROZEN_V2.version,
+    rulesVersion: inspection ? LONGTERM_FROZEN_V3.version : LONGTERM_FROZEN_V2.version,
+    ...(inspection ? { ownerOverride: LONGTERM_FROZEN_V3.version, inspectionOnly: true } : {}),
     identity,
     ...(corrected ? { supersedesRunIds: corrected.supersedesRunIds, supersedesReason: corrected.reason } : {}),
   };
@@ -101,6 +111,9 @@ export async function executeLongtermResearch(
       ]
     );
   }
+  if (inspection && !overrideConsumedByCommit("ok", [...results.keys()])) {
+    throw new Error("The override is not consumed until both STATIC-MID and RADAR-MID results are stored.");
+  }
   const sampleDates = dataset.dates.filter((date) => date >= window.from && date <= window.to);
   const note = heldback
     ? `${comparisons.map((row) => `${row.radar} ${liveDesignConclusion(row.qualified)}`).join(". ")}. Research only. No candidate was activated.`
@@ -118,10 +131,11 @@ export async function executeLongtermResearch(
         dataFingerprint: dataset.fingerprint,
         comparisons,
         conclusions,
-        rules: LONGTERM_FROZEN_V2,
+        rules: inspection ? LONGTERM_FROZEN_V3 : LONGTERM_FROZEN_V2,
         researchOnly: true,
         liveActivation: false,
         heldbackInspected: heldback,
+        ...(inspection ? { override: overrideRecord(true) } : {}),
         ...(corrected ? { supersedesRunIds: corrected.supersedesRunIds, supersedesReason: corrected.reason } : {}),
       }),
       engineSha(),

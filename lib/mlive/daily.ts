@@ -6,6 +6,7 @@ import type { NiftyReason } from "./nifty-reason";
 import { loadSwingToday, swingBuysOn } from "./read";
 import { beforeOpenSentence, buyWindowReading, decisionRows, decisionSkips, firstLoginClock, isHeldSkip, noBuyReason, skipDetails, verdictSentence, type DecisionRow, type SkipRow } from "./verdict";
 import { markStep, minutesOf, withNext, type StepMark } from "./schedule";
+import { intradayRetired } from "./capabilities";
 import { sql } from "../sql";
 
 export type RecentDay = { day: string; netPct: number | null; niftyPct: number | null; blurb: string };
@@ -217,9 +218,11 @@ export async function dailyReport(requested: string | null, now = new Date()): P
     { label: "Cash used today", detail: moneySpan(cashUsed, cashCap), ok: cashCap <= 0 || cashUsed <= cashCap + 1 },
     { label: "Holdings with a stop", detail: swingOpen === 0 ? "No holdings" : `${stopped} of ${swingOpen}`, ok: swingOpen === 0 || stopped >= swingOpen },
     { label: "Breaker", detail: `${drawdown.toFixed(1)}%`, ok: drawdown < breaker },
-    intra === 0
-      ? { label: "Intraday", detail: "Not live yet", ok: null }
-      : { label: "Intraday", detail: `Flat by ${exitAt}`, ok: day < today || minutes < minutesOf(exitAt) },
+    ...(intradayRetired(setting.intraday_retired) ? [] : [
+      intra === 0
+        ? { label: "Intraday", detail: "Not live yet", ok: null }
+        : { label: "Intraday", detail: `Flat by ${exitAt}`, ok: day < today || minutes < minutesOf(exitAt) },
+    ]),
   ];
   const broken = rules.filter((rule) => rule.ok === false).length;
   const past = day < today || (day === today && minutes >= 19 * 60 + 50);

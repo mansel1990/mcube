@@ -30,6 +30,15 @@ export const SCHEDULE: ScheduleStep[] = [
 
 export const SCHEDULE_KINDS = SCHEDULE.map((step) => step.kind);
 
+/** Retired Intraday keeps the daily candle job and drops the 5-minute wording. No Intraday-only step is added. */
+export function scheduleForRetirement(retired: boolean): ScheduleStep[] {
+  return SCHEDULE.filter((step) => step.kind !== "intraday").map((step) => (
+    step.kind === "market-daily" && retired
+      ? { ...step, description: "Stores today's daily candles, including NIFTY 50." }
+      : step
+  ));
+}
+
 export function minutesOf(clock: string): number {
   const [hour, minute] = clock.split(":").map(Number);
   return hour * 60 + (minute || 0);

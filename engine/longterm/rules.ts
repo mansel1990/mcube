@@ -27,6 +27,44 @@ export const LONGTERM_FROZEN_V2 = {
   },
 } as const;
 
+/**
+ * Owner decisions recorded on 2026-11-18 after run 15 failed the building gate.
+ * v2 constants stay in place so earlier runs keep their original interpretation.
+ * The override authorizes one held-back inspection. It does not turn a failed check into a pass.
+ */
+export const LONGTERM_FROZEN_V3 = {
+  version: "longgame-frozen-v3",
+  decidedOn: "2026-11-18",
+  decider: "owner",
+  core: "STATIC-MID",
+  radar: "RADAR-MID",
+  coreNeedsHeldback: false,
+  convertsFailToPass: false,
+  inspectionOnly: true,
+  secondaryDefault: "mid",
+  run15: {
+    id: 15,
+    failedBuildingGate: true,
+    staticMidAfterTaxCagrPct: 11.28,
+    radarMidAfterTaxCagrPct: 10.33,
+    radarMidConcentrationPct: 43.9,
+    staticMidBuildingDrawdownPct: 23.6,
+    radarMidBuildingDrawdownPct: 12.4,
+  },
+  ownerReason:
+    "Our philosophy caps a fall at about 15%, set before these results; STATIC's building drawdown was 23.6% and RADAR-MID's 12.4%.",
+  originalFailedBuildingChecks: [
+    "Run 15 failed the building gate.",
+    "STATIC-MID building drawdown was 23.6%.",
+    "The override does not convert any failed check to a pass.",
+  ],
+  radarActivation: {
+    maxDrawdownPct: 15,
+    mustBeatStaticDrawdown: true,
+    sameRunVariants: ["STATIC-MID", "RADAR-MID"] as const,
+  },
+} as const;
+
 export const CORRECTED_BUILDING_LINK = {
   supersedesRunIds: [9, 10] as const,
   reason:
