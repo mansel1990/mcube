@@ -8,6 +8,7 @@ import { heldbackBlock, RESEARCH_STRATEGIES, type ResearchBook, type ResearchSam
 import {
   dayMonth,
   duplicateBlock,
+  effectiveStrategiesEnabled,
   identityFromRun,
   makeIdentity,
   queueBlock,
@@ -45,7 +46,7 @@ export async function GET(request: NextRequest) {
        LIMIT 30`;
     const selected = runParam ? runs.find((row) => String(row.id) === runParam) ?? runs[0] : runs[0];
     const runId = selected ? Number(selected.id) : null;
-    const [results, overlap, live, heldback, building] = await Promise.all([
+    const [results, overlap, live, heldback, building, strategySetting] = await Promise.all([
       runId == null
         ? Promise.resolve([])
         : sql`
@@ -81,6 +82,7 @@ export async function GET(request: NextRequest) {
           JOIN mlive.mlive_research_runs u ON u.id = r.run_id
          WHERE u.book = ${book} AND u.sample = 'building' AND u.status = 'ok' AND r.is_default
          ORDER BY r.strategy, u.id DESC`,
+      sql`SELECT value FROM mlive.mlive_settings WHERE key = 'strategies_enabled'`,
     ]);
     const sample = selected ? String((selected as RunRow).sample) : "";
     const note = selected ? String((selected as RunRow).note ?? "") : "";
@@ -118,6 +120,7 @@ export async function GET(request: NextRequest) {
         strategy: String(row.strategy),
         at: stamp(row.finished_at),
       })),
+      strategiesEnabled: effectiveStrategiesEnabled(strategySetting[0]?.value),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

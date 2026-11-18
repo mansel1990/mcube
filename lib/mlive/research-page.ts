@@ -84,19 +84,47 @@ export function variantName(key: string): string {
   return RESEARCH_VARIANT_NAMES[key] ?? key;
 }
 
-export function isLiveStrategy(book: ResearchBook, key: string, variant?: string | null): boolean {
-  void book;
-  void key;
-  void variant;
-  return false;
+const KNOWN_STRATEGIES = new Set(["rs", "ema", "momentum"]);
+
+/**
+ * Strategies the engine will actually trade. Matches `loadSettings`: a missing
+ * value stays on the rs/ema default, and unknown names are ignored.
+ */
+export function effectiveStrategiesEnabled(value: unknown): string[] {
+  const parsed = typeof value === "string" ? parsedJson(value) : value;
+  if (!Array.isArray(parsed)) return ["rs", "ema"];
+  return parsed.filter((name): name is string => typeof name === "string" && KNOWN_STRATEGIES.has(name));
 }
 
-/** Frozen Momentum stays on the page with its history. It is not live and not a recommendation. */
+/** The frozen M10-6 card. Its research result is never a pass or a recommendation. */
 export function isParkedResearch(book: ResearchBook, key: string, variant?: string | null): boolean {
   return book === "swing" && key === "momentum" && (variant == null || variant === "M10-6");
 }
 
+/** Live only when the effective strategies_enabled list includes momentum. */
+export function isLiveStrategy(
+  book: ResearchBook,
+  key: string,
+  variant?: string | null,
+  enabled: readonly string[] = [],
+): boolean {
+  return isParkedResearch(book, key, variant) && enabled.includes("momentum");
+}
+
 export const PARKED_RESEARCH = "Parked · research only";
+export const LIVE_PILOT_STATUS = "Live pilot · owner's choice · did not pass all tests";
+export const LIVE_PILOT_LINE = "No strategy passed every test. Momentum M10-6 runs as a live pilot by owner's choice.";
+
+/** Chip for the frozen M10-6 card. Null for every other strategy. */
+export function researchCardStatus(
+  book: ResearchBook,
+  key: string,
+  variant: string | null | undefined,
+  enabled: readonly string[],
+): string | null {
+  if (!isParkedResearch(book, key, variant)) return null;
+  return isLiveStrategy(book, key, variant, enabled) ? LIVE_PILOT_STATUS : PARKED_RESEARCH;
+}
 
 export function readResearchSample(value: unknown): ResearchSample {
   if (value === "heldback" || value === "diagnostic" || value === "building") return value;
@@ -310,19 +338,23 @@ export function verdictFor(input: {
   book: ResearchBook;
   runs: number;
   sample: ResearchSample | null;
-  rows: { name: string; passed: boolean; fails: number; parked?: boolean }[];
+  /** Effective strategies_enabled. Momentum on this list is a live pilot, not a research pass. */
+  strategiesEnabled?: readonly string[];
+  rows: { name: string; passed: boolean; fails: number; parked?: boolean; pilot?: boolean }[];
 }): { tone: "empty" | "open" | "passed"; text: string } {
   if (input.sample === "diagnostic") return { tone: "open", text: DIAGNOSTIC_VERDICT };
   if (input.book === "intraday" && input.runs === 0) return { tone: "empty", text: INTRADAY_EMPTY };
   if (input.rows.length === 0) return { tone: "empty", text: "Building sample not run yet." };
-  const parkedNote = input.rows.some((row) => row.parked) ? ` Momentum is ${PARKED_RESEARCH}, not a recommendation.` : "";
-  const active = input.rows.filter((row) => !row.parked);
+  const momentumOn = input.book === "swing" && (input.strategiesEnabled ?? []).includes("momentum");
+  const parkedNote = !momentumOn && input.rows.some((row) => row.parked) ? ` Momentum is ${PARKED_RESEARCH}, not a recommendation.` : "";
+  const active = input.rows.filter((row) => !row.parked && !row.pilot);
   const passed = active.filter((row) => row.passed);
   if (passed.length > 0) {
     const noun = passed.length === 1 ? "strategy" : "strategies";
     const next = input.sample === "heldback" ? "" : " Next step: held-back test.";
     return { tone: "passed", text: `${passed.length} ${noun} passed: ${joinNames(passed.map((row) => row.name))}.${next}${parkedNote}` };
   }
+  if (momentumOn) return { tone: "open", text: LIVE_PILOT_LINE };
   const ranked = [...active].sort((a, b) => a.fails - b.fails || a.name.localeCompare(b.name));
   const close = ranked.filter((row) => row.fails >= 1 && row.fails <= 2);
   const listed = close.length > 0 ? close : ranked.slice(0, 2);
@@ -567,6 +599,14 @@ function uniqueSorted(values: readonly string[]): string[] {
 
 function sameList(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+function parsedJson(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
 }
 
 function stringsOf(value: unknown): string[] {

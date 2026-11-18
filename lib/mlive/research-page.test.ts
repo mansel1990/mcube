@@ -12,9 +12,11 @@ import {
   progressLine,
   queueBlock,
   heldbackQueueBlock,
+  effectiveStrategiesEnabled,
   identityFromRun,
   isLiveStrategy,
   readIdentity,
+  researchCardStatus,
   rebaseToCapital,
   researchStartLine,
   resultBand,
@@ -121,6 +123,39 @@ describe("research page copy", () => {
     expect(variantName("future-variant")).toBe("future-variant");
     expect(isLiveStrategy("swing", "momentum", "M10-6")).toBe(false);
     expect(isLiveStrategy("swing", "momentum", "M10-10")).toBe(false);
+  });
+
+  it("derives the M10-6 card from strategies_enabled and does not call the pilot passed", () => {
+    expect(effectiveStrategiesEnabled(["momentum"])).toEqual(["momentum"]);
+    expect(effectiveStrategiesEnabled('["momentum","nope"]')).toEqual(["momentum"]);
+    expect(effectiveStrategiesEnabled(undefined)).toEqual(["rs", "ema"]);
+    expect(researchCardStatus("swing", "momentum", "M10-6", ["momentum"])).toBe(
+      "Live pilot · owner's choice · did not pass all tests",
+    );
+    expect(researchCardStatus("swing", "momentum", "M10-6", ["rs", "ema"])).toBe("Parked · research only");
+    expect(researchCardStatus("swing", "momentum", "M10-10", ["momentum"])).toBeNull();
+    expect(isLiveStrategy("swing", "momentum", "M10-6", ["momentum"])).toBe(true);
+    expect(isLiveStrategy("swing", "momentum", "M10-6", ["rs"])).toBe(false);
+
+    const rows = [{ name: "Momentum XI — Anchor", passed: true, fails: 2, parked: true }];
+    const base = { book: "swing" as const, runs: 1, sample: "heldback" as const, rows };
+    const live = verdictFor({ ...base, strategiesEnabled: ["momentum"] });
+    const parked = verdictFor({ ...base, strategiesEnabled: ["rs", "ema"] });
+    expect(live.tone).toBe("open");
+    expect(live.text).toBe("No strategy passed every test. Momentum M10-6 runs as a live pilot by owner's choice.");
+    expect(live.text).not.toMatch(/recommended/);
+    expect(parked.text).toBe("No strategy is recommended. Momentum is Parked · research only, not a recommendation.");
+    expect(bandCounts([{ band: resultBand(false, rows[0].fails) }])).toEqual({ passed: 0, close: 1, failed: 0 });
+    expect(verdictFor({
+      book: "swing",
+      runs: 1,
+      sample: "building",
+      strategiesEnabled: ["momentum"],
+      rows: [
+        { name: "RS Resilience", passed: true, fails: 0 },
+        { name: "Momentum XI — Anchor", passed: true, fails: 0, pilot: true },
+      ],
+    }).text).toBe("1 strategy passed: RS Resilience. Next step: held-back test.");
   });
 
   it("names the closest strategies when none have passed", () => {

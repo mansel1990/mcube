@@ -14,9 +14,11 @@ import {
   duplicateBlock,
   heldbackQueueBlock,
   identityFromRun,
+  isLiveStrategy,
   isParkedResearch,
   makeIdentity,
   PARKED_RESEARCH,
+  researchCardStatus,
   overlapPairs,
   runClock,
   sampleSpan,
@@ -95,6 +97,7 @@ type Payload = {
   live: { strategy: string; trades: number; avgNet: number | null; since: string | null }[];
   building: { strategy: string; avgNetPct: number | null }[];
   heldback: { strategy: string; at: string | null }[];
+  strategiesEnabled: string[];
   error?: string;
 };
 
@@ -200,16 +203,23 @@ export function ResearchView() {
     band: resultBand(row.passed, row.failReasons.length),
   })));
   const counts = bandCounts(cards);
+  const enabled = payload?.strategiesEnabled ?? [];
   const verdict = verdictFor({
     book,
     runs: payload?.runs.length ?? 0,
     sample: payload?.run ? runSample : null,
-    rows: cards.map((row) => ({
-      name: row.name,
-      passed: row.passed && !isParkedResearch(book, row.strategy, row.variantId),
-      fails: row.failReasons.length,
-      parked: isParkedResearch(book, row.strategy, row.variantId),
-    })),
+    strategiesEnabled: enabled,
+    rows: cards.map((row) => {
+      const anchor = isParkedResearch(book, row.strategy, row.variantId);
+      const pilot = isLiveStrategy(book, row.strategy, row.variantId, enabled);
+      return {
+        name: row.name,
+        passed: row.passed && !anchor,
+        fails: row.failReasons.length,
+        parked: anchor && !pilot,
+        pilot,
+      };
+    }),
   });
   const stored = storedRuns(payload?.runs ?? []);
   const proposal = payload
@@ -441,7 +451,7 @@ export function ResearchView() {
           {cards.map((row) => {
             const fund = Number(objectOf(payload?.run?.params.capital).fund);
             const halves = span ? storedHalfYears(equityPoints(row.equity), fund, span.from, span.to) : null;
-            const parked = isParkedResearch(book, row.strategy, row.variantId);
+            const status = researchCardStatus(book, row.strategy, row.variantId, enabled);
             const diagnostic = runSample === "diagnostic";
             const tests = passRows({
               profitFactor: row.profitFactor,
@@ -479,7 +489,7 @@ export function ResearchView() {
                     <div className="idea">{strategyIdea(row.strategy)}</div>
                   </div>
                   <div className="research-pills">
-                    {diagnostic ? <span className="chip quiet">Diagnostic</span> : parked ? <span className="chip wait">{PARKED_RESEARCH}</span> : (
+                    {diagnostic ? <span className="chip quiet">Diagnostic</span> : status ? <span className={`chip ${status === PARKED_RESEARCH ? "wait" : "live"}`}>{status}</span> : (
                       <span className={`chip ${row.band === "passed" ? "ok" : row.band === "close" ? "wait" : "bad"}`}>
                         {row.band === "passed" ? "Passed" : row.band === "close" ? "Close" : "Failed"}
                       </span>
