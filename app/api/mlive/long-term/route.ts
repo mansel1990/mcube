@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireMliveSession } from "@/lib/mlive/auth";
-import { LONGTERM_FROZEN_V2 } from "@/engine/longterm/rules";
+import { heldbackPairs } from "@/engine/longterm/heldback";
 import { longtermV2InputFromStored, scoreLongtermV2 } from "@/engine/longterm/score";
+import { loadPendingProposal, proposalView, readProposalGate } from "@/engine/longterm/proposal-db";
+import { buildingGateFromPairs, heldbackStatusForVariant, latestValidRun, SUPERSEDED_LONGTERM_LABEL, SUPERSEDED_LONGTERM_RUNS } from "@/lib/mlive/long-game-status";
 import { sql } from "@/lib/sql";
 
 type RunRow = {
@@ -29,33 +31,54 @@ export async function GET() {
              params, data, error, note, engine_sha
         FROM mlive.mlive_research_runs
        WHERE book = 'longterm'
-         AND status IN ('ok', 'queued', 'running')
-       ORDER BY CASE WHEN status IN ('queued', 'running') THEN 0 ELSE 1 END, id DESC
-       LIMIT 1`;
-    const selected = runs[0] as RunRow | undefined;
-    const runId = selected ? Number(selected.id) : null;
-    const rows = runId == null
-      ? []
-      : await sql`
-          SELECT variant, control_variant, metrics, equity, allocations, events,
-                 stresses, provenance, passed, fail_reasons
-            FROM mlive.mlive_longterm_results
-           WHERE run_id = ${runId}
-           ORDER BY CASE variant
-             WHEN 'STATIC-NEXT' THEN 1
-             WHEN 'RADAR-NEXT' THEN 2
-             WHEN 'STATIC-MID' THEN 3
-             WHEN 'RADAR-MID' THEN 4
-             ELSE 5
-           END`;
-
-    const results = (rows as Record<string, unknown>[]).map(mapResult);
+       ORDER BY id DESC
+       LIMIT 40` as RunRow[];
+    const listed = runs.map((row) => ({ ...row, id: Number(row.id), sample: String(row.sample), status: String(row.status) }));
+    const buildingRef = latestValidRun(listed, "building");
+    const heldRef = latestValidRun(listed, "heldback");
+    const buildingRows = buildingRef ? await resultRows(buildingRef.id) : [];
+    const heldRows = heldRef ? await resultRows(heldRef.id) : [];
+    const building = buildingRows.map(mapResult);
+    const heldback = heldRows.map(mapResult);
+    const gate = buildingRef ? buildingGateFromPairs(heldbackPairs(building)) : null;
+    const variants = ["STATIC-NEXT", "RADAR-NEXT", "STATIC-MID", "RADAR-MID"];
+    const heldbackStatus = variants.map((variant) => ({
+      variant,
+      ...heldbackStatusForVariant({
+        variant,
+        conclusion: conclusionOf(heldback.find((row) => row.variant === variant)?.metrics),
+        gate,
+      }),
+    }));
+    let proposal = null;
+    let live = false;
+    try {
+      const activation = await readProposalGate();
+      live = activation.enabled.includes("longterm");
+      const pending = await loadPendingProposal();
+      proposal = pending ? proposalView(pending) : null;
+    } catch {
+      proposal = null;
+    }
+    const buildingRun = buildingRef ? runs.find((row) => Number(row.id) === buildingRef.id) : undefined;
     return NextResponse.json({
-      run: selected ? mapRun(selected) : null,
-      results,
-      comparisons: rescore(results),
-      rules: LONGTERM_FROZEN_V2,
-      locked: true,
+      run: buildingRun ? mapRun(buildingRun) : null,
+      results: building,
+      comparisons: rescore(building),
+      heldback: heldRef ? {
+        run: mapRun(runs.find((row) => Number(row.id) === heldRef.id) as RunRow),
+        results: heldback,
+        comparisons: rescore(heldback),
+      } : null,
+      heldbackStatus,
+      superseded: {
+        label: SUPERSEDED_LONGTERM_LABEL,
+        runIds: [...SUPERSEDED_LONGTERM_RUNS],
+        correctedRunId: buildingRef?.id ?? null,
+      },
+      live,
+      proposal,
+      locked: !live,
     }, {
       headers: { "Cache-Control": "private, no-store" },
     });
@@ -69,6 +92,27 @@ export async function GET() {
     }
     return NextResponse.json({ error: "Long Game research could not be loaded." }, { status: 500 });
   }
+}
+
+async function resultRows(runId: number): Promise<Record<string, unknown>[]> {
+  const rows = await sql`
+    SELECT variant, control_variant, metrics, equity, allocations, events,
+           stresses, provenance, passed, fail_reasons
+      FROM mlive.mlive_longterm_results
+     WHERE run_id = ${runId}
+     ORDER BY CASE variant
+       WHEN 'STATIC-NEXT' THEN 1
+       WHEN 'RADAR-NEXT' THEN 2
+       WHEN 'STATIC-MID' THEN 3
+       WHEN 'RADAR-MID' THEN 4
+       ELSE 5
+     END`;
+  return rows as unknown as Record<string, unknown>[];
+}
+
+function conclusionOf(metrics: Record<string, unknown> | undefined): string | null {
+  const value = metrics?.conclusion;
+  return value === "qualifies for live design" || value === "does not qualify" ? value : null;
 }
 
 function mapRun(row: RunRow) {

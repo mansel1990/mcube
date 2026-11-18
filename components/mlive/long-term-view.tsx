@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { LongtermProposalBanner, type LongtermProposalView } from "./longterm-proposal-banner";
 import {
   Area,
   AreaChart,
@@ -38,23 +39,21 @@ type Result = {
   failReasons: string[];
 };
 
+type HeldbackStatus = { variant: string; label: string; detail: string };
+
+type SampleBundle = { run: Run | null; results: Result[]; comparisons?: Comparison[] };
+
 type Payload = {
   run: Run | null;
   results: Result[];
   comparisons?: Comparison[];
-  rules?: RulesRecord;
+  heldback?: SampleBundle | null;
+  heldbackStatus?: HeldbackStatus[];
+  superseded?: { label: string; runIds: number[]; correctedRunId: number | null };
+  live?: boolean;
+  proposal?: LongtermProposalView | null;
   locked: boolean;
   error?: string;
-};
-
-type RulesRecord = {
-  version: string;
-  decidedOn: string;
-  decider: string;
-  eventsPerYearMax: number;
-  concentrationMaxShare: number;
-  reasons: Record<string, string>;
-  concentrationOverride?: { effect?: string; convertsFailToPass?: boolean };
 };
 
 type Comparison = {
@@ -94,6 +93,7 @@ export function LongTermView() {
   const [payload, setPayload] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState("");
+  const [sample, setSample] = useState<"building" | "heldback">("building");
 
   useEffect(() => {
     let cancelled = false;
@@ -119,12 +119,22 @@ export function LongTermView() {
     };
   }, []);
 
-  const result = payload?.results.find((row) => row.variant === selected) ?? payload?.results[0] ?? null;
-  const storedComparisons = arrayOf(payload?.run?.data.comparisons).map(comparisonOf).filter((row): row is Comparison => row !== null);
-  const comparisons = payload?.comparisons?.length ? payload.comparisons : storedComparisons;
-  const freshness = freshnessOf(payload, result);
-  const equity = useMemo(() => combineSeries(payload?.results ?? [], "equity", "value"), [payload]);
-  const drawdowns = useMemo(() => combineSeries(payload?.results ?? [], "equity", "drawdownPct"), [payload]);
+  const shown = sample === "heldback" && payload?.heldback ? payload.heldback : null;
+  const shownResults = useMemo(
+    () => (shown?.results?.length ? shown.results : payload?.results ?? []),
+    [shown, payload],
+  );
+  const shownRun = shown?.run ?? payload?.run ?? null;
+  const result = shownResults.find((row) => row.variant === selected) ?? shownResults[0] ?? null;
+  const storedComparisons = arrayOf((shown?.run ?? payload?.run)?.data.comparisons).map(comparisonOf).filter((row): row is Comparison => row !== null);
+  const comparisons = shown?.comparisons?.length
+    ? shown.comparisons
+    : payload?.comparisons?.length
+      ? payload.comparisons
+      : storedComparisons;
+  const freshness = freshnessOf(shownRun, result);
+  const equity = useMemo(() => combineSeries(shownResults, "equity", "value"), [shownResults]);
+  const drawdowns = useMemo(() => combineSeries(shownResults, "equity", "drawdownPct"), [shownResults]);
   const allocations = useMemo(() => allocationSeries(result), [result]);
 
   return (
@@ -133,7 +143,7 @@ export function LongTermView() {
         <div>
           <div className="long-title-row">
             <h1>Long Game</h1>
-            <span className="chip long-research">Research only · not activated</span>
+            {payload?.live ? <span className="chip ok">Live</span> : <span className="chip long-research">Research only · not activated</span>}
           </div>
           <p className="sub">Long-term ETF and gold opportunities</p>
         </div>
@@ -143,35 +153,41 @@ export function LongTermView() {
         </button>
       </header>
 
-      <div className="status-banner wait long-lock" role="status">
-        <b>No live recommendation. Long Game is still being researched.</b>
-        <span>Building-sample results cannot place orders or change the live book.</span>
-      </div>
+      {payload?.live ? null : (
+        <div className="status-banner wait long-lock" role="status">
+          <b>No live recommendation. Long Game is still being researched.</b>
+          <span>Building-sample results cannot place orders or change the live book.</span>
+        </div>
+      )}
+      {payload?.proposal ? <LongtermProposalBanner proposal={payload.proposal} onDone={() => window.location.reload()} /> : null}
 
       {error ? <StateCard title="Could not load Long Game" detail={error} /> : !payload ? (
         <StateCard title="Loading Long Game…" detail="Reading the latest research run." loading />
-      ) : !payload.run ? (
+      ) : !shownRun ? (
         <>
-          {payload.rules && <RulesCard rules={payload.rules} />}
           <StateCard title="No research run yet" detail="Run the frozen Long Game building sample to populate this page." />
+          <SupersededNote correctedRunId={payload.superseded?.correctedRunId ?? null} />
         </>
       ) : (
         <>
           <div className={`long-fresh ${freshness.stale ? "stale" : ""}`}>
             <span><b>Data through</b> {freshness.dataDate}</span>
             <span><b>Research run</b> {freshness.runDate}</span>
-            <span><b>Status</b> {runStatus(payload.run.status)}</span>
+            <span><b>Status</b> {runStatus(shownRun.status)}</span>
             {freshness.stale && <strong>Stale research — refresh the source data and run again before drawing conclusions.</strong>}
           </div>
-          {payload.rules && <RulesCard rules={payload.rules} />}
+          <div className="long-variants" aria-label="Choose a sample">
+            <button type="button" aria-pressed={sample === "building"} onClick={() => setSample("building")}>Building</button>
+            <button type="button" aria-pressed={sample === "heldback"} onClick={() => setSample("heldback")} disabled={!payload.heldback}>Held-back</button>
+          </div>
 
-          {payload.results.length === 0 ? (
+          {shownResults.length === 0 ? (
             <StateCard
-              title={payload.run.status === "queued" || payload.run.status === "running" ? "Research is in progress" : "No saved results"}
-              detail={payload.run.status === "queued" || payload.run.status === "running"
+              title={shownRun.status === "queued" || shownRun.status === "running" ? "Research is in progress" : "No saved results"}
+              detail={shownRun.status === "queued" || shownRun.status === "running"
                 ? "Results will appear after the active run completes."
-                : "The latest run has no Long Game result rows."}
-              loading={payload.run.status === "queued" || payload.run.status === "running"}
+                : "The latest valid run for this sample has no Long Game result rows."}
+              loading={shownRun.status === "queued" || shownRun.status === "running"}
             />
           ) : (
             <>
@@ -195,38 +211,26 @@ export function LongTermView() {
 
               <section className="sec">
                 <div className="sec-h">
-                  <div><h2>Variant comparison</h2><p className="sub">Frozen building sample; returns are not forecasts.</p></div>
-                  <div className="long-variants" aria-label="Choose a variant">
-                    {payload.results.map((row) => (
-                      <button
-                        type="button"
-                        key={row.variant}
-                        aria-pressed={row.variant === result?.variant}
-                        onClick={() => setSelected(row.variant)}
-                      >
-                        {variantLabel(row.variant)}
-                      </button>
-                    ))}
-                  </div>
+                  <div><h2>Variant comparison</h2><p className="sub">Latest valid run for this sample. Returns are not forecasts.</p></div>
                 </div>
-                <div className="long-metrics">
-                  {payload.results.map((row) => (
-                    <button
-                      type="button"
-                      className={`card long-variant ${row.variant === result?.variant ? "on" : ""}`}
-                      key={row.variant}
-                      onClick={() => setSelected(row.variant)}
-                    >
-                      <span className="long-variant-top">
-                        <b>{variantLabel(row.variant)}</b>
-                        {row.variant.startsWith("RADAR") && <span className={`chip ${conclusionOf(row) === "qualifies for live design" ? "ok" : "bad"}`}>{conclusionOf(row) ?? (row.passed ? "Passed" : "Not passed")}</span>}
-                      </span>
-                      <span><small>Backtest CAGR</small><strong>{percent(numberAt(row.metrics, "cagrPct"))}</strong></span>
-                      <span><small>After-tax CAGR</small><strong>{percent(numberAt(objectAt(row.stresses, "currentTax"), "cagrPct"))}</strong></span>
-                      <span><small>Max drawdown</small><strong className="down">{percent(numberAt(objectAt(row.metrics, "maxDrawdown"), "pct"))}</strong></span>
-                      <span><small>Ending value</small><strong>{money(numberAt(row.metrics, "endingValue"))}</strong></span>
-                      <span><small>Events / year</small><strong>{decimal(numberAt(row.metrics, "eventsPerYear"), 1)}</strong></span>
-                    </button>
+                <div id="corrected-run" className="long-pairs">
+                  {PAIRS.map(([radar, control]) => (
+                    <div className="long-pair" key={radar}>
+                      {[control, radar].map((name) => {
+                        const row = shownResults.find((item) => item.variant === name);
+                        if (!row) return null;
+                        return (
+                          <VariantCard
+                            key={name}
+                            row={row}
+                            comparison={comparisons.find((item) => item.radar === radar) ?? null}
+                            heldback={payload.heldbackStatus?.find((item) => item.variant === name) ?? null}
+                            selected={row.variant === result?.variant}
+                            onSelect={() => setSelected(row.variant)}
+                          />
+                        );
+                      })}
+                    </div>
                   ))}
                 </div>
               </section>
@@ -239,7 +243,7 @@ export function LongTermView() {
                       <XAxis dataKey="date" tickFormatter={shortDate} minTickGap={36} />
                       <YAxis domain={["auto", "auto"]} width={44} />
                       <Tooltip />
-                      {payload.results.map((row) => <Line key={row.variant} dataKey={row.variant} stroke={COLORS[row.variant]} dot={false} strokeWidth={row.variant.startsWith("RADAR") ? 2.4 : 1.4} />)}
+                      {shownResults.map((row) => <Line key={row.variant} dataKey={row.variant} stroke={COLORS[row.variant]} dot={false} strokeWidth={row.variant.startsWith("RADAR") ? 2.4 : 1.4} />)}
                     </LineChart>
                   </ResponsiveContainer>
                 </ChartCard>
@@ -264,14 +268,15 @@ export function LongTermView() {
                       <XAxis dataKey="date" tickFormatter={shortDate} minTickGap={36} />
                       <YAxis tickFormatter={(value) => `${value}%`} width={44} />
                       <Tooltip />
-                      {payload.results.map((row) => <Line key={row.variant} dataKey={row.variant} stroke={COLORS[row.variant]} dot={false} strokeWidth={row.variant.startsWith("RADAR") ? 2.4 : 1.4} />)}
+                      {shownResults.map((row) => <Line key={row.variant} dataKey={row.variant} stroke={COLORS[row.variant]} dot={false} strokeWidth={row.variant.startsWith("RADAR") ? 2.4 : 1.4} />)}
                     </LineChart>
                   </ResponsiveContainer>
                 </ChartCard>
               </section>
 
-              <Acceptance comparisons={comparisons} results={payload.results} />
-              {result && <ResearchDetail result={result} run={payload.run} />}
+              <Acceptance comparisons={comparisons} results={shownResults} />
+              {result && shownRun && <ResearchDetail result={result} run={shownRun} />}
+              <SupersededNote correctedRunId={payload.superseded?.correctedRunId ?? shownRun.id} />
             </>
           )}
         </>
@@ -280,19 +285,69 @@ export function LongTermView() {
   );
 }
 
-function RulesCard({ rules }: { rules: RulesRecord }) {
+const PAIRS = [
+  ["RADAR-NEXT", "STATIC-NEXT"],
+  ["RADAR-MID", "STATIC-MID"],
+] as const;
+
+function SupersededNote({ correctedRunId }: { correctedRunId: number | null }) {
   return (
-    <section className="card long-target">
-      <div>
-        <span className="lbl">{rules.version}</span>
-        <h2>Frozen rules</h2>
-        <p className="sub">Decided {rules.decidedOn} by {rules.decider}. Events per year at most {rules.eventsPerYearMax}. Concentration gate stays at {Math.round(rules.concentrationMaxShare * 100)}% and the inspection override does not turn a fail into a pass.</p>
-      </div>
-      <ul className="long-events">
-        {Object.values(rules.reasons).map((reason) => <li key={reason}><div><p>{reason}</p></div></li>)}
-      </ul>
-    </section>
+    <details className="card long-superseded">
+      <summary>Superseded: Gold BeES 1:100 split not normalized (2019-12-23)</summary>
+      <p className="sub">Runs 9 and 10. {correctedRunId ? <a href="#corrected-run">Open corrected run {correctedRunId}</a> : "The corrected run is not loaded yet."}</p>
+    </details>
   );
+}
+
+function VariantCard({
+  row,
+  comparison,
+  heldback,
+  selected,
+  onSelect,
+}: {
+  row: Result;
+  comparison: Comparison | null;
+  heldback: HeldbackStatus | null;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const drawdown = objectAt(row.metrics, "maxDrawdown");
+  const asset = comparison ? numberAt(comparison.details, "largestAssetProfitSharePct") : shareOf(row, "asset");
+  const year = comparison ? numberAt(comparison.details, "largestPositiveYearSharePct") : shareOf(row, "year");
+  const recovery = numberAt(drawdown, "daysUnderwater");
+  return (
+    <button type="button" className={`card long-variant ${selected ? "on" : ""}`} onClick={onSelect}>
+      <span className="long-variant-top">
+        <b>{variantLabel(row.variant)}</b>
+        <span className={`chip ${heldback?.label === "qualifies for live design" ? "ok" : "bad"}`}>{heldback?.label ?? "not run"}</span>
+      </span>
+      <span><small>CAGR pre-tax</small><strong>{percent(numberAt(row.metrics, "cagrPct"))}</strong></span>
+      <span><small>After-tax CAGR</small><strong>{percent(numberAt(objectAt(row.stresses, "currentTax"), "cagrPct"))}</strong></span>
+      <span><small>Max drawdown</small><strong className="down">{percent(numberAt(drawdown, "pct"))}</strong><small>{formatDate(String(drawdown.peakDate ?? ""))} to {formatDate(String(drawdown.troughDate ?? ""))}</small></span>
+      <span><small>Recovery days</small><strong>{drawdown.recoveryDate ? String(Math.round(recovery)) : "not recovered"}</strong></span>
+      <span><small>Events per year</small><strong>{decimal(numberAt(row.metrics, "eventsPerYear"), 1)}</strong></span>
+      <span><small>Largest asset / year</small><strong>{percent(asset)} / {percent(year)}</strong></span>
+      <ul className="long-card-checks">
+        {comparison ? Object.entries(comparison.checks).map(([name, passed]) => (
+          <li key={name}><span>{CHECK_NAMES[name] ?? words(name)}</span><b className={passed ? "up" : "down"}>{passed ? "Pass" : "Fail"}</b></li>
+        )) : <li><span>Checks</span><b>Unavailable</b></li>}
+      </ul>
+      {heldback?.detail ? <p className="sub">{heldback.detail}</p> : null}
+    </button>
+  );
+}
+
+function shareOf(row: Result, kind: "asset" | "year"): number {
+  if (kind === "year") {
+    const years = Object.values(objectAt(row.metrics, "calendarYearReturns")).map((value) => Math.max(0, Number(value) || 0));
+    const total = years.reduce((sum, value) => sum + value, 0);
+    return total > 0 ? (Math.max(...years) / total) * 100 : 0;
+  }
+  const contribution = objectAt(row.metrics, "contributionApprox");
+  const values = Object.values(contribution).map((value) => Math.max(0, Number(value) || 0));
+  const total = values.reduce((sum, value) => sum + value, 0);
+  return total > 0 ? (Math.max(...values, 0) / total) * 100 : 0;
 }
 
 function StateCard({ title, detail, loading = false }: { title: string; detail: string; loading?: boolean }) {
@@ -449,23 +504,17 @@ function allocationSeries(result: Result | null): Record<string, number | string
   });
 }
 
-function freshnessOf(payload: Payload | null, result: Result | null) {
+function freshnessOf(run: Run | null, result: Result | null) {
   const sample = objectAt(result?.metrics ?? {}, "sample");
-  const dataDate = String(payload?.run?.data.last ?? sample.to ?? "not recorded");
+  const dataDate = String(run?.data.last ?? sample.to ?? "not recorded");
   const provenanceDates = (result?.provenance ?? []).map(recordOf).map((row) => Date.parse(String(row.retrievedAt ?? ""))).filter(Number.isFinite);
-  const runDate = payload?.run?.finishedAt ?? payload?.run?.startedAt ?? payload?.run?.requestedAt;
+  const runDate = run?.finishedAt ?? run?.startedAt ?? run?.requestedAt;
   const checkedAt = provenanceDates.length ? Math.max(...provenanceDates) : Date.parse(runDate ?? "");
   return {
     dataDate: formatDate(dataDate),
     runDate: runDate ? formatDate(runDate) : "not recorded",
     stale: !Number.isFinite(checkedAt) || Date.now() - checkedAt > 45 * 86_400_000,
   };
-}
-
-function conclusionOf(row: Result): string | null {
-  const value = row.metrics.conclusion;
-  if (value === "qualifies for live design" || value === "does not qualify") return value;
-  return null;
 }
 
 function comparisonOf(value: unknown): Comparison | null {

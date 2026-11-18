@@ -25,6 +25,9 @@ describe("Long Game research-only surface", () => {
     expect(route).not.toContain("mlive_gtts");
     expect(route).not.toContain("strategies_enabled");
     expect(view).toContain("Known weakness: profit concentrated in");
+    expect(view).toContain("Superseded: Gold BeES 1:100 split not normalized (2019-12-23)");
+    expect(view).not.toContain("Frozen rules");
+    expect(view).not.toMatch(/\brecommended\b/);
     expect(view).toContain("After-tax CAGR");
     expect(view).toContain("No more than 12 events a year");
     expect(view).not.toMatch(/export\s+async\s+function\s+(POST|PUT|PATCH|DELETE)/);

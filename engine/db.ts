@@ -8,7 +8,7 @@ export function loadEnv(): void {
   if (loaded) return;
   loaded = true;
   for (const file of ["/etc/mcube/mlive.env", ".env.local"]) {
-    if (fs.existsSync(file)) config({ path: file });
+    if (fs.existsSync(/*turbopackIgnore: true*/ file)) config({ path: file });
   }
 }
 

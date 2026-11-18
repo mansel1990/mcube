@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { haltReasonText } from "@/lib/mlive/rules";
 
@@ -33,6 +34,29 @@ function stored(key: string, text: string): number | string | boolean {
   const value = Number(text);
   if (!Number.isFinite(value)) return text;
   return PCT.has(key) ? value / 100 : value;
+}
+
+function AboutLink({ href, label }: { href: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="field">
+      <div><b>{label}</b><small>Read-only page. Anyone with the link can open it.</small></div>
+      <span>
+        <Link className="btn" href={href}>Open</Link>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => {
+            const url = `${window.location.origin}${href}`;
+            void navigator.clipboard.writeText(url).then(() => {
+              setCopied(true);
+              window.setTimeout(() => setCopied(false), 2000);
+            });
+          }}
+        >{copied ? "Copied" : "Copy share link"}</button>
+      </span>
+    </div>
+  );
 }
 
 function Field({
@@ -270,6 +294,11 @@ export function SettingsView() {
             </>
           )}
         </div>
+      </div>
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="card-h"><h2>About</h2></div>
+        <AboutLink href="/about/philosophy" label="Our philosophy" />
+        <AboutLink href="/about/rules" label="Rules" />
       </div>
       <p className="note">Exit rules change in code. Swing stays delivery and long only. Next review {payload.nextReview}.</p>
     </section>

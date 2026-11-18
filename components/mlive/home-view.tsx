@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { homeStatusPill } from "@/lib/mlive/rules";
 import { inr, signed } from "./format";
+import { LongtermProposalBanner, type LongtermProposalView } from "./longterm-proposal-banner";
 
 type Holding = {
   symbol: string;
@@ -34,6 +35,7 @@ type Home = {
   ideas: { rows: { symbol: string; strategy: string; result: string; reason: string }[] };
   activity: { date: string | null; side: string; symbol: string; outcome: string; detail: string }[];
   spark: { date: string | null; value: number }[];
+  longtermProposal?: LongtermProposalView | null;
 };
 
 function Info({ label }: { label: string }) {
@@ -162,6 +164,7 @@ export function HomeView() {
   return (
     <section className="page">
       <h1 className="page-title">Today <span className="when">{shortDay(data.today)}</span></h1>
+      {data.longtermProposal ? <LongtermProposalBanner proposal={data.longtermProposal} onDone={() => void load()} /> : null}
       {status.connect && <p className="sub">Kite is not logged in, so new orders wait.</p>}
 
       {data.needsYou.length > 0 && (

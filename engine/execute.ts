@@ -75,6 +75,7 @@ export async function sendReady(opts: SendOpts): Promise<Record<string, unknown>
   const results: string[] = [];
 
   for (const decision of decisions) {
+    if (decision.reasonCode === "longterm_allocation") continue;
     const strategy = decision.side === "BUY"
       ? await ideaStrategy(decision.ideaId)
       : await positionStrategy(decision.positionId);
@@ -444,18 +445,20 @@ async function settleFill(
 ): Promise<void> {
   const decisionId = row.decision_id == null ? null : num(row.decision_id);
   const decision = decisionId
-    ? await q(`SELECT idea_id, sizing FROM mlive.mlive_decisions WHERE id = $1`, [decisionId])
+    ? await q(`SELECT idea_id, sizing, reason_code FROM mlive.mlive_decisions WHERE id = $1`, [decisionId])
     : [];
   const idea = decision[0]?.idea_id
     ? await q(`SELECT strategy, initial_stop FROM mlive.mlive_ideas WHERE id = $1`, [num(decision[0].idea_id)])
     : [];
-  const strategy = idea[0]?.strategy === "ema"
-    ? "ema"
-    : idea[0]?.strategy === "momentum"
-      ? "momentum"
-      : idea[0]?.strategy === "rs"
-        ? "rs"
-        : null;
+  const strategy = decision[0]?.reason_code === "longterm_allocation"
+    ? "longterm"
+    : idea[0]?.strategy === "ema"
+      ? "ema"
+      : idea[0]?.strategy === "momentum"
+        ? "momentum"
+        : idea[0]?.strategy === "rs"
+          ? "rs"
+          : null;
   const stop = idea[0]?.initial_stop == null ? null : num(idea[0].initial_stop);
   await applyFill({
     orderId: num(row.id),

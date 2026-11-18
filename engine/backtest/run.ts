@@ -20,6 +20,7 @@ import {
   commonCoverageStart,
   diagnosticIntradayWindow,
   INTRADAY_SURVIVORSHIP,
+  SWING_SURVIVORSHIP,
   type ResearchBook,
 } from "@/lib/mlive/research-bar";
 import { istMinutes, todayIst } from "@/lib/mlive/calendar";
@@ -64,7 +65,7 @@ import type { Bar } from "../strategies/math";
 
 let skipResearchWindow = false;
 
-const SURVIVORSHIP = "Results with today's Nifty 500 still have residual survivorship bias. The clean-history and traded-value rules reduce it but do not remove it. Names that left the index are missing, and when each name joined is not stored.";
+const SURVIVORSHIP = SWING_SURVIVORSHIP;
 const JOIN_DATES = "When each name joined the Nifty 500 is not stored, so trades in names that joined after the trade date cannot be counted.";
 const WINDOW_STOP = "Stopped at the window end so trading jobs have the server";
 const PORT_NOTE =

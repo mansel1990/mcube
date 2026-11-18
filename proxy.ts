@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { aboutPathIsPublic } from "@/lib/about/access";
 
 // Better Auth uses __Secure- prefix in production (https baseURL), plain name in dev
 const SESSION_COOKIE = "better-auth.session_token";
@@ -6,6 +7,7 @@ const SECURE_SESSION_COOKIE = "__Secure-better-auth.session_token";
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  if (aboutPathIsPublic(pathname)) return NextResponse.next();
   const sessionCookie =
     request.cookies.get(SECURE_SESSION_COOKIE) ||
     request.cookies.get(SESSION_COOKIE);
@@ -32,5 +34,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/stocks/:path*", "/live-trade-mansel", "/live-trade-mansel/:path*", "/admin/:path*"],
+  matcher: ["/about", "/about/:path*", "/stocks/:path*", "/live-trade-mansel", "/live-trade-mansel/:path*", "/admin/:path*"],
 };

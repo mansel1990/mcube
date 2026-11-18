@@ -304,11 +304,14 @@ export async function homePayload(displayName: string) {
      LIMIT 1`;
   const resumedAt = String(resumeRows[0]?.reason ?? "").match(/at (\d{2}:\d{2})/)?.[1] ?? null;
   const fund = num(fundRows[0]?.total);
-  const swingPositions = positions.filter((row) => String(row.book ?? "swing") !== "intraday");
+  const swingPositions = positions.filter((row) => {
+    const book = String(row.book ?? "swing");
+    return book !== "intraday" && book !== "longterm";
+  });
   const picture = await cashPicture();
   const invested = swingPositions.reduce((sum, row) => sum + num(row.qty) * num(row.avg_price), 0);
   const pending = decisions
-    .filter((row) => row.side === "BUY" && (row.outcome === "sent" || row.outcome === "approved"))
+    .filter((row) => row.side === "BUY" && row.reason_code !== "longterm_allocation" && (row.outcome === "sent" || row.outcome === "approved"))
     .reduce((sum, row) => sum + num(json<{ qty?: number }>(row.sizing, {}).qty) * num(json<{ limit?: number }>(row.sizing, {}).limit), 0);
   const cash = fund - invested - pending;
   const todayMove = await loadSwingToday();
@@ -358,7 +361,10 @@ export async function homePayload(displayName: string) {
   const stopReasonBySymbol = new Map(
     stopReasonRows.map((row) => [String(row.symbol), String(row.message ?? "").trim()])
   );
-  const needsYou = [...decisions.filter((row) => row.outcome === "proposed"), ...upcoming];
+  const needsYou = [
+    ...decisions.filter((row) => row.outcome === "proposed" && row.reason_code !== "longterm_allocation"),
+    ...upcoming.filter((row) => row.reason_code !== "longterm_allocation"),
+  ];
   const buyDecisions = decisions.filter((row) => row.side === "BUY");
   const passed = buyDecisions.filter((row) => row.outcome === "proposed" || row.outcome === "approved" || row.outcome === "sent").length;
   const since = sessionsBack(today, 10, new Set(holidayRows.map((row) => String(row.trade_date).slice(0, 10))));
@@ -899,8 +905,8 @@ export async function cashPicture() {
   const settings = await settingsMap();
   const [fundRows, positionRows, pendingRows, kiteFunds] = await Promise.all([
     sql`SELECT COALESCE(SUM(amount), 0) AS total FROM mlive.mlive_fund_ledger WHERE (${includeDry}::boolean OR dry_run = false)`,
-    sql`SELECT COALESCE(SUM(qty * avg_price), 0) AS invested FROM mlive.mlive_positions WHERE closed_at IS NULL AND (${includeDry}::boolean OR dry_run = false)`,
-    sql`SELECT COALESCE(SUM((qty - filled_qty) * limit_price), 0) AS pending FROM mlive.mlive_orders WHERE side = 'BUY' AND status NOT IN ('CANCELLED', 'REJECTED', 'COMPLETE') AND (${includeDry}::boolean OR dry_run = false)`,
+    sql`SELECT COALESCE(SUM(qty * avg_price), 0) AS invested FROM mlive.mlive_positions WHERE closed_at IS NULL AND COALESCE(book, 'swing') <> 'longterm' AND (${includeDry}::boolean OR dry_run = false)`,
+    sql`SELECT COALESCE(SUM((qty - filled_qty) * limit_price), 0) AS pending FROM mlive.mlive_orders WHERE side = 'BUY' AND status NOT IN ('CANCELLED', 'REJECTED', 'COMPLETE') AND COALESCE(book, 'swing') <> 'longterm' AND (${includeDry}::boolean OR dry_run = false)`,
     readKiteFunds(),
   ]);
   const tradingLimit = num(fundRows[0]?.total);

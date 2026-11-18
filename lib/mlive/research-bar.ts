@@ -19,6 +19,9 @@ export const INTRADAY_BUILDING_FROM = "2024-11-18";
 export const INTRADAY_SURVIVORSHIP =
   "The intraday universe is the current Nifty 100 and Nifty 200, not point-in-time constituents. Names that left the index are missing. This is survivorship bias. A result with this limitation cannot qualify for live trading.";
 
+export const SWING_SURVIVORSHIP =
+  "Results with today's Nifty 500 still have residual survivorship bias. The clean-history and traded-value rules reduce it but do not remove it. Names that left the index are missing, and when each name joined is not stored.";
+
 export const DIAGNOSTIC_VERDICT =
   "Diagnostic sample. No official pass or fail. A good diagnostic result is not evidence for live trading.";
 

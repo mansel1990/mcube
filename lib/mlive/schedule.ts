@@ -19,6 +19,7 @@ export const SCHEDULE: ScheduleStep[] = [
   { kind: "sync", time: "09:00", title: "Sync with Kite", description: "Sync with Kite, every 5 minutes through the session.", group: "market" },
   { kind: "cancel", time: "15:15", title: "Cancel leftovers", description: "Cancels orders that are still open after the close.", group: "market" },
   { kind: "eod", time: "15:45", title: "Market close", description: "Writes the account value after the session.", group: "evening" },
+  { kind: "longterm-proposal", time: "16:10", title: "Long Game check", description: "After the close, prepares a Long Game allocation change for approval when Long Game is live.", group: "evening" },
   { kind: "import-ideas", time: "18:20", title: "Nightly scan", description: "Copies the evening ideas into the book.", group: "evening" },
   { kind: "eod-stops", time: "19:45", title: "Stop updates", description: "Raises stops that the rules moved.", group: "evening" },
   { kind: "eod-final", time: "19:50", title: "Daily report", description: "Closes the day and writes the report.", group: "evening" },

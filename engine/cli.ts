@@ -17,6 +17,7 @@ import { intraday } from "./jobs/intraday";
 import { marketBackfill, marketDaily, parseMarketArgs } from "./jobs/market";
 import { marketCheck } from "./jobs/market-check";
 import { longtermImport } from "./jobs/longterm-import";
+import { longtermProposal } from "./jobs/longterm-proposal";
 import { longtermVerify } from "./longterm/verify";
 import { momentumEod } from "./jobs/momentum-eod";
 import { quotes } from "./jobs/quotes";
@@ -58,6 +59,7 @@ const jobs: Record<string, () => Promise<void>> = {
   "market-daily": marketDaily,
   "market-check": marketCheck,
   "longterm-import": () => longtermImport(process.argv.slice(3)),
+  "longterm-proposal": longtermProposal,
   "longterm-verify": () => longtermVerify(argv.slice(3)),
   "momentum-eod": momentumEod,
   research: () => researchJob(argv.slice(3)),

@@ -222,24 +222,34 @@ export async function recordOrder(args: {
   kiteOrderId: string;
   dryRun: boolean;
   runId: number;
+  book?: "swing" | "longterm";
 }): Promise<number> {
-  const rows = await q<{ id: string }>(
-    `INSERT INTO mlive.mlive_orders
-       (decision_id, tag, kite_order_id, side, symbol, qty, limit_price, status, placed_at, dry_run)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), $9)
-     RETURNING id`,
-    [
-      args.decisionId,
-      args.tag,
-      args.kiteOrderId,
-      args.side,
-      args.symbol,
-      args.qty,
-      args.limit,
-      args.dryRun ? "DRY" : "OPEN",
-      args.dryRun,
-    ]
-  );
+  const params = [
+    args.decisionId,
+    args.tag,
+    args.kiteOrderId,
+    args.side,
+    args.symbol,
+    args.qty,
+    args.limit,
+    args.dryRun ? "DRY" : "OPEN",
+    args.dryRun,
+  ];
+  const rows = args.book === "longterm"
+    ? await q<{ id: string }>(
+      `INSERT INTO mlive.mlive_orders
+         (decision_id, tag, kite_order_id, side, symbol, qty, limit_price, status, placed_at, dry_run, book)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), $9, $10)
+       RETURNING id`,
+      [...params, "longterm"]
+    )
+    : await q<{ id: string }>(
+      `INSERT INTO mlive.mlive_orders
+         (decision_id, tag, kite_order_id, side, symbol, qty, limit_price, status, placed_at, dry_run)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), $9)
+       RETURNING id`,
+      params
+    );
   await q(`UPDATE mlive.mlive_decisions SET outcome = 'sent' WHERE id = $1`, [args.decisionId]);
   await audit({
     actor: "engine",
@@ -290,7 +300,7 @@ export async function applyFill(args: {
   orderStatus: string;
   dryRun: boolean;
   gttExit?: boolean;
-  strategy: Strategy | null;
+  strategy: Strategy | "longterm" | null;
   stop: number | null;
   settings: MliveSettings;
   kite: MliveKite;
@@ -343,18 +353,19 @@ export async function applyFill(args: {
   const charges = split.total;
   const source = api ? "kite" : "formula";
 
+  const book = args.strategy === "longterm" ? "longterm" : undefined;
   if (args.side === "BUY") {
-    const positionId = await addBuyPosition({ ...args, avgPrice: price }, delta, charges);
+    const positionId = await addBuyPosition({ ...args, avgPrice: price, book }, delta, charges);
     await insertChargeItem({ positionId, orderId: args.orderId, side: "BUY", intraday: false, source, split, dryRun: args.dryRun });
     await q(
       `INSERT INTO mlive.mlive_fund_ledger (kind, amount, ref_order_id, note, dry_run) VALUES ('charges', $1, $2, $3, $4)`,
       [-charges, args.orderId, `Buy charges ${args.symbol}`, args.dryRun]
     );
-    await ensureGtt(positionId, { ...args, avgPrice: price, filledQty: delta });
+    if (args.strategy !== "longterm") await ensureGtt(positionId, { ...args, strategy: args.strategy, avgPrice: price, filledQty: delta });
   } else {
-    const positionId = await positionIdFor(args.symbol, args.dryRun);
+    const positionId = await positionIdFor(args.symbol, args.dryRun, book);
     const buyCredit = intraday ? await creditDeliveryBuy(args, delta) : 0;
-    await reducePosition({ ...args, avgPrice: price }, delta, charges);
+    await reducePosition({ ...args, avgPrice: price, book }, delta, charges);
     if (positionId) {
       await insertChargeItem({ positionId, orderId: args.orderId, side: "SELL", intraday, source, split, dryRun: args.dryRun });
     }
@@ -369,7 +380,7 @@ export async function applyFill(args: {
       });
     }
   }
-  await alignPositionGtt({ ...args, gttExit: args.gttExit === true });
+  if (args.strategy !== "longterm") await alignPositionGtt({ ...args, gttExit: args.gttExit === true });
   await audit({
     actor: "kite",
     action: "fill",
@@ -465,31 +476,51 @@ async function insertChargeItem(args: {
   );
 }
 
-async function positionIdFor(symbol: string, dryRun: boolean): Promise<number | null> {
-  const rows = await q(
-    `SELECT id FROM mlive.mlive_positions WHERE symbol = $1 AND closed_at IS NULL AND dry_run = $2 ORDER BY id LIMIT 1`,
-    [symbol, dryRun]
-  );
+async function positionIdFor(symbol: string, dryRun: boolean, book?: "longterm"): Promise<number | null> {
+  const rows = book === "longterm"
+    ? await q(
+      `SELECT id FROM mlive.mlive_positions
+        WHERE symbol = $1 AND closed_at IS NULL AND dry_run = $2 AND book = 'longterm'
+        ORDER BY id LIMIT 1`,
+      [symbol, dryRun]
+    )
+    : await q(
+      `SELECT id FROM mlive.mlive_positions WHERE symbol = $1 AND closed_at IS NULL AND dry_run = $2 ORDER BY id LIMIT 1`,
+      [symbol, dryRun]
+    );
   return rows[0] ? num(rows[0].id) : null;
 }
 
 async function addBuyPosition(
-  args: { symbol: string; strategy: Strategy | null; avgPrice: number; stop: number | null; dryRun: boolean },
+  args: { symbol: string; strategy: Strategy | "longterm" | null; avgPrice: number; stop: number | null; dryRun: boolean; book?: "longterm" },
   delta: number,
   charges: number
 ): Promise<number> {
-  const existing = await q(
-    `SELECT id, qty, avg_price FROM mlive.mlive_positions
-      WHERE symbol = $1 AND closed_at IS NULL AND dry_run = $2 ORDER BY id LIMIT 1`,
-    [args.symbol, args.dryRun]
-  );
+  const existing = args.book === "longterm"
+    ? await q(
+      `SELECT id, qty, avg_price FROM mlive.mlive_positions
+        WHERE symbol = $1 AND closed_at IS NULL AND dry_run = $2 AND book = 'longterm'
+        ORDER BY id LIMIT 1`,
+      [args.symbol, args.dryRun]
+    )
+    : await q(
+      `SELECT id, qty, avg_price FROM mlive.mlive_positions
+        WHERE symbol = $1 AND closed_at IS NULL AND dry_run = $2 ORDER BY id LIMIT 1`,
+      [args.symbol, args.dryRun]
+    );
   const row = existing[0];
   if (!row) {
-    const inserted = await q<{ id: string }>(
-      `INSERT INTO mlive.mlive_positions (symbol, strategy, qty, avg_price, trend_stop, charges, dry_run)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-      [args.symbol, args.strategy, delta, args.avgPrice, args.stop, charges, args.dryRun]
-    );
+    const inserted = args.book === "longterm"
+      ? await q<{ id: string }>(
+        `INSERT INTO mlive.mlive_positions (symbol, strategy, qty, avg_price, trend_stop, charges, dry_run, book)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'longterm') RETURNING id`,
+        [args.symbol, args.strategy, delta, args.avgPrice, args.stop, charges, args.dryRun]
+      )
+      : await q<{ id: string }>(
+        `INSERT INTO mlive.mlive_positions (symbol, strategy, qty, avg_price, trend_stop, charges, dry_run)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+        [args.symbol, args.strategy, delta, args.avgPrice, args.stop, charges, args.dryRun]
+      );
     return num(inserted[0].id);
   }
   const prevQty = num(row.qty);
@@ -657,15 +688,22 @@ export async function syncGttToStop(args: {
 }
 
 async function reducePosition(
-  args: { symbol: string; avgPrice: number; orderId: number; dryRun: boolean },
+  args: { symbol: string; avgPrice: number; orderId: number; dryRun: boolean; book?: "longterm" },
   delta: number,
   charges: number
 ): Promise<void> {
-  const rows = await q(
-    `SELECT id, qty, avg_price FROM mlive.mlive_positions
-      WHERE symbol = $1 AND closed_at IS NULL AND dry_run = $2 ORDER BY id LIMIT 1`,
-    [args.symbol, args.dryRun]
-  );
+  const rows = args.book === "longterm"
+    ? await q(
+      `SELECT id, qty, avg_price FROM mlive.mlive_positions
+        WHERE symbol = $1 AND closed_at IS NULL AND dry_run = $2 AND book = 'longterm'
+        ORDER BY id LIMIT 1`,
+      [args.symbol, args.dryRun]
+    )
+    : await q(
+      `SELECT id, qty, avg_price FROM mlive.mlive_positions
+        WHERE symbol = $1 AND closed_at IS NULL AND dry_run = $2 ORDER BY id LIMIT 1`,
+      [args.symbol, args.dryRun]
+    );
   const position = rows[0];
   if (!position) return;
   const owned = num(position.qty);
