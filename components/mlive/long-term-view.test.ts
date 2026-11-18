@@ -20,5 +20,17 @@ describe("Long Game research-only surface", () => {
     expect(route).not.toMatch(/export\s+async\s+function\s+(POST|PUT|PATCH|DELETE)/);
     expect(route).not.toContain("mlive_positions");
     expect(route).not.toContain("mlive_orders");
+    expect(route).not.toContain("mlive_ideas");
+    expect(route).not.toContain("mlive_decisions");
+    expect(route).not.toContain("mlive_gtts");
+    expect(route).not.toContain("strategies_enabled");
+    expect(view).toContain("Known weakness: profit concentrated in");
+    expect(view).toContain("After-tax CAGR");
+    expect(view).toContain("No more than 12 events a year");
+    expect(view).not.toMatch(/export\s+async\s+function\s+(POST|PUT|PATCH|DELETE)/);
+    const rules = readFileSync(new URL("../../engine/longterm/rules.ts", import.meta.url), "utf8");
+    expect(rules).toContain("longgame-frozen-v2");
+    expect(rules).toContain("2026-11-18");
+    expect(rules).toContain('decider: "owner"');
   });
 });

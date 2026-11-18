@@ -111,12 +111,38 @@ describe("parked momentum", () => {
 
 describe("research cannot write orders", () => {
   it("keeps the research path away from order tables", () => {
-    for (const file of ["jobs/research.ts", "jobs/research-queue.ts", "backtest/run.ts"]) {
+    for (const file of [
+      "jobs/research.ts",
+      "jobs/research-queue.ts",
+      "jobs/longterm-import.ts",
+      "backtest/run.ts",
+      "backtest/args.ts",
+      "longterm/run.ts",
+      "longterm/verify.ts",
+      "longterm/heldback.ts",
+      "longterm/data.ts",
+    ]) {
       const source = readFileSync(new URL(`./${file}`, import.meta.url), "utf8");
-      expect(source).not.toMatch(/mlive_orders/);
-      expect(source).not.toMatch(/placeOrder/);
-      expect(source).not.toMatch(/INSERT INTO mlive\.mlive_decisions/);
+      for (const forbidden of [
+        "mlive_orders",
+        "mlive_ideas",
+        "mlive_decisions",
+        "mlive_gtts",
+        "mlive_positions",
+        "strategies_enabled",
+        "placeOrder",
+      ]) {
+        expect(source).not.toContain(forbidden);
+      }
     }
+    const queue = readFileSync(new URL("./jobs/research-queue.ts", import.meta.url), "utf8");
+    expect(queue).toMatch(/longterm" && row\.sample === "heldback"/);
+    const route = readFileSync(new URL("../app/api/mlive/long-term/route.ts", import.meta.url), "utf8");
+    const view = readFileSync(new URL("../components/mlive/long-term-view.tsx", import.meta.url), "utf8");
+    expect(route).toContain("export async function GET");
+    expect(route).not.toMatch(/export\s+async\s+function\s+(POST|PUT|PATCH|DELETE)/);
+    expect(view).not.toMatch(/export\s+async\s+function\s+(POST|PUT|PATCH|DELETE)/);
+    expect(view).not.toMatch(/onClick=\{[^}]*fetch\([^)]*method:\s*["']POST/);
   });
 });
 

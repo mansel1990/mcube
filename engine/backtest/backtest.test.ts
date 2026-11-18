@@ -6,6 +6,8 @@ import type { Bar } from "../strategies/math";
 import { orbStrategy } from "../strategies/orb";
 import { defaultParams, emptyContext, type Signal, type SignalContext, type StrategyDef } from "../strategies/types";
 import { parseResearchArgs, queueResearchArgs } from "./args";
+import { heldbackAccessGate, heldbackVariantsConsumed, LONGTERM_HELDBACK_USED_SQL, openHeldbackDataset, sharedHeldbackWindow } from "../longterm/heldback";
+import { LONGTERM_VARIANT_NAMES } from "../longterm/variants";
 import { selectIntraday, walkSession, type SessionTrade } from "./intraday-sim";
 import { roundTrip } from "./money";
 import { runSwingPortfolio, type Candidate } from "./portfolio";
@@ -397,8 +399,17 @@ describe("research backtest", () => {
       grid: false,
     });
     expect(() => parseResearchArgs(["--book", "longterm", "--variant", "RADAR-SMALL", "--no-grid"])).toThrow(/Unknown longterm variant/);
-    expect(() => parseResearchArgs(["--book", "longterm", "--heldback", "--no-grid"])).toThrow(/held-back data is locked/);
-    expect(() => parseResearchArgs(["--book", "longterm", "--heldback", "--confirm-heldback", "--no-grid"])).toThrow(/held-back data is locked/);
+    expect(() => parseResearchArgs(["--book", "longterm", "--heldback", "--no-grid"])).toThrow(/confirm-heldback/);
+    expect(() => parseResearchArgs(["--book", "longterm", "--heldback", "--confirm-heldback", "--no-grid", "--variant", "RADAR-NEXT"])).toThrow(/all four/);
+    expect(parseResearchArgs([
+      "--book", "longterm", "--heldback", "--confirm-heldback", "--no-grid", "--force",
+    ])).toMatchObject({
+      sample: "heldback",
+      confirmHeldback: true,
+      force: true,
+      grid: false,
+      variants: ["STATIC-NEXT", "STATIC-MID", "RADAR-NEXT", "RADAR-MID"],
+    });
     expect(() => parseResearchArgs(["--book", "longterm"])).toThrow(/requires --no-grid/);
   });
 
@@ -664,3 +675,65 @@ function fiveMinute(day: string): Bar[] {
   }
   return out;
 }
+
+describe("Long Game held-back gate", () => {
+  const passing = [
+    { radar: "RADAR-NEXT" as const, radarDrawdownPct: 12, staticDrawdownPct: 20, radarAfterTaxCagrPct: 9, staticAfterTaxCagrPct: 8 },
+    { radar: "RADAR-MID" as const, radarDrawdownPct: 11, staticDrawdownPct: 19, radarAfterTaxCagrPct: 9.5, staticAfterTaxCagrPct: 9 },
+  ];
+
+  it("stops before held-back data when either pair misses drawdown or after-tax CAGR", async () => {
+    const calls = { heldback: 0 };
+    const loadHeldback = async () => {
+      calls.heldback += 1;
+      return { dates: ["2024-01-02"], values: {}, provenance: [], fingerprint: "held" } as never;
+    };
+    await expect(openHeldbackDataset({
+      loadBuilding: async () => ({ dates: ["2011-01-03", "2023-12-29"], values: {}, provenance: [], fingerprint: "build" }) as never,
+      buildingRows: async () => [],
+      usedVariants: async () => [],
+      requested: [...LONGTERM_VARIANT_NAMES],
+      force: true,
+      loadHeldback,
+    })).rejects.toThrow(/stopped before loading held-back data/);
+    expect(calls.heldback).toBe(0);
+
+    const weaker = [{ ...passing[0], radarAfterTaxCagrPct: 8 }, passing[1]];
+    expect(heldbackAccessGate(weaker).pass).toBe(false);
+    expect(heldbackAccessGate([{ ...passing[0], radarDrawdownPct: 20 }, passing[1]]).failures.join(" ")).toMatch(/drawdown/);
+    expect(heldbackAccessGate(passing).pass).toBe(true);
+  });
+
+  it("runs all four variants on one held-back window and lets an error be retried", async () => {
+    expect(sharedHeldbackWindow([...LONGTERM_VARIANT_NAMES], "2026-11-17")).toEqual({ from: "2024-01-01", to: "2026-11-17" });
+    expect(() => sharedHeldbackWindow(["RADAR-NEXT"], "2026-11-17")).toThrow(/all four/);
+    expect(heldbackVariantsConsumed([
+      { variant: "RADAR-NEXT", status: "error" },
+      { variant: "STATIC-NEXT", status: "ok" },
+    ])).toEqual(["STATIC-NEXT"]);
+    expect(LONGTERM_HELDBACK_USED_SQL).toMatch(/mlive_longterm_results/);
+    expect(LONGTERM_HELDBACK_USED_SQL).toMatch(/status = 'ok'/);
+    expect(LONGTERM_HELDBACK_USED_SQL).not.toMatch(/status = 'error'/);
+
+    const calls = { heldback: 0 };
+    const open = (used: string[], force: boolean) => openHeldbackDataset({
+      loadBuilding: async () => ({ dates: ["2011-01-03"], values: {}, provenance: [], fingerprint: "build" }) as never,
+      buildingRows: async () => passing.flatMap((pair) => [
+        { variant: pair.radar, metrics: { maxDrawdown: { pct: pair.radarDrawdownPct } }, stresses: { currentTax: { cagrPct: pair.radarAfterTaxCagrPct } } },
+        { variant: pair.radar === "RADAR-NEXT" ? "STATIC-NEXT" : "STATIC-MID", metrics: { maxDrawdown: { pct: pair.staticDrawdownPct } }, stresses: { currentTax: { cagrPct: pair.staticAfterTaxCagrPct } } },
+      ]),
+      usedVariants: async () => used,
+      requested: [...LONGTERM_VARIANT_NAMES],
+      force,
+      loadHeldback: async () => {
+        calls.heldback += 1;
+        return { dates: ["2024-01-02", "2026-11-17"], values: {}, provenance: [], fingerprint: "held" } as never;
+      },
+    });
+    await expect(open(["RADAR-MID"], false)).rejects.toThrow(/Held-back already used/);
+    expect(calls.heldback).toBe(0);
+    await expect(open(["RADAR-MID"], true)).resolves.toMatchObject({ fingerprint: "held" });
+    expect(calls.heldback).toBe(1);
+  });
+});
+

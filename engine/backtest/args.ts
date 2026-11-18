@@ -62,11 +62,19 @@ export function parseResearchArgs(argv: readonly string[]): ResearchArgs {
     throw new Error("--sample diagnostic is only for an intraday study.");
   }
   if (book === "longterm") {
-    if (sample === "heldback") throw new Error("Long Game held-back data is locked for this task.");
     if (grid) throw new Error("Long Game is frozen and requires --no-grid");
     if (strategies?.length) throw new Error("Long Game uses --variant, not --strategy");
     if (only?.length) throw new Error("Long Game does not support --only");
-    variants ??= [...LONGTERM_VARIANT_NAMES];
+    if (sample === "heldback") {
+      if (!confirmHeldback) throw new Error("Long Game held-back requires --confirm-heldback.");
+      const requested = variants ?? [...LONGTERM_VARIANT_NAMES];
+      if (requested.length !== LONGTERM_VARIANT_NAMES.length || LONGTERM_VARIANT_NAMES.some((name) => !requested.includes(name))) {
+        throw new Error("Long Game held-back runs exactly all four frozen variants together.");
+      }
+      variants = [...LONGTERM_VARIANT_NAMES];
+    } else {
+      variants ??= [...LONGTERM_VARIANT_NAMES];
+    }
   }
   return { book, strategies, variants, sample, confirmHeldback, force, grid, only, anytime };
 }

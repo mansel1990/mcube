@@ -29,6 +29,8 @@ import { jsonValue, mq, q } from "../db";
 import { filesRoot, syncUniverse } from "../jobs/market";
 import { loadSettings } from "../load";
 import { longtermDataIdentity } from "../longterm/data";
+import { loadGuardedHeldbackDataset } from "../longterm/heldback";
+import { LONGTERM_FROZEN_V2 } from "../longterm/rules";
 import { executeLongtermResearch } from "../longterm/run";
 import { LONGTERM_VARIANT_NAMES } from "../longterm/variants";
 import { strategiesFor } from "../strategies";
@@ -91,7 +93,15 @@ export async function runResearch(args: ResearchArgs, opts?: { runId?: number; r
       args.variants?.length ? strategiesForSwingVariants(args.variants.filter(isSwingVariantName)) : args.strategies
     ).map((strategy) => strategy.name);
   const requestedBy = opts?.requestedBy ?? "cli";
-  const identity = await researchIdentityFor({ book: args.book, sample: args.sample, grid: args.grid, only: args.only, strategies: names, variants: args.variants });
+  const identity = await researchIdentityFor({
+    book: args.book,
+    sample: args.sample,
+    grid: args.grid,
+    only: args.only,
+    strategies: names,
+    variants: args.variants,
+    force: args.force,
+  });
   if (!args.force) {
     const blocked = await duplicateIdentityError(identity, opts?.runId);
     if (blocked) {
@@ -765,10 +775,27 @@ export async function researchIdentityFor(input: {
   only?: string[];
   strategies: string[];
   variants?: ResearchVariantName[];
+  force?: boolean;
 }): Promise<ResearchIdentity> {
   if (input.book === "longterm") {
-    if (input.sample === "heldback") throw new Error("Long Game held-back data is locked for this task.");
-    const data = await longtermDataIdentity();
+    if (input.sample === "heldback") {
+      const dataset = await loadGuardedHeldbackDataset(input.force === true);
+      const last = dataset.dates.filter((date) => date >= "2024-01-01").at(-1) ?? "";
+      return makeIdentity({
+        book: input.book,
+        sample: input.sample,
+        strategies: input.strategies,
+        variants: input.variants,
+        grid: input.grid,
+        engineSha: engineSha(),
+        lastCandle: last,
+        only: [],
+        dataFingerprint: dataset.fingerprint,
+        rulesVersion: LONGTERM_FROZEN_V2.version,
+        costVersion: "zerodha-delivery-equivalent-v1",
+      });
+    }
+    const data = await longtermDataIdentity("building");
     return makeIdentity({
       book: input.book,
       sample: input.sample,
@@ -779,7 +806,7 @@ export async function researchIdentityFor(input: {
       lastCandle: data.last,
       only: [],
       dataFingerprint: data.fingerprint,
-      rulesVersion: "longgame-frozen-v1",
+      rulesVersion: LONGTERM_FROZEN_V2.version,
       costVersion: "zerodha-delivery-equivalent-v1",
     });
   }

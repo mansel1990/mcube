@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireMliveSession } from "@/lib/mlive/auth";
+import { LONGTERM_FROZEN_V2 } from "@/engine/longterm/rules";
+import { longtermV2InputFromStored, scoreLongtermV2 } from "@/engine/longterm/score";
 import { sql } from "@/lib/sql";
 
 type RunRow = {
@@ -47,9 +49,12 @@ export async function GET() {
              ELSE 5
            END`;
 
+    const results = (rows as Record<string, unknown>[]).map(mapResult);
     return NextResponse.json({
       run: selected ? mapRun(selected) : null,
-      results: (rows as Record<string, unknown>[]).map(mapResult),
+      results,
+      comparisons: rescore(results),
+      rules: LONGTERM_FROZEN_V2,
       locked: true,
     }, {
       headers: { "Cache-Control": "private, no-store" },
@@ -124,4 +129,23 @@ function stamp(value: unknown): string | null {
   if (value instanceof Date) return value.toISOString();
   const text = String(value);
   return text || null;
+}
+
+function rescore(results: { variant: string; metrics: Record<string, unknown>; stresses: Record<string, unknown> }[]) {
+  const byVariant = new Map(results.map((row) => [row.variant, row]));
+  const pairs = [
+    ["RADAR-NEXT", "STATIC-NEXT"],
+    ["RADAR-MID", "STATIC-MID"],
+  ] as const;
+  const comparisons = [];
+  for (const [radar, control] of pairs) {
+    const radarRow = byVariant.get(radar);
+    const controlRow = byVariant.get(control);
+    if (!radarRow || !controlRow) continue;
+    comparisons.push(scoreLongtermV2(
+      longtermV2InputFromStored(radar, radarRow.metrics, radarRow.stresses),
+      longtermV2InputFromStored(control, controlRow.metrics, controlRow.stresses)
+    ));
+  }
+  return comparisons;
 }

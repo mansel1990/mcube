@@ -1,10 +1,17 @@
 import { createHash } from "node:crypto";
 import { mq } from "../db";
 
-export const LONGTERM_DATA_VERSION = "longgame-data-v1";
+export const LONGTERM_DATA_VERSION = "longgame-data-v2";
 export const LONGTERM_BUILDING_FROM = "2011-01-01";
 export const LONGTERM_BUILDING_TO = "2023-12-31";
+export const LONGTERM_HELD_BACK_FROM = "2024-01-01";
 export const LONGTERM_WARMUP_FROM = "2010-01-01";
+export const GOLDBEES_SPLIT_EFFECTIVE = "2019-12-19";
+export const GOLDBEES_SPLIT_RATIO = 100;
+export const GOLDBEES_SPLIT_EXPLANATION =
+  "Nippon India ETF Gold BeES 1:100 unit split effective 2019-12-19. Pre-split published NAVs are divided by 100 so the stored series stays in post-split units. The drop is a corporate action, not a market loss.";
+
+export type LongtermLoadSample = "building" | "heldback";
 
 export const LONGTERM_SERIES = [
   "nifty50_tri",
@@ -39,6 +46,7 @@ export type LongtermProvenance = {
 export type ImportOptions = {
   from?: string;
   to?: string;
+  heldback?: boolean;
 };
 
 const NSE_TRI_URL = "https://www.niftyindices.com/BackPage/getTotalReturnIndexString";
@@ -89,12 +97,69 @@ export async function ensureLongtermDataSchema(): Promise<void> {
     )`);
 }
 
-export async function importLongtermData(options: ImportOptions = {}): Promise<void> {
-  const from = options.from ?? LONGTERM_WARMUP_FROM;
-  const to = options.to ?? LONGTERM_BUILDING_TO;
-  if (from < LONGTERM_WARMUP_FROM || to > LONGTERM_BUILDING_TO || from > to) {
-    throw new Error(`Long Game import is restricted to ${LONGTERM_WARMUP_FROM} through ${LONGTERM_BUILDING_TO}.`);
+export function assertLongtermImportRange(from: string, to: string, heldback = false): void {
+  if (from < LONGTERM_WARMUP_FROM || from > to) {
+    throw new Error(`Long Game import must start on or after ${LONGTERM_WARMUP_FROM} and end on or after it starts.`);
   }
+  if (!heldback && to > LONGTERM_BUILDING_TO) {
+    throw new Error(`Long Game building import stops at ${LONGTERM_BUILDING_TO}. Pass --heldback to import later sessions.`);
+  }
+  if (heldback && to < LONGTERM_HELD_BACK_FROM) {
+    throw new Error("Held-back import must include a session on or after 2024-01-01.");
+  }
+}
+
+export function normalizeGoldbeesNav(points: LongtermPoint[]): LongtermPoint[] {
+  return points.map((point) => (
+    point.date < GOLDBEES_SPLIT_EFFECTIVE
+      ? { date: point.date, value: point.value / GOLDBEES_SPLIT_RATIO }
+      : point
+  ));
+}
+
+export function visibleToSample<T extends { rawFrom: string; rawTo: string }>(
+  rows: readonly T[],
+  sample: LongtermLoadSample,
+  through: string
+): T[] {
+  if (sample === "building") {
+    return rows.filter((row) => row.rawFrom <= LONGTERM_BUILDING_TO && row.rawTo <= LONGTERM_BUILDING_TO);
+  }
+  return rows.filter((row) => row.rawFrom <= through && row.rawTo <= through);
+}
+
+export function pointVisibleToSample(date: string, sample: LongtermLoadSample, through: string): boolean {
+  if (date < LONGTERM_WARMUP_FROM) return false;
+  if (sample === "building") return date <= LONGTERM_BUILDING_TO;
+  return date <= through;
+}
+
+export function fingerprintLongtermDataset(input: {
+  sample: LongtermLoadSample;
+  through: string;
+  provenance: readonly { seriesKey: string; checksum: string }[];
+  ranges: readonly (readonly [string, number, string, string])[];
+}): string {
+  return sha256(JSON.stringify({
+    version: LONGTERM_DATA_VERSION,
+    sample: input.sample,
+    through: input.through,
+    sources: input.provenance.map((row) => [row.seriesKey, row.checksum]).sort(),
+    ranges: input.ranges,
+  }));
+}
+
+export function latestCommonCompleteSession(dates: readonly string[], from = LONGTERM_HELD_BACK_FROM): string {
+  const last = [...dates].reverse().find((date) => date >= from);
+  if (!last) throw new Error("Long Game has no common complete session on or after 2024-01-01.");
+  return last;
+}
+
+export async function importLongtermData(options: ImportOptions = {}): Promise<void> {
+  const heldback = options.heldback === true;
+  const from = options.from ?? LONGTERM_WARMUP_FROM;
+  const to = options.to ?? (heldback ? from : LONGTERM_BUILDING_TO);
+  assertLongtermImportRange(from, to, heldback);
   await ensureLongtermDataSchema();
   for (const index of INDEXES) {
     const chunks = yearChunks(from, to);
@@ -108,7 +173,13 @@ export async function importLongtermData(options: ImportOptions = {}): Promise<v
     if (await hasStoredChunk("goldbees_nav", chunk.from, chunk.to)) continue;
     const fetched = await fetchGoldNav(chunk.from, chunk.to);
     if (fetched.points.length) {
-      await storeChunk("goldbees_nav", "Nippon India ETF Gold BeES NAV", "amfi-adjusted-nav", "Published AMFI NAV; fund expenses and corporate actions reflected", fetched);
+      await storeChunk(
+        "goldbees_nav",
+        "Nippon India ETF Gold BeES NAV",
+        "amfi-adjusted-nav",
+        `Published AMFI NAV; fund expenses and corporate actions reflected. ${GOLDBEES_SPLIT_EXPLANATION}`,
+        fetched
+      );
     }
   }
   for (const chunk of dayChunks(LONGTERM_BUILDING_FROM, to, 90)) {
@@ -122,35 +193,50 @@ export async function importLongtermData(options: ImportOptions = {}): Promise<v
   await validateLongtermCoverage();
 }
 
-export async function loadLongtermDataset(): Promise<LongtermDataset> {
+export async function loadLongtermDataset(
+  sample: LongtermLoadSample = "building",
+  options: { annotate?: boolean; through?: string } = {}
+): Promise<LongtermDataset> {
   await ensureLongtermDataSchema();
+  const through = sample === "building" ? LONGTERM_BUILDING_TO : (options.through ?? "2999-12-31");
   const pointRows = await mq<{ series_key: string; asof_date: string; value: string | number }>(
     `SELECT series_key, asof_date::text, value
        FROM longterm_points
       WHERE asof_date BETWEEN $1::date AND $2::date
       ORDER BY asof_date`,
-    [LONGTERM_WARMUP_FROM, LONGTERM_BUILDING_TO]
+    [LONGTERM_WARMUP_FROM, through]
   );
   const values = Object.fromEntries(LONGTERM_SERIES.map((key) => [key, new Map<string, number>()])) as Record<LongtermSeriesKey, Map<string, number>>;
   for (const row of pointRows) {
     if (!isSeriesKey(row.series_key)) continue;
-    values[row.series_key].set(String(row.asof_date).slice(0, 10), Number(row.value));
+    const date = String(row.asof_date).slice(0, 10);
+    if (!pointVisibleToSample(date, sample, through)) continue;
+    values[row.series_key].set(date, Number(row.value));
   }
-  const calendar = [...values.nifty50_tri.keys()].filter((date) => date >= LONGTERM_WARMUP_FROM && date <= LONGTERM_BUILDING_TO).sort();
-  const provenance = await loadProvenance();
-  await annotateMissingSessions(calendar, values, provenance);
-  const dates = assertCoverage(calendar, values);
-  const fingerprint = sha256(JSON.stringify({
-    version: LONGTERM_DATA_VERSION,
-    sources: provenance.map((row) => [row.seriesKey, row.checksum]).sort(),
+  const calendar = [...values.nifty50_tri.keys()].filter((date) => pointVisibleToSample(date, sample, through)).sort();
+  const provenance = visibleToSample(await loadProvenance(sample, through), sample, through);
+  if (options.annotate !== false) await annotateMissingSessions(calendar, values, provenance);
+  const dates = assertCoverage(calendar, values, sample);
+  if (sample === "building" && dates.some((date) => date >= LONGTERM_HELD_BACK_FROM)) {
+    throw new Error("Long Game building load observed a held-back date.");
+  }
+  const fingerprint = fingerprintLongtermDataset({
+    sample,
+    through: sample === "building" ? LONGTERM_BUILDING_TO : dates.filter((date) => date >= LONGTERM_HELD_BACK_FROM).at(-1) ?? LONGTERM_HELD_BACK_FROM,
+    provenance,
     ranges: LONGTERM_SERIES.map((key) => [key, values[key].size, first(values[key]), last(values[key])]),
-  }));
+  });
   return { dates, values, provenance, fingerprint };
 }
 
-export async function longtermDataIdentity(): Promise<{ last: string; fingerprint: string }> {
-  const dataset = await loadLongtermDataset();
-  return { last: dataset.dates.filter((date) => date <= LONGTERM_BUILDING_TO).at(-1) ?? "", fingerprint: dataset.fingerprint };
+export async function longtermDataIdentity(
+  sample: LongtermLoadSample = "building"
+): Promise<{ last: string; fingerprint: string }> {
+  const dataset = await loadLongtermDataset(sample, { annotate: false });
+  const last = sample === "building"
+    ? dataset.dates.filter((date) => date <= LONGTERM_BUILDING_TO).at(-1) ?? ""
+    : latestCommonCompleteSession(dataset.dates);
+  return { last, fingerprint: dataset.fingerprint };
 }
 
 export async function validateLongtermCoverage(): Promise<void> {
@@ -202,12 +288,17 @@ export function parseNseFixedIncomeResponse(raw: string): LongtermPoint[] {
   return dedupe(points);
 }
 
-function assertCoverage(calendar: string[], values: Record<LongtermSeriesKey, Map<string, number>>): string[] {
+function assertCoverage(
+  calendar: string[],
+  values: Record<LongtermSeriesKey, Map<string, number>>,
+  sample: LongtermLoadSample = "building"
+): string[] {
   const warmup = calendar.filter((date) => date < LONGTERM_BUILDING_FROM);
   if (warmup.length < 240) throw new Error(`Long Game needs at least 240 NIFTY sessions of warm-up; found ${warmup.length}.`);
+  const buildingSpan = calendar.filter((date) => date >= LONGTERM_BUILDING_FROM && date <= LONGTERM_BUILDING_TO);
   const building = calendar.filter((date) => date >= LONGTERM_BUILDING_FROM);
-  if (!building.length || building[0] > "2011-01-10" || building.at(-1)! < "2023-12-20") {
-    throw new Error(`Long Game exact building window is incomplete (${building[0] ?? "missing"} through ${building.at(-1) ?? "missing"}).`);
+  if (!buildingSpan.length || buildingSpan[0] > "2011-01-10" || buildingSpan.at(-1)! < "2023-12-20") {
+    throw new Error(`Long Game exact building window is incomplete (${buildingSpan[0] ?? "missing"} through ${buildingSpan.at(-1) ?? "missing"}).`);
   }
   for (const key of LONGTERM_SERIES) {
     const requiredDates = key === "nifty_1d_rate" ? building : calendar;
@@ -221,12 +312,16 @@ function assertCoverage(calendar: string[], values: Record<LongtermSeriesKey, Ma
     return keys.every((key) => values[key].has(date));
   });
   const commonWarmup = common.filter((date) => date < LONGTERM_BUILDING_FROM);
-  const commonBuilding = common.filter((date) => date >= LONGTERM_BUILDING_FROM);
+  const commonBuilding = common.filter((date) => date >= LONGTERM_BUILDING_FROM && date <= LONGTERM_BUILDING_TO);
   if (commonWarmup.length < 240) throw new Error(`Long Game common-series warm-up has only ${commonWarmup.length} sessions.`);
   if (!commonBuilding.length || commonBuilding[0] > "2011-01-10" || commonBuilding.at(-1)! < "2023-12-20") {
     throw new Error("Long Game cannot produce the exact common 2011–2023 building window.");
   }
-  return common;
+  if (sample === "heldback" && !common.some((date) => date >= LONGTERM_HELD_BACK_FROM)) {
+    throw new Error("Long Game held-back load has no common complete session on or after 2024-01-01.");
+  }
+  if (sample === "building") return common.filter((date) => date <= LONGTERM_BUILDING_TO);
+  return common.filter((date) => date <= calendar.at(-1)!);
 }
 
 async function fetchNiftyTri(name: string, from: string, to: string): Promise<FetchedChunk> {
@@ -253,7 +348,10 @@ async function fetchGoldNav(from: string, to: string): Promise<FetchedChunk> {
     }
     const raw = parts.join("\n");
     const points = parseAmfiGoldNav(raw);
-    if (points.length) return fetched(sourceUrl, `GoldBeES AMFI funds 36/49/21:${from}:${to}`, raw, points, from, to);
+    if (points.length) {
+      const normalized = normalizeGoldbeesNav(points).filter((point) => point.date >= from && point.date <= to);
+      return fetched(sourceUrl, `GoldBeES AMFI funds 36/49/21:${from}:${to}`, `${raw}\n${LONGTERM_DATA_VERSION}\n${GOLDBEES_SPLIT_EFFECTIVE}`, normalized, from, to);
+    }
     console.log(`longterm-import AMFI retry ${attempt} ${from}..${to}: bytes ${parts.map((part) => part.length).join("/")}, Gold BeES points 0`);
     if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 2_000));
   }
@@ -376,20 +474,25 @@ async function storeChunk(
        (series_key, source_url, source_id, retrieved_at, checksum, raw_from, raw_to,
         adjustment_method, missing_sessions, point_count, data_version)
      VALUES ($1,$2,$3,$4::timestamptz,$5,$6::date,$7::date,$8,'[]'::jsonb,$9,$10)
-     ON CONFLICT (series_key, checksum) DO NOTHING`,
+     ON CONFLICT (series_key, checksum) DO UPDATE
+       SET data_version = EXCLUDED.data_version,
+           adjustment_method = EXCLUDED.adjustment_method,
+           point_count = EXCLUDED.point_count`,
     [key, chunk.sourceUrl, chunk.sourceId, chunk.retrievedAt, chunk.checksum, chunk.rawFrom, chunk.rawTo, adjustmentMethod, chunk.points.length, LONGTERM_DATA_VERSION]
   );
   console.log(`longterm-import ${key} ${chunk.rawFrom}..${chunk.rawTo}: ${chunk.points.length} points`);
 }
 
-async function loadProvenance(): Promise<LongtermProvenance[]> {
+async function loadProvenance(sample: LongtermLoadSample, through: string): Promise<LongtermProvenance[]> {
   const rows = await mq<Record<string, unknown>>(
     `SELECT series_key, source_url, source_id, retrieved_at::text, checksum,
             raw_from::text, raw_to::text, adjustment_method, missing_sessions, point_count
        FROM longterm_provenance
       WHERE data_version = $1
+        AND raw_to <= $2::date
+        AND raw_from <= $2::date
       ORDER BY series_key, raw_from`,
-    [LONGTERM_DATA_VERSION]
+    [LONGTERM_DATA_VERSION, sample === "building" ? LONGTERM_BUILDING_TO : through]
   );
   return rows.map((row) => ({
     seriesKey: row.series_key as LongtermSeriesKey,

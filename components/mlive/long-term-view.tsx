@@ -41,8 +41,20 @@ type Result = {
 type Payload = {
   run: Run | null;
   results: Result[];
+  comparisons?: Comparison[];
+  rules?: RulesRecord;
   locked: boolean;
   error?: string;
+};
+
+type RulesRecord = {
+  version: string;
+  decidedOn: string;
+  decider: string;
+  eventsPerYearMax: number;
+  concentrationMaxShare: number;
+  reasons: Record<string, string>;
+  concentrationOverride?: { effect?: string; convertsFailToPass?: boolean };
 };
 
 type Comparison = {
@@ -62,10 +74,11 @@ const COLORS: Record<string, string> = {
 
 const CHECK_NAMES: Record<string, string> = {
   drawdownReduction: "15% lower maximum drawdown",
-  cagrGap: "Backtest CAGR within 2 points",
+  cagrGap: "Pre-tax CAGR within 2 points",
+  afterTaxCagrGap: "After-tax CAGR within 2 points",
   positiveFiveYearWindows: "80% positive five-year windows",
   fasterRecovery: "Faster drawdown recovery",
-  eventsPerYear: "No more than 6 events a year",
+  eventsPerYear: "No more than 12 events a year",
   stressDrawdownAdvantage: "Drawdown edge survives stress",
   diversifiedProfit: "Returns are diversified",
 };
@@ -107,7 +120,8 @@ export function LongTermView() {
   }, []);
 
   const result = payload?.results.find((row) => row.variant === selected) ?? payload?.results[0] ?? null;
-  const comparisons = arrayOf(payload?.run?.data.comparisons).map(comparisonOf).filter((row): row is Comparison => row !== null);
+  const storedComparisons = arrayOf(payload?.run?.data.comparisons).map(comparisonOf).filter((row): row is Comparison => row !== null);
+  const comparisons = payload?.comparisons?.length ? payload.comparisons : storedComparisons;
   const freshness = freshnessOf(payload, result);
   const equity = useMemo(() => combineSeries(payload?.results ?? [], "equity", "value"), [payload]);
   const drawdowns = useMemo(() => combineSeries(payload?.results ?? [], "equity", "drawdownPct"), [payload]);
@@ -137,7 +151,10 @@ export function LongTermView() {
       {error ? <StateCard title="Could not load Long Game" detail={error} /> : !payload ? (
         <StateCard title="Loading Long Game…" detail="Reading the latest research run." loading />
       ) : !payload.run ? (
-        <StateCard title="No research run yet" detail="Run the frozen Long Game building sample to populate this page." />
+        <>
+          {payload.rules && <RulesCard rules={payload.rules} />}
+          <StateCard title="No research run yet" detail="Run the frozen Long Game building sample to populate this page." />
+        </>
       ) : (
         <>
           <div className={`long-fresh ${freshness.stale ? "stale" : ""}`}>
@@ -146,6 +163,7 @@ export function LongTermView() {
             <span><b>Status</b> {runStatus(payload.run.status)}</span>
             {freshness.stale && <strong>Stale research — refresh the source data and run again before drawing conclusions.</strong>}
           </div>
+          {payload.rules && <RulesCard rules={payload.rules} />}
 
           {payload.results.length === 0 ? (
             <StateCard
@@ -201,9 +219,10 @@ export function LongTermView() {
                     >
                       <span className="long-variant-top">
                         <b>{variantLabel(row.variant)}</b>
-                        {row.variant.startsWith("RADAR") && <span className={`chip ${row.passed ? "ok" : "bad"}`}>{row.passed ? "Passed" : "Not passed"}</span>}
+                        {row.variant.startsWith("RADAR") && <span className={`chip ${conclusionOf(row) === "qualifies for live design" ? "ok" : "bad"}`}>{conclusionOf(row) ?? (row.passed ? "Passed" : "Not passed")}</span>}
                       </span>
                       <span><small>Backtest CAGR</small><strong>{percent(numberAt(row.metrics, "cagrPct"))}</strong></span>
+                      <span><small>After-tax CAGR</small><strong>{percent(numberAt(objectAt(row.stresses, "currentTax"), "cagrPct"))}</strong></span>
                       <span><small>Max drawdown</small><strong className="down">{percent(numberAt(objectAt(row.metrics, "maxDrawdown"), "pct"))}</strong></span>
                       <span><small>Ending value</small><strong>{money(numberAt(row.metrics, "endingValue"))}</strong></span>
                       <span><small>Events / year</small><strong>{decimal(numberAt(row.metrics, "eventsPerYear"), 1)}</strong></span>
@@ -261,6 +280,21 @@ export function LongTermView() {
   );
 }
 
+function RulesCard({ rules }: { rules: RulesRecord }) {
+  return (
+    <section className="card long-target">
+      <div>
+        <span className="lbl">{rules.version}</span>
+        <h2>Frozen rules</h2>
+        <p className="sub">Decided {rules.decidedOn} by {rules.decider}. Events per year at most {rules.eventsPerYearMax}. Concentration gate stays at {Math.round(rules.concentrationMaxShare * 100)}% and the inspection override does not turn a fail into a pass.</p>
+      </div>
+      <ul className="long-events">
+        {Object.values(rules.reasons).map((reason) => <li key={reason}><div><p>{reason}</p></div></li>)}
+      </ul>
+    </section>
+  );
+}
+
 function StateCard({ title, detail, loading = false }: { title: string; detail: string; loading?: boolean }) {
   return (
     <div className="card long-state" role={loading ? "status" : "alert"}>
@@ -296,6 +330,9 @@ function Acceptance({ comparisons, results }: { comparisons: Comparison[]; resul
                   <li key={name}><span>{CHECK_NAMES[name] ?? words(name)}</span><b className={passed ? "up" : "down"}>{passed ? "Pass" : "Fail"}</b></li>
                 ))}
               </ul>
+              {comparison.checks.diversifiedProfit === false && (
+                <p className="down">Known weakness: profit concentrated in {String(comparison.details.concentratedSleeve || "one sleeve")}.</p>
+              )}
             </article>
           ))}
         </div>
@@ -317,6 +354,9 @@ function ResearchDetail({ result, run }: { result: Result; run: Run }) {
   const sample = objectAt(result.metrics, "sample");
   const identity = objectAt(result.metrics, "runIdentity");
   const assumptions = arrayOf(identity.assumptions).map(String);
+  const years = objectAt(result.metrics, "calendarYearReturns");
+  const drawdown = objectAt(result.metrics, "maxDrawdown");
+  const conclusion = typeof result.metrics.conclusion === "string" ? result.metrics.conclusion : "";
 
   return (
     <>
@@ -339,6 +379,17 @@ function ResearchDetail({ result, run }: { result: Result; run: Run }) {
             );
           })}
         </div>
+      </section>
+
+      <section className="sec">
+        <article className="card">
+          <div className="card-h"><h2>Yearly returns</h2><p className="sub">{conclusion || "Calendar-year returns for this variant."} Drawdown {formatDate(String(drawdown.peakDate ?? ""))} to {formatDate(String(drawdown.troughDate ?? ""))}, recovery {drawdown.recoveryDate ? formatDate(String(drawdown.recoveryDate)) : "not recovered"}.</p></div>
+          {Object.keys(years).length ? <ul className="long-events">
+            {Object.entries(years).map(([year, value]) => (
+              <li key={year}><time>{year}</time><div><b>{percent(Number(value) || 0)}</b></div></li>
+            ))}
+          </ul> : <p className="sub">No calendar-year returns were saved.</p>}
+        </article>
       </section>
 
       <section className="sec">
@@ -409,6 +460,12 @@ function freshnessOf(payload: Payload | null, result: Result | null) {
     runDate: runDate ? formatDate(runDate) : "not recorded",
     stale: !Number.isFinite(checkedAt) || Date.now() - checkedAt > 45 * 86_400_000,
   };
+}
+
+function conclusionOf(row: Result): string | null {
+  const value = row.metrics.conclusion;
+  if (value === "qualifies for live design" || value === "does not qualify") return value;
+  return null;
 }
 
 function comparisonOf(value: unknown): Comparison | null {

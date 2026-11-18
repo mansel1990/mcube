@@ -17,6 +17,7 @@ import { intraday } from "./jobs/intraday";
 import { marketBackfill, marketDaily, parseMarketArgs } from "./jobs/market";
 import { marketCheck } from "./jobs/market-check";
 import { longtermImport } from "./jobs/longterm-import";
+import { longtermVerify } from "./longterm/verify";
 import { momentumEod } from "./jobs/momentum-eod";
 import { quotes } from "./jobs/quotes";
 import { researchJob } from "./jobs/research";
@@ -57,6 +58,7 @@ const jobs: Record<string, () => Promise<void>> = {
   "market-daily": marketDaily,
   "market-check": marketCheck,
   "longterm-import": () => longtermImport(process.argv.slice(3)),
+  "longterm-verify": () => longtermVerify(argv.slice(3)),
   "momentum-eod": momentumEod,
   research: () => researchJob(argv.slice(3)),
   "research-queue": researchQueue,
@@ -73,7 +75,7 @@ if (!job) {
   process.exit(1);
 }
 
-const withOptions = name === "market-backfill" || name === "research" || name === "longterm-import";
+const withOptions = name === "market-backfill" || name === "research" || name === "longterm-import" || name === "longterm-verify";
 if (!withOptions && argv.length > 3) {
   console.error(`${name} does not take options`);
   process.exit(1);

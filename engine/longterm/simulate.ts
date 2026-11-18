@@ -3,9 +3,21 @@ import {
   LONGTERM_BUILDING_FROM,
   LONGTERM_BUILDING_TO,
   LONGTERM_DATA_VERSION,
+  LONGTERM_HELD_BACK_FROM,
   type LongtermDataset,
   type LongtermSeriesKey,
 } from "./data";
+import { LONGTERM_FROZEN_V2 } from "./rules";
+import { scoreLongtermV2, type AcceptanceComparison, type LongtermV2ScoreInput } from "./score";
+
+export {
+  concentratedSleeve,
+  liveDesignConclusion,
+  longtermV2InputFromStored,
+  scoreLongtermV2,
+  sleeveDisplayName,
+} from "./score";
+export type { AcceptanceComparison, LongtermV2ScoreInput } from "./score";
 import {
   DEFAULT_LONGTERM_COSTS,
   DEFAULT_LONGTERM_DRAG,
@@ -35,6 +47,8 @@ export type LongtermSimulationOptions = {
   riskFreeAnnual?: number;
   /** A pre-2024 subset used by focused deterministic tests; the public default is always the frozen sample. */
   window?: { from: string; to: string };
+  /** Held-back is set only by the guarded runner. The default refuses dates after 2023-12-31. */
+  sample?: "building" | "heldback";
 };
 
 type PartialTaxConfig = {
@@ -149,22 +163,6 @@ export type LongtermResult = {
   allocations: LongtermAllocationPoint[];
   events: LongtermEvent[];
   provenance: LongtermDataset["provenance"];
-};
-
-export type AcceptanceComparison = {
-  radar: "RADAR-NEXT" | "RADAR-MID";
-  benchmark: "STATIC-NEXT" | "STATIC-MID";
-  checks: {
-    drawdownReduction: boolean;
-    cagrGap: boolean;
-    positiveFiveYearWindows: boolean;
-    fasterRecovery: boolean;
-    eventsPerYear: boolean;
-    stressDrawdownAdvantage: boolean;
-    diversifiedProfit: boolean;
-  };
-  qualified: boolean;
-  details: Record<string, number | string | boolean | null>;
 };
 
 export type LongtermBookResult = {
@@ -286,7 +284,7 @@ export function simulateLongterm(
 ): LongtermResult {
   const variant = getLongtermVariant(variantName);
   const resolved = resolveOptions(options);
-  validateDataset(dataset, variant, resolved.from, resolved.to);
+  validateDataset(dataset, variant, resolved.from, resolved.to, options.sample ?? "building");
   const primary = runBase({ variant, dataset, options: resolved, wholeUnits: false, costMultiplier: 1, dragMultiplier: 1, applyTax: false });
   const doubledCosts = runBase({ variant, dataset, options: resolved, wholeUnits: false, costMultiplier: 2, dragMultiplier: 1, applyTax: false });
   const doubledDrag = runBase({ variant, dataset, options: resolved, wholeUnits: false, costMultiplier: 1, dragMultiplier: 2, applyTax: false });
@@ -295,7 +293,7 @@ export function simulateLongterm(
   const identityInput = {
     dataVersion: LONGTERM_DATA_VERSION,
     fingerprint: dataset.fingerprint,
-    rulesVersion: "longgame-frozen-v1",
+    rulesVersion: LONGTERM_FROZEN_V2.version,
     variant: variant.name,
     from: resolved.from,
     to: resolved.to,
@@ -317,7 +315,7 @@ export function simulateLongterm(
       id: createHash("sha256").update(stableStringify(identityInput)).digest("hex"),
       dataVersion: LONGTERM_DATA_VERSION,
       dataFingerprint: dataset.fingerprint,
-      rulesVersion: "longgame-frozen-v1",
+      rulesVersion: LONGTERM_FROZEN_V2.version,
       variant: variant.name,
       costs: resolved.costs,
       drag: resolved.drag,
@@ -368,51 +366,28 @@ export function simulateLongtermBook(
   };
 }
 
+export function longtermV2InputFromResult(result: LongtermResult): LongtermV2ScoreInput {
+  return {
+    variant: result.variant,
+    cagrPct: result.metrics.cagrPct,
+    maxDrawdownPct: result.metrics.maxDrawdown.pct,
+    recoveryDate: result.metrics.maxDrawdown.recoveryDate,
+    daysUnderwater: result.metrics.maxDrawdown.daysUnderwater,
+    positiveFiveYearPct: result.metrics.positiveRollingFiveYearPct,
+    eventsPerYear: result.metrics.eventsPerYear,
+    doubledCostDrawdownPct: result.stress.doubledCosts.maxDrawdown.pct,
+    doubledDragDrawdownPct: result.stress.doubledDrag.maxDrawdown.pct,
+    afterTaxCagrPct: result.stress.currentTax.cagrPct,
+    contributionApprox: result.metrics.contributionApprox,
+    calendarYearReturns: result.metrics.calendarYearReturns,
+  };
+}
+
 export function compareLongterm(radar: LongtermResult, benchmark: LongtermResult): AcceptanceComparison {
   if (!radar.variant.startsWith("RADAR") || radar.benchmark !== benchmark.variant) {
     throw new Error(`${radar.variant} must be compared only with ${radar.benchmark}.`);
   }
-  const radarRecovery = radar.metrics.maxDrawdown.recoveryDate
-    ? radar.metrics.maxDrawdown.daysUnderwater
-    : Number.POSITIVE_INFINITY;
-  const staticRecovery = benchmark.metrics.maxDrawdown.recoveryDate
-    ? benchmark.metrics.maxDrawdown.daysUnderwater
-    : Number.POSITIVE_INFINITY;
-  const stressAdvantage =
-    radar.stress.doubledCosts.maxDrawdown.pct < benchmark.stress.doubledCosts.maxDrawdown.pct
-    && radar.stress.doubledDrag.maxDrawdown.pct < benchmark.stress.doubledDrag.maxDrawdown.pct;
-  const positiveContributions = RISKY.map((sleeve) => Math.max(0, radar.metrics.contributionApprox[sleeve]));
-  const contributionTotal = sum(positiveContributions);
-  const largestAssetShare = contributionTotal > 0 ? Math.max(...positiveContributions) / contributionTotal : 1;
-  const positiveYears = Object.values(radar.metrics.calendarYearReturns).map((value) => Math.max(0, value));
-  const largestPeriodShare = sum(positiveYears) > 0 ? Math.max(...positiveYears) / sum(positiveYears) : 1;
-  const checks = {
-    drawdownReduction: radar.metrics.maxDrawdown.pct <= benchmark.metrics.maxDrawdown.pct * 0.85,
-    cagrGap: radar.metrics.cagrPct >= benchmark.metrics.cagrPct - 2,
-    positiveFiveYearWindows: radar.metrics.positiveRollingFiveYearPct >= 80,
-    fasterRecovery: radarRecovery < staticRecovery,
-    eventsPerYear: radar.metrics.eventsPerYear <= 6,
-    stressDrawdownAdvantage: stressAdvantage,
-    diversifiedProfit: largestAssetShare <= 0.5 && largestPeriodShare <= 0.5,
-  };
-  return {
-    radar: radar.variant as "RADAR-NEXT" | "RADAR-MID",
-    benchmark: benchmark.variant as "STATIC-NEXT" | "STATIC-MID",
-    checks,
-    qualified: Object.values(checks).every(Boolean),
-    details: {
-      radarDrawdownPct: radar.metrics.maxDrawdown.pct,
-      staticDrawdownPct: benchmark.metrics.maxDrawdown.pct,
-      radarCagrPct: radar.metrics.cagrPct,
-      staticCagrPct: benchmark.metrics.cagrPct,
-      positiveFiveYearPct: radar.metrics.positiveRollingFiveYearPct,
-      radarRecoveryDays: Number.isFinite(radarRecovery) ? radarRecovery : null,
-      staticRecoveryDays: Number.isFinite(staticRecovery) ? staticRecovery : null,
-      eventsPerYear: radar.metrics.eventsPerYear,
-      largestAssetProfitSharePct: pct(largestAssetShare),
-      largestPositiveYearSharePct: pct(largestPeriodShare),
-    },
-  };
+  return scoreLongtermV2(longtermV2InputFromResult(radar), longtermV2InputFromResult(benchmark));
 }
 
 function runBase(config: RunConfig): BaseRun {
@@ -1040,9 +1015,22 @@ function rollingReturns(equity: LongtermEquityPoint[], years: number): ReturnPoi
   return result;
 }
 
-function validateDataset(dataset: LongtermDataset, variant: LongtermVariant, from: string, to: string): void {
-  if (to > LONGTERM_BUILDING_TO) throw new Error(`Long Game simulator refuses held-back dates after ${LONGTERM_BUILDING_TO}.`);
-  if (from < LONGTERM_BUILDING_FROM || from > to) throw new Error(`Invalid Long Game window ${from} through ${to}.`);
+function validateDataset(
+  dataset: LongtermDataset,
+  variant: LongtermVariant,
+  from: string,
+  to: string,
+  sample: "building" | "heldback"
+): void {
+  if (sample !== "heldback" && to > LONGTERM_BUILDING_TO) {
+    throw new Error(`Long Game simulator refuses held-back dates after ${LONGTERM_BUILDING_TO}.`);
+  }
+  if (sample === "heldback" && from !== LONGTERM_HELD_BACK_FROM) {
+    throw new Error("Long Game held-back starts on 2024-01-01.");
+  }
+  if (from > to || (sample !== "heldback" && from < LONGTERM_BUILDING_FROM)) {
+    throw new Error(`Invalid Long Game window ${from} through ${to}.`);
+  }
   const sorted = [...dataset.dates].sort();
   if (new Set(sorted).size !== sorted.length || sorted.some((date, index) => date !== dataset.dates[index])) {
     throw new Error("Long Game dates must be unique and sorted.");

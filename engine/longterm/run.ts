@@ -2,8 +2,17 @@ import { engineSha } from "@/lib/mlive/engine-sha";
 import type { ResearchIdentity } from "@/lib/mlive/research-page";
 import type { ResearchArgs } from "../backtest/args";
 import { q } from "../db";
-import { loadLongtermDataset, LONGTERM_BUILDING_FROM, LONGTERM_BUILDING_TO } from "./data";
-import { compareLongterm, simulateLongterm, type AcceptanceComparison, type LongtermResult } from "./simulate";
+import { loadLongtermDataset, LONGTERM_BUILDING_FROM, LONGTERM_BUILDING_TO, LONGTERM_HELD_BACK_FROM } from "./data";
+import { heldbackDatasetWindow, isFullLongtermSet, loadGuardedHeldbackDataset } from "./heldback";
+import { CORRECTED_BUILDING_LINK, LONGTERM_FROZEN_V2 } from "./rules";
+import {
+  compareLongterm,
+  liveDesignConclusion,
+  simulateLongterm,
+  type AcceptanceComparison,
+  type LongtermResult,
+  type LongtermSimulationOptions,
+} from "./simulate";
 import { LONGTERM_VARIANT_NAMES, type LongtermVariantName } from "./variants";
 
 export async function executeLongtermResearch(
@@ -11,23 +20,38 @@ export async function executeLongtermResearch(
   args: ResearchArgs,
   identity: ResearchIdentity
 ): Promise<void> {
-  if (args.sample !== "building") throw new Error("Long Game held-back data is locked for this task.");
   if (args.grid) throw new Error("Long Game parameter grids are forbidden.");
   const variants = selectedVariants(args.variants);
-  console.log(`research sample building window ${LONGTERM_BUILDING_FROM} through ${LONGTERM_BUILDING_TO}`);
-  const dataset = await loadLongtermDataset();
-  if (dataset.dates.some((date) => date >= "2024-01-01")) {
+  const heldback = args.sample === "heldback";
+  if (heldback) {
+    if (!args.confirmHeldback) throw new Error("Long Game held-back requires --confirm-heldback.");
+    if (!isFullLongtermSet(variants)) {
+      throw new Error("Long Game held-back runs exactly all four frozen variants in one shared window.");
+    }
+  }
+  const dataset = heldback
+    ? await loadGuardedHeldbackDataset(args.force)
+    : await loadLongtermDataset("building");
+  if (!heldback && dataset.dates.some((date) => date >= LONGTERM_HELD_BACK_FROM)) {
     throw new Error("Long Game data loader exposed held-back dates.");
   }
+  const window = heldback
+    ? heldbackDatasetWindow(dataset)
+    : { from: LONGTERM_BUILDING_FROM, to: LONGTERM_BUILDING_TO };
+  const simulation: LongtermSimulationOptions = heldback ? { window, sample: "heldback" } : {};
+  console.log(`research sample ${heldback ? "heldback" : "building"} window ${window.from} through ${window.to}`);
+  const corrected = !heldback && isFullLongtermSet(variants) ? CORRECTED_BUILDING_LINK : null;
   const params = {
     strategies: variants,
     variants,
     grid: false,
-    window: { from: LONGTERM_BUILDING_FROM, to: LONGTERM_BUILDING_TO },
+    window,
     capital: { fund: 100_000, contributions: 0, withdrawals: 0 },
     researchOnly: true,
     liveActivation: false,
+    rulesVersion: LONGTERM_FROZEN_V2.version,
     identity,
+    ...(corrected ? { supersedesRunIds: corrected.supersedesRunIds, supersedesReason: corrected.reason } : {}),
   };
   await q(
     `UPDATE mlive.mlive_research_runs
@@ -38,15 +62,18 @@ export async function executeLongtermResearch(
   await q(`DELETE FROM mlive.mlive_longterm_results WHERE run_id = $1`, [runId]);
 
   const results = new Map<LongtermVariantName, LongtermResult>();
-  for (const variant of variants) results.set(variant, simulateLongterm(dataset, variant));
+  for (const variant of variants) results.set(variant, simulateLongterm(dataset, variant, simulation));
   const comparisons: AcceptanceComparison[] = [];
   addComparison(results, comparisons, "RADAR-NEXT", "STATIC-NEXT");
   addComparison(results, comparisons, "RADAR-MID", "STATIC-MID");
   const comparisonByRadar = new Map(comparisons.map((row) => [row.radar, row]));
+  const conclusions: Record<string, string> = {};
 
   for (const [variant, result] of results) {
     const comparison = variant.startsWith("RADAR") ? comparisonByRadar.get(variant as "RADAR-NEXT" | "RADAR-MID") : undefined;
     const failReasons = comparison ? Object.entries(comparison.checks).filter(([, pass]) => !pass).map(([name]) => name) : [];
+    const conclusion = comparison ? liveDesignConclusion(comparison.qualified) : undefined;
+    if (conclusion) conclusions[variant] = conclusion;
     await q(
       `INSERT INTO mlive.mlive_longterm_results
          (run_id, variant, control_variant, metrics, equity, allocations, events, stresses, provenance, passed, fail_reasons)
@@ -55,7 +82,13 @@ export async function executeLongtermResearch(
         runId,
         variant,
         result.benchmark,
-        JSON.stringify({ ...result.metrics, sample: result.sample, runIdentity: result.runIdentity, wholeUnit: result.wholeUnit }),
+        JSON.stringify({
+          ...result.metrics,
+          sample: result.sample,
+          runIdentity: result.runIdentity,
+          wholeUnit: result.wholeUnit,
+          ...(conclusion ? { conclusion } : {}),
+        }),
         JSON.stringify(result.equity),
         JSON.stringify(result.allocations),
         JSON.stringify(result.events),
@@ -66,11 +99,10 @@ export async function executeLongtermResearch(
       ]
     );
   }
-  const qualified = comparisons.filter((row) => row.qualified).map((row) => row.radar);
-  const buildingDates = dataset.dates.filter((date) => date >= LONGTERM_BUILDING_FROM && date <= LONGTERM_BUILDING_TO);
-  const note = qualified.length
-    ? `Building sample complete. ${qualified.join(", ")} earned a later held-back test; no candidate was activated.`
-    : "Building sample complete. No RADAR candidate earned a held-back test; no thresholds were tuned.";
+  const sampleDates = dataset.dates.filter((date) => date >= window.from && date <= window.to);
+  const note = heldback
+    ? `${comparisons.map((row) => `${row.radar} ${liveDesignConclusion(row.qualified)}`).join(". ")}. Research only. No candidate was activated.`
+    : buildingNote(comparisons);
   await q(
     `UPDATE mlive.mlive_research_runs
         SET status = 'ok', finished_at = now(), note = $2, data = $3::jsonb, engine_sha = $4
@@ -79,17 +111,31 @@ export async function executeLongtermResearch(
       runId,
       note,
       JSON.stringify({
-        first: buildingDates[0] ?? LONGTERM_BUILDING_FROM,
-        last: buildingDates.at(-1) ?? LONGTERM_BUILDING_TO,
+        first: sampleDates[0] ?? window.from,
+        last: sampleDates.at(-1) ?? window.to,
         dataFingerprint: dataset.fingerprint,
         comparisons,
+        conclusions,
+        rules: LONGTERM_FROZEN_V2,
         researchOnly: true,
-        heldbackInspected: false,
+        liveActivation: false,
+        heldbackInspected: heldback,
+        ...(corrected ? { supersedesRunIds: corrected.supersedesRunIds, supersedesReason: corrected.reason } : {}),
       }),
       engineSha(),
     ]
   );
   console.log(note);
+  if (heldback) {
+    for (const [variant, conclusion] of Object.entries(conclusions)) console.log(`${variant}: ${conclusion}`);
+  }
+}
+
+function buildingNote(comparisons: AcceptanceComparison[]): string {
+  const qualified = comparisons.filter((row) => row.qualified).map((row) => row.radar);
+  return qualified.length
+    ? `Building sample complete. ${qualified.join(", ")} earned a later held-back test; no candidate was activated.`
+    : "Building sample complete. No RADAR candidate earned a held-back test; no thresholds were tuned.";
 }
 
 function selectedVariants(input: ResearchArgs["variants"]): LongtermVariantName[] {

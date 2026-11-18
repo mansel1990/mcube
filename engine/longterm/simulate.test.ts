@@ -1,10 +1,12 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   LONGTERM_SERIES,
   type LongtermDataset,
   type LongtermSeriesKey,
 } from "./data";
-import { compareLongterm, simulateLongterm } from "./simulate";
+import { compareLongterm, liveDesignConclusion, scoreLongtermV2, simulateLongterm, type LongtermV2ScoreInput } from "./simulate";
+import { replayStatic } from "./static-replay";
 import { getLongtermVariant } from "./variants";
 
 describe("Long Game pure simulator", () => {
@@ -123,6 +125,45 @@ describe("Long Game pure simulator", () => {
     expect(compareLongterm(left, control).benchmark).toBe("STATIC-NEXT");
     expect(() => compareLongterm(left, simulateLongterm(clean, "STATIC-MID", window("2011-01-03", "2011-05-31")))).toThrow(/compared only/);
   });
+
+  it("matches an independent STATIC replay and keeps the v2 concentration fail visible", () => {
+    const source = readFileSync(new URL("./static-replay.ts", import.meta.url), "utf8");
+    expect(source).not.toContain('from "./simulate"');
+    const dataset = fixture("static-drift");
+    const simulated = simulateLongterm(dataset, "STATIC-NEXT", window("2011-01-03", "2011-08-31"));
+    const replay = replayStatic(dataset, "STATIC-NEXT", { from: "2011-01-03", to: "2011-08-31" });
+    expect(replay.equity.map((point) => point.value)).toEqual(simulated.equity.map((point) => point.value));
+    expect(replay.maxDrawdown.pct).toBeCloseTo(simulated.metrics.maxDrawdown.pct, 6);
+    expect(replay.maxDrawdown.peakDate).toBe(simulated.metrics.maxDrawdown.peakDate);
+    expect(replay.maxDrawdown.troughDate).toBe(simulated.metrics.maxDrawdown.troughDate);
+
+    const base = scoreInput("RADAR-NEXT");
+    const control = scoreInput("STATIC-NEXT");
+    const withinTwelve = scoreLongtermV2({ ...base, eventsPerYear: 8.009 }, control);
+    expect(withinTwelve.checks.eventsPerYear).toBe(true);
+    expect(scoreLongtermV2({ ...base, eventsPerYear: 12 }, control).checks.eventsPerYear).toBe(true);
+    expect(scoreLongtermV2({ ...base, eventsPerYear: 12.01 }, control).checks.eventsPerYear).toBe(false);
+    const afterTax = scoreLongtermV2(
+      { ...base, cagrPct: control.cagrPct - 1, afterTaxCagrPct: (control.afterTaxCagrPct ?? 0) - 3 },
+      control
+    );
+    expect(afterTax.checks.cagrGap).toBe(true);
+    expect(afterTax.checks.afterTaxCagrGap).toBe(false);
+    const concentrated = scoreLongtermV2({
+      ...base,
+      contributionApprox: { nifty50: 10, secondary: 70, gold: 20, liquid: 0 },
+    }, control);
+    expect(concentrated.checks.diversifiedProfit).toBe(false);
+    expect(concentrated.qualified).toBe(false);
+    expect(concentrated.details.concentrationOverride).toBe("inspection-only");
+    expect(concentrated.details.concentrationConvertsFailToPass).toBe(false);
+    expect(liveDesignConclusion(concentrated.qualified)).toBe("does not qualify");
+    const mid = scoreLongtermV2(
+      { ...scoreInput("RADAR-MID"), contributionApprox: { nifty50: 10, secondary: 80, gold: 5, liquid: 0 } },
+      scoreInput("STATIC-MID")
+    );
+    expect(mid.details.concentratedSleeve).toBe("Midcap 150");
+  });
 });
 
 type Profile = "normal" | "crisis" | "warnings" | "static-drift" | "distribution";
@@ -237,4 +278,21 @@ function eventsThrough(events: { signalDate: string; sleeve: string; kind: strin
   return events
     .filter((event) => event.signalDate <= date)
     .map((event) => ({ signalDate: event.signalDate, sleeve: event.sleeve, kind: event.kind, stage: event.stage }));
+}
+
+function scoreInput(variant: string): LongtermV2ScoreInput {
+  return {
+    variant,
+    cagrPct: 10,
+    maxDrawdownPct: 12,
+    recoveryDate: "2012-01-01",
+    daysUnderwater: 40,
+    positiveFiveYearPct: 90,
+    eventsPerYear: 4,
+    doubledCostDrawdownPct: 13,
+    doubledDragDrawdownPct: 13,
+    afterTaxCagrPct: 9,
+    contributionApprox: { nifty50: 30, secondary: 20, gold: 20, liquid: 5 },
+    calendarYearReturns: { "2011": 4, "2012": 5 },
+  };
 }

@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { parseAmfiGoldNav, parseNiftyTriResponse, parseNseFixedIncomeResponse } from "./data";
+import {
+  assertLongtermImportRange,
+  fingerprintLongtermDataset,
+  GOLDBEES_SPLIT_EXPLANATION,
+  LONGTERM_DATA_VERSION,
+  normalizeGoldbeesNav,
+  parseAmfiGoldNav,
+  parseNiftyTriResponse,
+  parseNseFixedIncomeResponse,
+  pointVisibleToSample,
+  visibleToSample,
+} from "./data";
+import { dailyJumps, goldSplitUnresolved } from "./audit";
 
 describe("Long Game official-source parsers", () => {
   it("reads the NSE Indices TRI response and sorts it", () => {
@@ -35,5 +47,48 @@ describe("Long Game official-source parsers", () => {
       { date: "2011-01-03", value: 1000 },
       { date: "2011-01-04", value: 1000.2 },
     ]);
+  });
+
+  it("normalizes the Gold BeES 1:100 split and keeps held-back points out of a building fingerprint", () => {
+    const raw = [
+      { date: "2019-12-18", value: 4200 },
+      { date: "2019-12-19", value: 42.2 },
+    ];
+    expect(normalizeGoldbeesNav(raw)).toEqual([
+      { date: "2019-12-18", value: 42 },
+      { date: "2019-12-19", value: 42.2 },
+    ]);
+    expect(GOLDBEES_SPLIT_EXPLANATION).toMatch(/2019-12-19/);
+    expect(GOLDBEES_SPLIT_EXPLANATION).toMatch(/1:100/);
+    expect(LONGTERM_DATA_VERSION).toBe("longgame-data-v2");
+    expect(goldSplitUnresolved(dailyJumps("goldbees_nav", raw))).toBe(true);
+    expect(goldSplitUnresolved(dailyJumps("goldbees_nav", normalizeGoldbeesNav(raw)))).toBe(false);
+    expect(() => assertLongtermImportRange("2010-01-01", "2024-01-02", false)).toThrow(/2023-12-31/);
+    expect(() => assertLongtermImportRange("2024-01-01", "2026-11-18", true)).not.toThrow();
+
+    const heldback = { seriesKey: "nifty50_tri", checksum: "held", rawFrom: "2024-01-01", rawTo: "2024-03-31" };
+    const building = { seriesKey: "nifty50_tri", checksum: "build", rawFrom: "2023-01-01", rawTo: "2023-12-31" };
+    expect(visibleToSample([building, heldback], "building", "2023-12-31")).toEqual([building]);
+    expect(pointVisibleToSample("2024-01-02", "building", "2026-11-18")).toBe(false);
+    const buildingPrint = fingerprintLongtermDataset({
+      sample: "building",
+      through: "2023-12-31",
+      provenance: [building],
+      ranges: [["nifty50_tri", 1, "2010-01-04", "2023-12-29"]],
+    });
+    const withHeldback = fingerprintLongtermDataset({
+      sample: "building",
+      through: "2023-12-31",
+      provenance: [building, heldback],
+      ranges: [["nifty50_tri", 1, "2010-01-04", "2023-12-29"]],
+    });
+    expect(buildingPrint).not.toBe(withHeldback);
+    const scoped = fingerprintLongtermDataset({
+      sample: "building",
+      through: "2023-12-31",
+      provenance: visibleToSample([building, heldback], "building", "2023-12-31"),
+      ranges: [["nifty50_tri", 1, "2010-01-04", "2023-12-29"]],
+    });
+    expect(scoped).toBe(buildingPrint);
   });
 });
