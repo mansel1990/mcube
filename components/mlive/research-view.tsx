@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Bar, BarChart, Cell, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { istMinutes } from "@/lib/mlive/calendar";
 import { useIntradayRetired } from "./capabilities";
+import { LongTermView } from "./long-term-view";
 import { byQuarter, RESEARCH_STRATEGIES, type ResearchBook, type ResearchSample } from "@/lib/mlive/research-bar";
 import {
   aboutGist,
@@ -567,6 +568,10 @@ export function ResearchView() {
           csvHref={`/api/mlive/research/trades?run=${payload.run.id}&strategy=${selected.strategy}&params=${encodeURIComponent(selected.paramsKey)}&format=csv`}
         />
       )}
+      <div style={{ marginTop: 24 }}>
+        <h2>Long Game comparison</h2>
+        <LongTermView />
+      </div>
     </section>
   );
 }

@@ -6,6 +6,7 @@ import { alertBody, alertSections, auditLabel, collapseAlerts, groupAuditByDay, 
 import { notifyAlertsChanged } from "./alert-count";
 import { inr } from "./format";
 import { useIntradayRetired } from "./capabilities";
+import { LongGameReport } from "./long-game-book";
 import { ReportsPnl, TradesTable } from "./reports-pnl";
 import { TradePanel } from "./trade-panel";
 import type { PnlModel, PnlTrade } from "@/lib/mlive/pnl";
@@ -40,7 +41,8 @@ export function ReportsView({ embedded = false, forced = "pnl" }: { embedded?: b
   const params = useSearchParams();
   const intradayOff = useIntradayRetired();
   const requestedBook = params.get("book");
-  const book = requestedBook === "swing" || (!intradayOff && requestedBook === "intraday") ? requestedBook : "all";
+  const longView = requestedBook === "longgame" || requestedBook === "combined" ? requestedBook : null;
+  const book = longView ? "swing" : requestedBook === "swing" || (!intradayOff && requestedBook === "intraday") ? requestedBook : "all";
   const query = params.get("q") ?? "";
   const result = params.get("result") === "won" || params.get("result") === "lost" ? params.get("result")! : "all";
   const requested = params.get("tab");
@@ -148,8 +150,10 @@ export function ReportsView({ embedded = false, forced = "pnl" }: { embedded?: b
                 ))}
               </div>
               <div className="seg" role="group" aria-label="Book">
-                {(["all", "swing", "intraday"] as const).filter((item) => item !== "intraday" || !intradayOff).map((item) => (
-                  <button key={item} type="button" data-tone={item} aria-pressed={book === item} onClick={() => replace({ book: item })}>{item === "all" ? "All" : item === "swing" ? "Swing" : "Intraday"}</button>
+                {(["all", "swing", "intraday", "longgame", "combined"] as const).filter((item) => item !== "intraday" || !intradayOff).map((item) => (
+                  <button key={item} type="button" data-tone={item} aria-pressed={item === "longgame" || item === "combined" ? longView === item : longView == null && book === item} onClick={() => replace({ book: item })}>
+                    {item === "all" ? "All" : item === "swing" ? "Swing" : item === "intraday" ? "Intraday" : item === "longgame" ? "Long Game" : "Combined"}
+                  </button>
                 ))}
               </div>
               <a className="btn" href={`/api/mlive/reports/csv?book=${book}`}>CSV</a>
@@ -163,13 +167,14 @@ export function ReportsView({ embedded = false, forced = "pnl" }: { embedded?: b
         </div>
       )}
 
-      {(tab === "pnl" || tab === "trades") && pnl?.empty && (
+      {longView && <LongGameReport combined={longView === "combined"} />}
+      {longView !== "longgame" && (tab === "pnl" || tab === "trades") && pnl?.empty && (
         <div className="card empty-book">
           <p>{book === "intraday" ? "No intraday trades yet. The book starts after a strategy passes the bar." : book === "swing" ? "No swing trades yet. The book starts after a strategy passes the bar." : "No trades yet. The book starts after a strategy passes the bar."}</p>
         </div>
       )}
-      {tab === "pnl" && (pnl ? (pnl.empty ? null : <ReportsPnl pnl={pnl} onOpen={setTrade} query={query} result={result === "won" || result === "lost" ? result : "all"} tradesHref={`/live-trade-mansel/reports?${new URLSearchParams({ ...Object.fromEntries(params.entries()), tab: "trades" }).toString()}`} />) : <p className="muted" role="status">Loading P&L…</p>)}
-      {tab === "trades" && (pnl ? (pnl.empty ? null : <TradesTable pnl={pnl} onOpen={setTrade} query={query} result={result === "won" || result === "lost" ? result : "all"} headerFilters />) : <p className="muted" role="status">Loading trades…</p>)}
+      {longView !== "longgame" && tab === "pnl" && (pnl ? (pnl.empty ? null : <ReportsPnl pnl={pnl} onOpen={setTrade} query={query} result={result === "won" || result === "lost" ? result : "all"} tradesHref={`/live-trade-mansel/reports?${new URLSearchParams({ ...Object.fromEntries(params.entries()), tab: "trades" }).toString()}`} />) : <p className="muted" role="status">Loading P&L…</p>)}
+      {longView !== "longgame" && tab === "trades" && (pnl ? (pnl.empty ? null : <TradesTable pnl={pnl} onOpen={setTrade} query={query} result={result === "won" || result === "lost" ? result : "all"} headerFilters />) : <p className="muted" role="status">Loading trades…</p>)}
 
       {tab === "ledger" && ledger && (
         <>

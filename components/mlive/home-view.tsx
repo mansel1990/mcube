@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { homeStatusPill } from "@/lib/mlive/rules";
 import { inr, signed } from "./format";
 import { useIntradayRetired } from "./capabilities";
+import { LongGameToday } from "./long-game-book";
 import { LongtermProposalBanner, type LongtermProposalView } from "./longterm-proposal-banner";
 
 type Holding = {
@@ -240,6 +241,7 @@ export function HomeView() {
           </div>
         </article>}
       </div>
+      <LongGameToday />
 
       <div className="today-lower">
         <article className="card" style={{ overflow: "auto" }}>
