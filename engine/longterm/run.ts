@@ -2,7 +2,8 @@ import { engineSha } from "@/lib/mlive/engine-sha";
 import type { ResearchIdentity } from "@/lib/mlive/research-page";
 import type { ResearchArgs } from "../backtest/args";
 import { q } from "../db";
-import { loadLongtermDataset, LONGTERM_BUILDING_FROM, LONGTERM_BUILDING_TO, LONGTERM_HELD_BACK_FROM } from "./data";
+import { assertNoUnexplainedJumps } from "./audit";
+import { loadLongtermDataset, longtermSeriesPoints, LONGTERM_BUILDING_FROM, LONGTERM_BUILDING_TO, LONGTERM_HELD_BACK_FROM } from "./data";
 import { heldbackDatasetWindow, isFullLongtermSet, loadGuardedHeldbackDataset } from "./heldback";
 import { CORRECTED_BUILDING_LINK, LONGTERM_FROZEN_V2 } from "./rules";
 import {
@@ -35,6 +36,7 @@ export async function executeLongtermResearch(
   if (!heldback && dataset.dates.some((date) => date >= LONGTERM_HELD_BACK_FROM)) {
     throw new Error("Long Game data loader exposed held-back dates.");
   }
+  if (!heldback && isFullLongtermSet(variants)) assertNoUnexplainedJumps(longtermSeriesPoints(dataset));
   const window = heldback
     ? heldbackDatasetWindow(dataset)
     : { from: LONGTERM_BUILDING_FROM, to: LONGTERM_BUILDING_TO };

@@ -30,9 +30,20 @@ export function dailyJumps(series: string, points: readonly DatedValue[], limit 
   return jumps;
 }
 
-/** A near-100% drop on the split date means pre-split NAVs are still stored in old units. */
+/** A near-100% drop anywhere means pre-split NAVs are still stored in old units. */
 export function goldSplitUnresolved(jumps: readonly DailyJump[]): boolean {
-  return jumps.some((jump) => jump.series === "goldbees_nav" && jump.date >= "2019-12-18" && jump.date <= "2019-12-20" && jump.changePct <= -90);
+  return jumps.some((jump) => jump.series === "goldbees_nav" && jump.changePct <= -90);
+}
+
+/**
+ * A jump over 15% that remains after the explained Gold BeES split is normalized
+ * is an unnormalized corporate action or a bad join. The date can fall anywhere.
+ */
+export function assertNoUnexplainedJumps(series: Readonly<Record<string, readonly DatedValue[]>>): void {
+  const jumps = Object.entries(series).flatMap(([name, points]) => dailyJumps(name, points));
+  if (!jumps.length) return;
+  jumps.sort((left, right) => left.date.localeCompare(right.date) || left.series.localeCompare(right.series));
+  throw new Error(`unnormalized split drop at ${jumps[0].date}`);
 }
 
 export function missingOnCalendar(calendar: readonly string[], present: ReadonlySet<string>): string[] {

@@ -1,7 +1,8 @@
 import { q } from "../db";
-import { dailyJumps, goldSplitUnresolved, liquidUnitFindings, missingOnCalendar, rebalanceTimingFindings, triJoinJumps, yearlyLargestContributor } from "./audit";
+import { assertNoUnexplainedJumps, dailyJumps, goldSplitUnresolved, liquidUnitFindings, missingOnCalendar, rebalanceTimingFindings, triJoinJumps, yearlyLargestContributor } from "./audit";
 import {
   loadLongtermDataset,
+  longtermSeriesPoints,
   LONGTERM_BUILDING_FROM,
   LONGTERM_BUILDING_TO,
   LONGTERM_DATA_VERSION,
@@ -137,6 +138,7 @@ function printInputAudit(dataset: LongtermDataset): void {
       console.log(`  gold split ${goldSplitUnresolved(jumps) ? "UNNORMALIZED 1:100 drop still present" : "no unnormalized split drop"}`);
     }
   }
+  assertNoUnexplainedJumps(longtermSeriesPoints(dataset));
 }
 
 function printStaticParity(dataset: LongtermDataset, rows: StoredRow[]): void {

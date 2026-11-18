@@ -1,15 +1,18 @@
 import { createHash } from "node:crypto";
 import { mq } from "../db";
+import { assertNoUnexplainedJumps } from "./audit";
 
-export const LONGTERM_DATA_VERSION = "longgame-data-v2";
+export const LONGTERM_DATA_VERSION = "longgame-data-v3";
 export const LONGTERM_BUILDING_FROM = "2011-01-01";
 export const LONGTERM_BUILDING_TO = "2023-12-31";
 export const LONGTERM_HELD_BACK_FROM = "2024-01-01";
 export const LONGTERM_WARMUP_FROM = "2010-01-01";
 export const GOLDBEES_SPLIT_EFFECTIVE = "2019-12-19";
+export const GOLDBEES_NEW_SCALE_EXPECTED = "2019-12-23";
 export const GOLDBEES_SPLIT_RATIO = 100;
+const GOLDBEES_OLD_SCALE_FLOOR = 150;
 export const GOLDBEES_SPLIT_EXPLANATION =
-  "Nippon India ETF Gold BeES 1:100 unit split effective 2019-12-19. Pre-split published NAVs are divided by 100 so the stored series stays in post-split units. The drop is a corporate action, not a market loss.";
+  `Nippon India ETF Gold BeES 1:${GOLDBEES_SPLIT_RATIO} unit split effective ${GOLDBEES_SPLIT_EFFECTIVE}. This AMFI source first prints the new scale on ${GOLDBEES_NEW_SCALE_EXPECTED}. Every NAV before that first new-scale point is divided by ${GOLDBEES_SPLIT_RATIO} so the stored series stays in post-split units. The drop is a corporate action, not a market loss.`;
 
 export type LongtermLoadSample = "building" | "heldback";
 
@@ -109,12 +112,44 @@ export function assertLongtermImportRange(from: string, to: string, heldback = f
   }
 }
 
+/**
+ * Divide every NAV before the first point at the post-split scale.
+ * The scale change is the observed ~1:100 drop, which this source prints on
+ * 2019-12-23 rather than the 2019-12-19 effective date. A chunk that ends
+ * before that print has no drop to observe, so old-scale values still before
+ * the expected print are divided too. Already post-split values are left alone.
+ */
 export function normalizeGoldbeesNav(points: LongtermPoint[]): LongtermPoint[] {
-  return points.map((point) => (
-    point.date < GOLDBEES_SPLIT_EFFECTIVE
+  const sorted = points.map((point) => ({ date: point.date, value: point.value })).sort(byDate);
+  const cutoff = goldNewScaleDate(sorted);
+  const normalized = sorted.map((point) => (
+    cutoff && point.date < cutoff
       ? { date: point.date, value: point.value / GOLDBEES_SPLIT_RATIO }
       : point
   ));
+  assertNoUnexplainedJumps({ goldbees_nav: normalized });
+  return normalized;
+}
+
+function goldNewScaleDate(points: readonly LongtermPoint[]): string | null {
+  for (let index = 1; index < points.length; index++) {
+    const previous = points[index - 1].value;
+    const current = points[index].value;
+    if (!(previous > 0) || !(current > 0)) continue;
+    const ratio = previous / current;
+    if (ratio >= GOLDBEES_SPLIT_RATIO * 0.5 && ratio <= GOLDBEES_SPLIT_RATIO * 1.5) return points[index].date;
+  }
+  const beforeExpectedPrint = points.length > 0 && points.every((point) => point.date < GOLDBEES_NEW_SCALE_EXPECTED);
+  if (beforeExpectedPrint && median(points.map((point) => point.value)) >= GOLDBEES_OLD_SCALE_FLOOR) {
+    return GOLDBEES_NEW_SCALE_EXPECTED;
+  }
+  return null;
+}
+
+function median(values: number[]): number {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.floor(sorted.length / 2)];
 }
 
 export function visibleToSample<T extends { rawFrom: string; rawTo: string }>(
@@ -147,6 +182,13 @@ export function fingerprintLongtermDataset(input: {
     sources: input.provenance.map((row) => [row.seriesKey, row.checksum]).sort(),
     ranges: input.ranges,
   }));
+}
+
+export function longtermSeriesPoints(dataset: LongtermDataset): Record<LongtermSeriesKey, LongtermPoint[]> {
+  return Object.fromEntries(LONGTERM_SERIES.map((key) => [
+    key,
+    [...dataset.values[key].entries()].map(([date, value]) => ({ date, value })).sort(byDate),
+  ])) as Record<LongtermSeriesKey, LongtermPoint[]>;
 }
 
 export function latestCommonCompleteSession(dates: readonly string[], from = LONGTERM_HELD_BACK_FROM): string {
@@ -182,6 +224,7 @@ export async function importLongtermData(options: ImportOptions = {}): Promise<v
       );
     }
   }
+  await rewriteStoredGoldSplit();
   for (const chunk of dayChunks(LONGTERM_BUILDING_FROM, to, 90)) {
     if (await hasStoredChunk("nifty_1d_rate", chunk.from, chunk.to)) continue;
     const fetched = await fetchNifty1dRate(chunk.from, chunk.to);
@@ -347,10 +390,17 @@ async function fetchGoldNav(from: string, to: string): Promise<FetchedChunk> {
       parts.push(await response.text());
     }
     const raw = parts.join("\n");
-    const points = parseAmfiGoldNav(raw);
+    const points = parseAmfiGoldNav(raw).filter((point) => point.date >= from && point.date <= to);
     if (points.length) {
-      const normalized = normalizeGoldbeesNav(points).filter((point) => point.date >= from && point.date <= to);
-      return fetched(sourceUrl, `GoldBeES AMFI funds 36/49/21:${from}:${to}`, `${raw}\n${LONGTERM_DATA_VERSION}\n${GOLDBEES_SPLIT_EFFECTIVE}`, normalized, from, to);
+      const normalized = normalizeGoldbeesNav(points);
+      return fetched(
+        sourceUrl,
+        `GoldBeES AMFI funds 36/49/21:${from}:${to}`,
+        `${raw}\n${LONGTERM_DATA_VERSION}\n${GOLDBEES_SPLIT_EFFECTIVE}\n${GOLDBEES_NEW_SCALE_EXPECTED}`,
+        normalized,
+        from,
+        to
+      );
     }
     console.log(`longterm-import AMFI retry ${attempt} ${from}..${to}: bytes ${parts.map((part) => part.length).join("/")}, Gold BeES points 0`);
     if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 2_000));
@@ -444,6 +494,25 @@ type FetchedChunk = {
   rawTo: string;
   points: LongtermPoint[];
 };
+
+async function rewriteStoredGoldSplit(): Promise<void> {
+  const rows = await mq<{ asof_date: string; value: string }>(
+    `SELECT asof_date::text AS asof_date, value::text AS value
+       FROM longterm_points
+      WHERE series_key = 'goldbees_nav'
+      ORDER BY asof_date`
+  );
+  if (rows.length < 2) return;
+  const stored = rows.map((row) => ({ date: String(row.asof_date).slice(0, 10), value: Number(row.value) }));
+  const normalized = normalizeGoldbeesNav(stored);
+  for (let index = 0; index < normalized.length; index++) {
+    if (Math.abs(normalized[index].value - stored[index].value) <= 1e-9) continue;
+    await mq(
+      `UPDATE longterm_points SET value = $2 WHERE series_key = 'goldbees_nav' AND asof_date = $1::date`,
+      [normalized[index].date, normalized[index].value]
+    );
+  }
+}
 
 async function storeChunk(
   key: LongtermSeriesKey,

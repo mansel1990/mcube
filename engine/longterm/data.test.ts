@@ -11,7 +11,7 @@ import {
   pointVisibleToSample,
   visibleToSample,
 } from "./data";
-import { dailyJumps, goldSplitUnresolved } from "./audit";
+import { assertNoUnexplainedJumps, dailyJumps, goldSplitUnresolved } from "./audit";
 
 describe("Long Game official-source parsers", () => {
   it("reads the NSE Indices TRI response and sorts it", () => {
@@ -59,8 +59,9 @@ describe("Long Game official-source parsers", () => {
       { date: "2019-12-19", value: 42.2 },
     ]);
     expect(GOLDBEES_SPLIT_EXPLANATION).toMatch(/2019-12-19/);
+    expect(GOLDBEES_SPLIT_EXPLANATION).toMatch(/2019-12-23/);
     expect(GOLDBEES_SPLIT_EXPLANATION).toMatch(/1:100/);
-    expect(LONGTERM_DATA_VERSION).toBe("longgame-data-v2");
+    expect(LONGTERM_DATA_VERSION).toBe("longgame-data-v3");
     expect(goldSplitUnresolved(dailyJumps("goldbees_nav", raw))).toBe(true);
     expect(goldSplitUnresolved(dailyJumps("goldbees_nav", normalizeGoldbeesNav(raw)))).toBe(false);
     expect(() => assertLongtermImportRange("2010-01-01", "2024-01-02", false)).toThrow(/2023-12-31/);
@@ -90,5 +91,60 @@ describe("Long Game official-source parsers", () => {
       ranges: [["nifty50_tri", 1, "2010-01-04", "2023-12-29"]],
     });
     expect(scoped).toBe(buildingPrint);
+  });
+
+  it("normalizes a Gold BeES drop that prints two sessions after the effective date", () => {
+    const raw = [
+      { date: "2019-12-18", value: 4000 },
+      { date: "2019-12-19", value: 4050 },
+      { date: "2019-12-20", value: 4100 },
+      { date: "2019-12-23", value: 41.2 },
+    ];
+    expect(normalizeGoldbeesNav(raw)).toEqual([
+      { date: "2019-12-18", value: 40 },
+      { date: "2019-12-19", value: 40.5 },
+      { date: "2019-12-20", value: 41 },
+      { date: "2019-12-23", value: 41.2 },
+    ]);
+    expect(normalizeGoldbeesNav([
+      { date: "2019-10-01", value: 3800 },
+      { date: "2019-10-02", value: 3810 },
+    ])).toEqual([
+      { date: "2019-10-01", value: 38 },
+      { date: "2019-10-02", value: 38.1 },
+    ]);
+    const already = [
+      { date: "2019-12-18", value: 40 },
+      { date: "2019-12-20", value: 40.8 },
+      { date: "2019-12-23", value: 41.2 },
+    ];
+    expect(normalizeGoldbeesNav(already)).toEqual(already);
+  });
+
+  it("fails verification on an unnormalized -99% drop anywhere in a series", () => {
+    const farFromTheSplit = [
+      { date: "2021-06-01", value: 5000 },
+      { date: "2021-06-02", value: 50 },
+    ];
+    expect(goldSplitUnresolved(dailyJumps("goldbees_nav", farFromTheSplit))).toBe(true);
+    expect(() => assertNoUnexplainedJumps({ goldbees_nav: farFromTheSplit })).toThrow("unnormalized split drop at 2021-06-02");
+    expect(() => assertNoUnexplainedJumps({
+      nifty50_tri: [
+        { date: "2018-02-01", value: 1000 },
+        { date: "2018-02-02", value: 10 },
+      ],
+    })).toThrow("unnormalized split drop at 2018-02-02");
+    expect(() => assertNoUnexplainedJumps({
+      nifty_next50_tri: [
+        { date: "2015-08-24", value: 1000 },
+        { date: "2015-08-25", value: 800 },
+      ],
+    })).toThrow("unnormalized split drop at 2015-08-25");
+    expect(() => assertNoUnexplainedJumps({
+      goldbees_nav: [
+        { date: "2019-12-20", value: 41 },
+        { date: "2019-12-23", value: 41.2 },
+      ],
+    })).not.toThrow();
   });
 });
