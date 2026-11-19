@@ -1,6 +1,7 @@
 import { estimateCharges } from "@/lib/mlive/charges";
 import { makeTag } from "@/lib/mlive/rules";
 import { istMinutes, todayIst } from "@/lib/mlive/calendar";
+import { orderSlot } from "../jobs/order-window";
 import { raiseAlert } from "../alerts";
 import { guardOrder, type GuardContext } from "../guard";
 import { recordOrder, shortId } from "../book";
@@ -17,9 +18,8 @@ const LONGTERM_REASON = "longterm_allocation";
 /** Places approved Long Game decisions. Research and the proposal job do not call this. */
 export async function sendLongtermDecisions(side: "BUY" | "SELL", runId: number): Promise<{ sent: number; skipped?: string }> {
   try {
-    const minute = istMinutes();
-    if (side === "SELL" && (minute < 9 * 60 + 15 || minute > 9 * 60 + 35)) return { sent: 0, skipped: "hours" };
-    if (side === "BUY" && (minute < 9 * 60 + 40 || minute > 10 * 60)) return { sent: 0, skipped: "hours" };
+    const phase = orderSlot(side, istMinutes());
+    if (phase === "before" || phase === "closed") return { sent: 0, skipped: "hours" };
     const gate = await readProposalGate();
     if (!gate.allowed) return { sent: 0, skipped: "guard" };
     const settings = await loadSettings();

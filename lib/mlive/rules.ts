@@ -650,6 +650,18 @@ export function homeStatusPill(args: {
   return { label: labels[args.status] ?? args.status, connect: false };
 }
 
+/** A later readable preflight may clear only these. A reject, breaker, or bad-data halt stays. */
+export function kiteHaltClears(haltReason: string | null): boolean {
+  return haltReason === "no_kite_session" || haltReason === "kite_unreadable";
+}
+
+export function haltClearedCopy(clock: string): { audit: string; alert: string } {
+  return {
+    audit: `halt cleared, Kite readable at ${clock}`,
+    alert: `Halt cleared, Kite readable at ${clock}.`,
+  };
+}
+
 export type PreflightPlan = {
   halt: boolean;
   clearHalt: boolean;
@@ -665,9 +677,13 @@ export function preflightSessionPlan(args: {
 }): PreflightPlan {
   const blocking = args.reasons.filter((reason) => reason !== "kite_unreadable" || !args.reasons.includes("no_kite_session"));
   const onlySession = blocking.length === 1 && blocking[0] === "no_kite_session";
-  const sessionHalt = args.status === "halted_today" && args.haltReason === "no_kite_session";
   if (blocking.length === 0) {
-    return { halt: false, clearHalt: sessionHalt, alert: "none", haltReason: null };
+    return {
+      halt: false,
+      clearHalt: args.status === "halted_today" && kiteHaltClears(args.haltReason),
+      alert: "none",
+      haltReason: null,
+    };
   }
   if (onlySession) {
     return { halt: false, clearHalt: false, alert: "wait", haltReason: null };

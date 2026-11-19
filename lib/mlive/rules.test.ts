@@ -432,6 +432,12 @@ describe("go-live session rules", () => {
     expect(final).toMatchObject({ halt: false, alert: "wait", haltReason: null });
     const cleared = preflightSessionPlan({ minute: 9 * 60 + 5, reasons: [], status: "halted_today", haltReason: "no_kite_session" });
     expect(cleared).toMatchObject({ halt: false, clearHalt: true });
+    const unreadable = preflightSessionPlan({ minute: 8 * 60 + 45, reasons: [], status: "halted_today", haltReason: "kite_unreadable" });
+    expect(unreadable).toMatchObject({ halt: false, clearHalt: true });
+    const rejectedHalt = preflightSessionPlan({ minute: 8 * 60 + 45, reasons: [], status: "halted_today", haltReason: "order_rejected" });
+    expect(rejectedHalt).toMatchObject({ halt: false, clearHalt: false });
+    const breaker = preflightSessionPlan({ minute: 8 * 60 + 45, reasons: [], status: "paused_by_breaker", haltReason: "breaker" });
+    expect(breaker).toMatchObject({ halt: false, clearHalt: false });
     const other = preflightSessionPlan({ minute: 8 * 60 + 40, reasons: ["bhavcopy_missing", "no_kite_session"], status: "active", haltReason: null });
     expect(other.halt).toBe(true);
     expect(other.haltReason).toContain("bhavcopy_missing");

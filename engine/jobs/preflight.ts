@@ -12,8 +12,10 @@ import {
   kiteCashGap,
   kiteCashMessage,
   limitPrice,
+  haltClearedCopy,
+  kiteErrorMessage,
+  kiteHaltClears,
   KITE_LOGIN_WAIT,
-  PREFLIGHT_FINAL_MINUTE,
   preflightSessionPlan,
   paceBuys,
   priceSkip,
@@ -36,6 +38,45 @@ import { grossAllows, markedSwingBook, pendingGrossCommitment, sizeMomentumOrder
 import { liveSwingPolicy } from "../live-strategies";
 import { bhavcopyPresent, livePrice, loadBars, previousClose, yahooPreviousClose } from "../market";
 import { runJob } from "../run";
+
+/** Attempts before a readable session becomes kite_unreadable. Two gaps, a few seconds apart. */
+export const kiteReadRetry = { attempts: 3, gapMs: 3_000 };
+
+function clockFromMinute(minute: number): string {
+  const hour = Math.floor(minute / 60);
+  const min = minute % 60;
+  return `${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
+function sessionRejected(error: string): boolean {
+  return /no kite session|access_token|api_key|invalid token|tokenexception|incorrect api/i.test(error);
+}
+
+async function pause(ms: number): Promise<void> {
+  if (ms <= 0) return;
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function readKiteBook(kite: MliveKite): Promise<{ holdings: KiteHolding[]; kiteCash: number } | { error: string }> {
+  let error = "Kite holdings or cash could not be read.";
+  for (let attempt = 1; attempt <= kiteReadRetry.attempts; attempt++) {
+    try {
+      const holdings = await kite.holdings({ retry: false });
+      try {
+        await syncLongGameHoldings(holdings);
+      } catch (syncError) {
+        const message = syncError instanceof Error ? syncError.message : String(syncError);
+        if (!message.includes("mlive_longgame_holdings")) throw syncError;
+      }
+      const kiteCash = await kite.equityCash({ retry: false });
+      return { holdings, kiteCash };
+    } catch (caught) {
+      error = kiteErrorMessage(caught);
+      if (attempt < kiteReadRetry.attempts) await pause(kiteReadRetry.gapMs);
+    }
+  }
+  return { error };
+}
 
 export async function preflight(): Promise<void> {
   await runJob("preflight", async (runId) => {
@@ -67,29 +108,22 @@ export async function preflight(): Promise<void> {
       stateReadable = false;
     }
     const kite = new MliveKite(settings.dryRun);
-    const session = await kite.sessionOk();
+    let session = await kite.sessionOk();
     let holdings: KiteHolding[] = [];
     let holdingsReadable = false;
     let marginsReadable = false;
     let kiteCash = 0;
+    let readError: string | null = null;
     if (session) {
-      try {
-        holdings = await kite.holdings();
+      const read = await readKiteBook(kite);
+      if ("error" in read) {
+        if (sessionRejected(read.error)) session = false;
+        else readError = read.error;
+      } else {
+        holdings = read.holdings;
+        kiteCash = read.kiteCash;
         holdingsReadable = true;
-        try {
-          await syncLongGameHoldings(holdings);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          if (!message.includes("mlive_longgame_holdings")) throw error;
-        }
-      } catch {
-        holdingsReadable = false;
-      }
-      try {
-        kiteCash = await kite.equityCash();
         marginsReadable = true;
-      } catch {
-        marginsReadable = false;
       }
     }
     const bhav = await bhavcopyPresent(previous).catch(() => false);
@@ -109,8 +143,11 @@ export async function preflight(): Promise<void> {
       status: state.status,
       haltReason: state.haltReason,
     });
-    if (plan.clearHalt) {
+    if (plan.clearHalt && kiteHaltClears(state.haltReason)) {
+      const copy = haltClearedCopy(clockFromMinute(minute));
       await setState({ status: "active", haltReason: null });
+      await audit({ actor: "engine", action: "state.auto_resume", reason: copy.audit, runId });
+      await raiseAlert({ level: "done", code: "halt_cleared", message: copy.alert, runId });
       state = { ...state, status: "active", haltReason: null };
     }
     if (plan.alert === "wait") {
@@ -118,8 +155,7 @@ export async function preflight(): Promise<void> {
         await setState({ status: "active", haltReason: null });
         state = { ...state, status: "active", haltReason: null };
       }
-      const finalCall = minute >= PREFLIGHT_FINAL_MINUTE;
-      const message = finalCall ? KITE_LOGIN_WAIT : "No Kite session yet. Preflight will wait until 09:10.";
+      const message = KITE_LOGIN_WAIT;
       const already = await q(
         `SELECT id FROM mlive.mlive_alerts
           WHERE code = 'kite_login_needed' AND message = $2
@@ -139,10 +175,14 @@ export async function preflight(): Promise<void> {
     }
     if (plan.halt) {
       await setState({ status: "halted_today", haltReason: plan.haltReason });
+      const detail = plan.haltReason?.includes("kite_unreadable") && readError ? `. ${readError}` : "";
+      if (readError && plan.haltReason?.includes("kite_unreadable")) {
+        await audit({ actor: "engine", action: "preflight.kite_unreadable", reason: readError, runId });
+      }
       await raiseAlert({
         level: "problem",
         code: plan.haltReason === "no_kite_session" ? "kite_login_needed" : "bad_data",
-        message: `No orders today: ${plan.haltReason}`,
+        message: `No orders today: ${plan.haltReason}${detail}`,
         runId,
       });
       await writeDraft(today, { halted: plan.haltReason });

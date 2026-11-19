@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { istMinutes, isTradingDay } from "@/lib/mlive/calendar";
+import { homeStatusPill } from "@/lib/mlive/rules";
 import { decisionState, sendWindowState, type DecisionMode, type DecisionSide } from "@/lib/mlive/decision-state";
 import { auditPhrase, comingUp, failedJobs, indexedReturns, marketLine, relativeLabel, type PlannedDecision } from "@/lib/mlive/today-board";
 import { CORE_SLEEVES } from "@/lib/mlive/core-sleeves";
@@ -113,6 +114,12 @@ export function TodayBoard({
   }, [data.spark, data.today]);
 
   const mode: DecisionMode = data.state.status.startsWith("paused") ? "paused" : data.state.mode === "auto" ? "auto" : "approve";
+  const kiteHealth = homeStatusPill({
+    status: data.state.status,
+    haltReason: data.state.haltReason,
+    kiteConnected: data.kite.connected,
+    resumedAt: null,
+  });
   const minutes = istMinutes();
   const trading = marketPhase == null ? isTradingDay(data.today, new Set()) : marketPhase === "before" || marketPhase === "session";
   const start = bench?.periods?.find((row) => row.id === "start");
@@ -147,7 +154,7 @@ export function TodayBoard({
           {move.note && <p className="sub">{move.note}</p>}
         </div>
         <div className="health-pills">
-          <span className="chip">{data.kite.connected ? "Kite connected" : "Kite: log in"}</span>
+          <span className="chip">{data.kite.connected ? "Kite connected" : kiteHealth.connect ? "Waiting for Kite login" : "Kite: log in"}</span>
           <span className="chip">{mode === "auto" ? "Auto mode" : mode === "paused" ? "Paused" : "Approve mode"}</span>
           {failed > 0 ? <Link className="chip loss-pill" href="/live-trade-mansel/audit">{failed} jobs failed</Link> : <span className="chip">Last night&apos;s jobs ok</span>}
         </div>

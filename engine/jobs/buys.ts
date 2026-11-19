@@ -5,11 +5,14 @@ import { sendLongtermDecisions } from "../longterm/orders";
 import { loadSettings, loadState } from "../load";
 import { runJob } from "../run";
 import { skipIfNoSession } from "../session";
+import { catchUpOpen, orderSlot } from "./order-window";
 import { skipUnviableFreshIdeas } from "./recheck";
 
 export async function buys(): Promise<void> {
   const minute = istMinutes();
-  if (minute < 9 * 60 + 40 || minute > 10 * 60) return;
+  const phase = orderSlot("BUY", minute);
+  if (phase === "before" || phase === "closed") return;
+  if (phase === "catchup" && !(await catchUpOpen("BUY", minute))) return;
   if (await skipIfNoSession("buys")) return;
   await runJob("buys", async (runId) => {
     const longterm = await sendLongtermDecisions("BUY", runId);

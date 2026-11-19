@@ -1,16 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getMargins, getHoldings, q, raiseAlert, audit } = vi.hoisted(() => ({
+const { getMargins, getHoldings, q, raiseAlert, audit, clock } = vi.hoisted(() => ({
   getMargins: vi.fn(),
   getHoldings: vi.fn(),
   q: vi.fn(),
   raiseAlert: vi.fn(),
   audit: vi.fn(),
+  clock: { minute: 9 * 60 + 10 },
 }));
 
 vi.mock("@/lib/mlive/calendar", async () => {
   const actual = await vi.importActual<typeof import("@/lib/mlive/calendar")>("@/lib/mlive/calendar");
-  return { ...actual, istMinutes: () => 9 * 60 + 10, todayIst: () => "2026-11-06" };
+  return { ...actual, istMinutes: () => clock.minute, todayIst: () => "2026-11-06" };
 });
 
 vi.mock("kiteconnect", () => ({
@@ -55,17 +56,29 @@ describe("preflight when Kite cash cannot be read", () => {
   let summary: Record<string, unknown> | null = null;
   let kiteRows: unknown[] = [];
   let haltReason: string | null = null;
+  let status = "active";
+  const loginAlerts: string[] = [];
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    const { kiteReadRetry } = await import("./jobs/preflight");
+    kiteReadRetry.gapMs = 0;
+    kiteReadRetry.attempts = 3;
     process.env.KITE_API_KEY = "test-key";
     process.env.MLIVE_TOKEN_KEY = "test-token-key";
+    clock.minute = 9 * 60 + 10;
     summary = null;
     haltReason = null;
+    status = "active";
+    loginAlerts.length = 0;
     getMargins.mockReset();
     getMargins.mockResolvedValue({});
     getHoldings.mockReset();
     getHoldings.mockResolvedValue([]);
     raiseAlert.mockReset();
+    audit.mockReset();
+    raiseAlert.mockImplementation(async (entry: { code?: string; message?: string }) => {
+      if (entry.code === "kite_login_needed" && entry.message) loginAlerts.push(entry.message);
+    });
     kiteRows = [{ access_token_enc: "enc", token_date: "2026-11-06" }];
     q.mockReset();
     q.mockImplementation(async (text: string, params: unknown[] = []) => {
@@ -78,7 +91,7 @@ describe("preflight when Kite cash cannot be read", () => {
       if (text.includes("mlive_settings")) return [];
       if (text.includes("FROM mlive.mlive_state")) {
         return [{
-          status: "active",
+          status,
           mode: "approve",
           peak_value: 80000,
           peak_date: "2026-11-05",
@@ -90,6 +103,9 @@ describe("preflight when Kite cash cannot be read", () => {
       if (text.includes("mlive_holidays")) return [];
       if (text.includes("mlive_fund_ledger")) return [{ total: "80000" }];
       if (text.includes("stocks.daily_ohlcv")) return [{ n: 500 }];
+      if (text.includes("kite_login_needed")) {
+        return loginAlerts.includes(String(params[1] ?? "")) ? [{ id: "1" }] : [];
+      }
       return [];
     });
   });
@@ -102,8 +118,15 @@ describe("preflight when Kite cash cannot be read", () => {
       expect.stringContaining("halt_reason"),
       expect.arrayContaining(["halted_today", "kite_unreadable"])
     );
+    expect(getMargins).toHaveBeenCalledTimes(3);
     expect(raiseAlert).toHaveBeenCalledWith(
-      expect.objectContaining({ level: "problem", message: expect.stringContaining("kite_unreadable") })
+      expect.objectContaining({
+        level: "problem",
+        message: expect.stringMatching(/kite_unreadable.*Kite margins: cash missing in response/),
+      })
+    );
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "preflight.kite_unreadable", reason: "Kite margins: cash missing in response" })
     );
     expect(raiseAlert).not.toHaveBeenCalledWith(expect.objectContaining({ code: "kite_cash_low" }));
     const messages = raiseAlert.mock.calls.map((call) => String((call[0] as { message?: string }).message));
@@ -138,6 +161,79 @@ describe("preflight when Kite cash cannot be read", () => {
     expect(params[0]).toBe("active");
     expect(params[5]).toBeNull();
     expect(params).not.toContain("no_kite_session");
+  });
+
+  it("treats yesterday's token at 08:35 as waiting, with one login alert and no halt", async () => {
+    clock.minute = 8 * 60 + 35;
+    kiteRows = [{ access_token_enc: "enc", token_date: "2026-11-05" }];
+    const { preflight } = await import("./jobs/preflight");
+    await preflight();
+    await preflight();
+    expect(summary).toEqual({ waiting: "no_kite_session" });
+    const logins = raiseAlert.mock.calls.filter((call) => (call[0] as { code?: string }).code === "kite_login_needed");
+    expect(logins).toHaveLength(1);
+    expect(logins[0][0]).toMatchObject({
+      level: "needs_you",
+      message: "Log in to Kite. Buys wait until you do.",
+    });
+    const halted = q.mock.calls.some((call) => Array.isArray(call[1]) && (call[1] as unknown[]).includes("halted_today"));
+    expect(halted).toBe(false);
+    expect(getHoldings).not.toHaveBeenCalled();
+    const messages = raiseAlert.mock.calls.map((call) => String((call[0] as { message?: string }).message));
+    expect(messages.some((message) => message.includes("No orders today"))).toBe(false);
+  });
+
+  it("clears today's kite_unreadable halt when a later preflight can read Kite", async () => {
+    clock.minute = 8 * 60 + 45;
+    status = "halted_today";
+    haltReason = "kite_unreadable";
+    getMargins.mockResolvedValue({ available: { live_balance: 80000 } });
+    const { preflight } = await import("./jobs/preflight");
+    await preflight();
+    expect(summary).toMatchObject({ session: true });
+    const writes = q.mock.calls.filter((call) => String(call[0]).includes("UPDATE") && String(call[0]).includes("halt_reason"));
+    expect(writes.map((call) => call[1])).toEqual([
+      expect.arrayContaining(["active"]),
+    ]);
+    expect((writes[0][1] as unknown[])[5]).toBeNull();
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "state.auto_resume", reason: "halt cleared, Kite readable at 08:45" })
+    );
+    expect(raiseAlert).toHaveBeenCalledWith(
+      expect.objectContaining({ level: "done", code: "halt_cleared", message: "Halt cleared, Kite readable at 08:45." })
+    );
+  });
+
+  it("halts after retries when today's session cannot read holdings, and logs the error", async () => {
+    getHoldings.mockRejectedValue(new Error("Unable to read holdings"));
+    const { preflight } = await import("./jobs/preflight");
+    await preflight();
+    expect(getHoldings).toHaveBeenCalledTimes(3);
+    expect(summary).toEqual({ halted: "kite_unreadable" });
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "preflight.kite_unreadable", reason: "Unable to read holdings" })
+    );
+    expect(raiseAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: "problem",
+        message: expect.stringContaining("Unable to read holdings"),
+      })
+    );
+  });
+
+  it("does not clear an order rejection or a breaker pause when Kite is readable", async () => {
+    getMargins.mockResolvedValue({ available: { live_balance: 80000 } });
+    const { preflight } = await import("./jobs/preflight");
+    status = "halted_today";
+    haltReason = "order_rejected";
+    await preflight();
+    status = "paused_by_breaker";
+    haltReason = "breaker";
+    await preflight();
+    const cleared = audit.mock.calls.some((call) => (call[0] as { action?: string }).action === "state.auto_resume");
+    expect(cleared).toBe(false);
+    const writes = q.mock.calls.filter((call) => String(call[0]).includes("UPDATE") && String(call[0]).includes("halt_reason"));
+    expect(writes).toHaveLength(0);
   });
 });
 

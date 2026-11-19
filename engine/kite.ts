@@ -74,9 +74,9 @@ export class MliveKite {
     }
   }
 
-  async holdings(): Promise<KiteHolding[]> {
+  async holdings(opts?: { retry?: boolean }): Promise<KiteHolding[]> {
     const kc = await this.client();
-    const rows = await readRetry("holdings", () => kc.getHoldings());
+    const rows = opts?.retry === false ? await kc.getHoldings() : await readRetry("holdings", () => kc.getHoldings());
     return rows.map((row) => {
       const settled = shareCount(row.quantity);
       const t1 = shareCount(row.t1_quantity);
@@ -117,9 +117,9 @@ export class MliveKite {
     return tickBook.get(key) ?? null;
   }
 
-  async equityCash(): Promise<number> {
+  async equityCash(opts?: { retry?: boolean }): Promise<number> {
     const kc = await this.client();
-    const margins = await readRetry("margins", () => kc.getMargins("equity"));
+    const margins = opts?.retry === false ? await kc.getMargins("equity") : await readRetry("margins", () => kc.getMargins("equity"));
     const cash = kiteAvailableCash(margins);
     if (cash == null) throw new Error("Kite margins: cash missing in response");
     return cash;

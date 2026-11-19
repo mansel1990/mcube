@@ -7,6 +7,8 @@ import { sendReady } from "../execute";
 import { runJob } from "../run";
 import { skipIfNoSession } from "../session";
 import { runLatePreflight } from "../late-preflight";
+import { sendLongtermDecisions } from "../longterm/orders";
+import { catchUpOpen } from "./order-window";
 import { recheckBuys } from "./recheck";
 
 function failureText(error: unknown): string {
@@ -42,6 +44,19 @@ export async function approvals(): Promise<void> {
       await q(`UPDATE mlive.mlive_requests SET done_at = now() WHERE kind = 'recheck' AND done_at IS NULL`);
     };
     if (minute < 9 * 60 + 46) {
+      const caught = await catchUpOpen("SELL", minute);
+      if (caught) {
+        const longterm = await sendLongtermDecisions("SELL", runId);
+        const sells = await sendReady({ side: "SELL", chase: false, runId });
+        await close();
+        return { rechecked, sells: { ...sells, longterm } };
+      }
+      if (await catchUpOpen("BUY", minute)) {
+        const longterm = await sendLongtermDecisions("BUY", runId);
+        const buys = await sendReady({ side: "BUY", chase: true, runId });
+        await close();
+        return { rechecked, buys: { ...buys, longterm } };
+      }
       await close();
       return { rechecked, skipped: "before send window" };
     }
