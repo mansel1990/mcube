@@ -1,3 +1,4 @@
+import { kiteMarksToStore, longGameEtfSymbols } from "@/lib/mlive/long-game-symbols";
 import { q } from "../db";
 import { allocateIncomeUnits, reductionAttribution, type Pocket } from "./pockets";
 
@@ -5,11 +6,11 @@ const LIQUID = "LIQUIDBEES";
 
 type HoldingRow = { pocket: Pocket; symbol: string; units: number };
 
-export async function syncLongGameHoldings(kite: readonly { tradingsymbol: string; quantity: number }[]): Promise<void> {
+export async function syncLongGameHoldings(kite: readonly { tradingsymbol: string; quantity: number; lastPrice?: number }[]): Promise<void> {
   const rows = await q<{ pocket: string; symbol: string; units: unknown }>(
     `SELECT pocket, symbol, units FROM mlive.mlive_longgame_holdings WHERE units <> 0`
   );
-  if (rows.length === 0) return;
+  if (rows.length > 0) {
   const grouped = new Map<string, HoldingRow[]>();
   for (const row of rows) {
     const symbol = String(row.symbol).toUpperCase();
@@ -63,5 +64,31 @@ export async function syncLongGameHoldings(kite: readonly { tradingsymbol: strin
           : "Kite units fell. Confirm the pocket that sold.",
       ]
     );
+    }
+  }
+  await storeHoldingMarks(kite, rows.map((row) => String(row.symbol)));
+}
+
+/** Saves the Kite holding mark. A missing table does not change the quantity reconciliation above. */
+async function storeHoldingMarks(
+  kite: readonly { tradingsymbol: string; lastPrice?: number }[],
+  attributed: readonly string[]
+): Promise<void> {
+  try {
+    const settings = await q<{ value: unknown }>(`SELECT value FROM mlive.mlive_settings WHERE key = 'longterm_secondary'`);
+    const secondary = String(settings[0]?.value ?? "mid").replace(/"/g, "");
+    const marks = kiteMarksToStore(kite, longGameEtfSymbols(secondary, attributed));
+    for (const mark of marks) {
+      await q(
+        `INSERT INTO mlive.mlive_longgame_marks (symbol, price, observed_at, source)
+         VALUES ($1, $2, now(), $3)
+         ON CONFLICT (symbol) DO UPDATE
+           SET price = EXCLUDED.price, observed_at = now(), source = EXCLUDED.source`,
+        [mark.symbol, mark.price, mark.source]
+      );
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes("mlive_longgame_marks")) throw error;
   }
 }

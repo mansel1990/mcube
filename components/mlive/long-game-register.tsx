@@ -32,12 +32,19 @@ export function RegisterFromKite({ open, onClose }: { open: boolean; onClose: ()
   useEffect(() => {
     if (!open) return;
     trigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setRows(null);
+    setMessage("");
+    setError("");
     const timer = window.setTimeout(() => {
       void fetch("/api/mlive/long-game/register", { cache: "no-store" }).then(async (res) => {
-        const body = (await res.json()) as { holdings?: EligibleHolding[] };
+        const body = (await res.json()) as { holdings?: EligibleHolding[]; error?: string };
         const holdings = body.holdings ?? [];
         setRows(holdings);
+        setError(body.error ?? "");
         if (holdings.length === 1) setSymbol(holdings[0].symbol);
+      }).catch(() => {
+        setRows([]);
+        setError("Kite holdings could not be read.");
       });
       dialogRef.current?.querySelector<HTMLElement>("button, input, select")?.focus();
     }, 0);
@@ -113,11 +120,14 @@ export function RegisterFromKite({ open, onClose }: { open: boolean; onClose: ()
 
   return (
     <div className="modal-back" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) close(); }}>
-      <div className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={dialogRef}>
-        <div className="card-h">
-          <h2 id={titleId}>Register from Kite</h2>
-          <button type="button" className="btn" onClick={close}>Close</button>
-        </div>
+      <div className="modal register-sheet" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={dialogRef}>
+        <header className="register-head">
+          <div>
+            <h2 id={titleId}>Register from Kite</h2>
+            <p>Add an unassigned Long Game ETF to Core. Units and the average come from Kite.</p>
+          </div>
+          <button type="button" className="story-close" onClick={close}>Close</button>
+        </header>
         {rows == null && (
           <>
             <p className="sr-only" role="status">Loading holdings</p>
@@ -125,10 +135,7 @@ export function RegisterFromKite({ open, onClose }: { open: boolean; onClose: ()
           </>
         )}
         {rows?.length === 0 && (
-          <>
-            <p>No Long Game ETFs in your Kite yet.</p>
-            <p className="sub">Only configured, unattributed Long Game ETFs appear here.</p>
-          </>
+          <p className="register-empty">{error || "Every Long Game ETF from Kite is already in this book."}</p>
         )}
         {(rows?.length ?? 0) > 0 && (
           <>
@@ -138,21 +145,19 @@ export function RegisterFromKite({ open, onClose }: { open: boolean; onClose: ()
                   <label>
                     <input type="radio" name="kite-holding" checked={symbol === row.symbol} onChange={() => setSymbol(row.symbol)} />
                     <b>{row.symbol}</b>
-                    <span>{row.units} units</span>
-                    <span>Avg {inr(row.averagePrice)}</span>
-                    <span>{inr(row.value)}</span>
+                    <span className="register-value">{inr(row.value)}</span>
+                    <span className="register-meta">{row.units} units · average {inr(row.averagePrice)}</span>
                   </label>
                 </li>
               ))}
             </ul>
-            <p className="sub">Units and average price come from Kite and cannot be edited.</p>
-            <label className="field">
+            <label className="register-field">
               <b>Bought around</b>
               <input type="month" value={month} onChange={(event) => setMonth(event.target.value)} disabled={Boolean(fileText)} />
-              <small>Only used for tax estimates. Kite doesn&apos;t share purchase dates.</small>
+              <small>Only used for tax estimates. Kite does not share purchase dates.</small>
             </label>
-            <label className="field">
-              <b>Upload Console tradebook (CSV)</b>
+            <label className="register-field">
+              <b>Console tradebook</b>
               <input
                 type="file"
                 accept=".csv,text/csv"
@@ -166,7 +171,7 @@ export function RegisterFromKite({ open, onClose }: { open: boolean; onClose: ()
                   });
                 }}
               />
-              <small>Console › Reports › Tradebook, filter the ETF, full date range.</small>
+              <small>Optional. Console, Reports, Tradebook, this ETF, the full date range.</small>
             </label>
             {fileName && (
               <button type="button" className="btn" onClick={() => { setFileText(""); setFileName(""); setError(""); }}>
@@ -174,23 +179,32 @@ export function RegisterFromKite({ open, onClose }: { open: boolean; onClose: ()
               </button>
             )}
             {match && !match.ok && (
-              <p className="sub">
+              <p className="register-warn">
                 Tradebook has {match.reconstructed} units. Kite has {match.kite} unattributed. Difference {match.difference}. The full trade history may be incomplete. Remove the file to use the month instead.
               </p>
             )}
             {match?.ok && (
-              <div>
+              <div className="register-lots-wrap">
                 <p>Confirm these lots before they are added to Core. Weighted average {inr(match.average)}. Kite average {selected ? inr(selected.averagePrice) : ""}.</p>
-                <ul>
-                  {lots.map((lot) => <li key={`${lot.date}-${lot.price}`}>{lot.date} · {lot.units} units · {inr(lot.price)}</li>)}
+                <ul className="register-lots">
+                  {lots.map((lot) => (
+                    <li key={`${lot.date}-${lot.price}`}>
+                      <span>{lot.date}</span>
+                      <span>{lot.units} units</span>
+                      <b>{inr(lot.price)}</b>
+                    </li>
+                  ))}
                 </ul>
               </div>
             )}
-            {error && <p className="sub">{error}</p>}
-            {message && <p>{message}</p>}
-            <button type="button" className="btn primary" disabled={!selected || busy || (match != null && !match.ok)} onClick={() => void submit()}>
-              Add {selected?.units ?? ""} units to Core
-            </button>
+            {error && <p className="register-warn">{error}</p>}
+            {message && <p className="register-done">{message}</p>}
+            <div className="register-actions">
+              <button type="button" className="btn" onClick={close}>Cancel</button>
+              <button type="button" className="btn primary" disabled={!selected || busy || (match != null && !match.ok)} onClick={() => void submit()}>
+                {busy ? "Adding…" : `Add ${selected?.units ?? ""} units to Core`}
+              </button>
+            </div>
           </>
         )}
       </div>

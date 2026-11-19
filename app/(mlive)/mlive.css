@@ -909,8 +909,8 @@
 .mlive .retired-fact { display: inline-flex; align-items: baseline; gap: 6px; background: #fff; border-radius: 10px; padding: 6px 10px; font-size: 13px; }
 .mlive .retired-fact b { color: var(--loss); font-variant-numeric: tabular-nums; }
 .mlive .retired-row p { grid-column: 1 / -1; margin: 0; color: var(--ink2); }
-.mlive .story-back { position: fixed; inset: 0; z-index: 60; background: rgba(20, 22, 28, 0.28); display: flex; justify-content: center; align-items: center; padding: 24px; }
-.mlive .story-panel { width: min(520px, 100%); max-height: min(88vh, 720px); overflow: auto; background: var(--surface); color: var(--ink); padding: 28px 24px 36px; border-radius: 18px; box-shadow: var(--shadow); }
+.mlive .story-back { position: fixed; inset: 0; z-index: 60; background: rgba(20, 22, 28, 0.28); display: flex; justify-content: flex-end; align-items: stretch; padding: 0; }
+.mlive .story-panel { width: min(420px, 100%); height: 100%; max-height: none; overflow: auto; background: var(--surface); color: var(--ink); padding: 28px 24px 48px; border-radius: 0; box-shadow: var(--shadow); }
 .mlive .story-open { border: 0; background: #fff; color: var(--longgame-ink); font: inherit; font-weight: 700; min-height: 36px; padding: 0 14px; border-radius: 999px; cursor: pointer; flex: none; }
 .mlive .story-head { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: start; margin-bottom: 16px; }
 .mlive .story-kicker { grid-column: 1; margin: 0; color: var(--longgame); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
@@ -1170,6 +1170,51 @@
 .mlive .lg-sleeve .alloc.liquid i { background: #C8C2B6; }
 .mlive .lg-pocket-foot { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--ink2); font-size: 14px; }
 .mlive .lg-note { margin: 0; color: var(--ink3); font-size: 13px; }
+.mlive .lg-register-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.mlive .register-sheet { display: grid; gap: 16px; width: min(640px, 100%); }
+.mlive .register-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.mlive .register-head h2 { margin: 0; }
+.mlive .register-head p { margin: 4px 0 0; color: var(--ink2); }
+.mlive .register-empty, .mlive .register-done { margin: 0; padding: 14px 16px; border-radius: 14px; background: var(--surface2); }
+.mlive .register-done { background: var(--profit-bg); color: var(--profit); }
+.mlive .register-warn { margin: 0; padding: 12px 14px; border-radius: 14px; background: var(--loss-bg); color: var(--loss); }
+.mlive .register-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.mlive .register-list label { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 2px 12px; align-items: center; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; cursor: pointer; }
+.mlive .register-list label:has(input:checked) { border-color: transparent; background: var(--longgame-tint); }
+.mlive .register-list input { margin: 0; }
+.mlive .register-meta { grid-column: 2 / -1; color: var(--ink2); font-size: 13px; }
+.mlive .register-value { font-variant-numeric: tabular-nums; font-weight: 700; }
+.mlive .register-field { display: grid; gap: 6px; }
+.mlive .register-field small { color: var(--ink3); font-size: 12px; }
+.mlive .register-field input { width: 100%; min-height: 44px; height: auto; text-align: left; border-radius: 10px; border: 1px solid var(--line); background: var(--surface2); color: var(--ink); padding: 8px 12px; font: inherit; box-sizing: border-box; }
+.mlive .register-lots { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.mlive .register-lots li { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; padding: 8px 12px; border-radius: 10px; background: var(--surface2); font-variant-numeric: tabular-nums; }
+.mlive .register-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 720px) {
+  .mlive .lg-register-row { align-items: stretch; flex-direction: column; }
+  .mlive .lg-holdings table, .mlive .lg-lots table { display: none; }
+  .mlive .lg-holding-cards, .mlive .lg-lots[open] .lg-lot-cards { display: grid; gap: 10px; }
+  .mlive .lg-holding-cards li, .mlive .lg-lot-cards li { display: grid; gap: 4px; padding: 12px; border-radius: 14px; background: var(--surface2); }
+  .mlive .lg-holding-cards span, .mlive .lg-lot-cards span { display: flex; justify-content: space-between; gap: 12px; color: var(--ink3); }
+}
+.mlive .swatch.ink { background: var(--ink); }
+.mlive .lg-holdings, .mlive .lg-lots, .mlive .lg-chart { padding: 18px 20px; }
+.mlive .lg-holdings h2, .mlive .lg-chart h2 { margin: 0 0 8px; font-size: 22px; }
+.mlive .lg-holdings table, .mlive .lg-lots table { width: 100%; border-collapse: collapse; }
+.mlive .lg-holdings th, .mlive .lg-lots th { text-align: left; font-size: 12px; letter-spacing: 0.04em; color: var(--ink3); font-weight: 600; padding: 10px 8px; }
+.mlive .lg-holdings td, .mlive .lg-lots td { padding: 12px 8px; border-top: 1px solid var(--line); vertical-align: top; }
+.mlive .lg-holdings th.r, .mlive .lg-holdings td.r, .mlive .lg-lots th.r, .mlive .lg-lots td.r { text-align: right; }
+.mlive .lg-holdings small, .mlive .lg-lots em { display: block; color: var(--ink3); font-size: 11px; font-weight: 650; font-style: normal; }
+.mlive .lg-lots em { display: inline; margin-left: 6px; color: var(--longgame-ink); letter-spacing: 0.04em; text-transform: uppercase; }
+.mlive .lg-total td { font-weight: 700; }
+.mlive .lg-holding-cards, .mlive .lg-lot-cards { display: none; list-style: none; margin: 0; padding: 0; }
+.mlive .lg-lots summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 700; font-size: 22px; }
+.mlive .lg-chart-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.mlive .lg-range { display: flex; gap: 6px; }
+.mlive .lg-range button { min-height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; font-weight: 700; cursor: pointer; }
+.mlive .lg-range button[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+.mlive .lg-tip { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.mlive .lg-tip p { margin: 4px 0 0; }
 .mlive .lg-history { padding: 18px 20px 8px; }
 .mlive .lg-history h2 { margin: 0 0 8px; font-size: 22px; }
 .mlive .lg-history th { text-align: left; font-size: 12px; letter-spacing: 0.04em; color: var(--ink3); font-weight: 600; padding: 10px 8px; }

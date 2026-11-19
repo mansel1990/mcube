@@ -1,3 +1,4 @@
+import { readFileSync } from "fs";
 import { mkdtemp, readdir, readFile, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
@@ -22,8 +23,11 @@ import {
   planMinuteBackfill,
   seriesPlans,
   spanChunks,
+  dailyMarketPlanIds,
+  longtermDailyPlan,
   writeMonthFile,
 } from "./market";
+import { LONG_GAME_INSTRUMENT_SYMBOLS, longGameEtfSymbols } from "@/lib/mlive/long-game-symbols";
 
 function inclusiveDays(from: string, to: string): number {
   let count = 1;
@@ -94,6 +98,37 @@ describe("market history layout", () => {
       { from: "2024-01-03", to: "2024-01-03" },
       { from: "2024-01-05", to: "2024-01-05" },
     ]);
+  });
+
+  it("keeps Long Game ETFs on a daily plan outside the Swing universe", () => {
+    const universe = ["INFY", "TCS"];
+    const before = [...universe];
+    const ranking = ["INFY", "TCS"];
+    expect(longGameEtfSymbols("mid")).toEqual(["NIFTYBEES", "MID150BEES", "GOLDBEES", "LIQUIDBEES"]);
+    expect(longGameEtfSymbols("next", ["MID150BEES"])).toEqual(["NIFTYBEES", "JUNIORBEES", "GOLDBEES", "LIQUIDBEES", "MID150BEES"]);
+    expect(universe).toEqual(before);
+    expect(ranking).toEqual(["INFY", "TCS"]);
+    const plan = longtermDailyPlan("2026-11-19");
+    expect(plan).toMatchObject({ id: "longterm-daily", interval: "day", table: "candles_daily", store: "neon", indexes: false, where: "longterm" });
+    expect(dailyMarketPlanIds(false)).toEqual(["daily", "5m-neon", "longterm-daily"]);
+    expect(dailyMarketPlanIds(true)).toEqual(["daily", "longterm-daily"]);
+    const intraday = seriesPlans("2026-11-19").filter((item) => item.interval !== "day");
+    expect(intraday.map((item) => item.id)).toEqual(["5m-neon", "5m-files", "1m-files"]);
+    expect(intraday.some((item) => item.id === "longterm-daily")).toBe(false);
+    const kept = keepInstrumentRows(
+      [
+        { token: 1, symbol: "INFY", tick: 0.05, type: "EQ" },
+        { token: 9, symbol: "NIFTYBEES", tick: 0.01, type: "EQ" },
+        { token: 10, symbol: "LIQUIDBEES", tick: 0.01, type: "EQ" },
+        { token: 11, symbol: "NIFTYBEES", tick: 0.01, type: "FUT" },
+      ],
+      new Set(universe),
+      new Set(LONG_GAME_INSTRUMENT_SYMBOLS)
+    );
+    expect(kept.map((row) => row.symbol)).toEqual(["INFY", "NIFTYBEES", "LIQUIDBEES"]);
+    expect(universe).toEqual(["INFY", "TCS"]);
+    expect(parseMarketArgs(["--series", "longterm-daily"]).series).toBe("longterm-daily");
+    expect(readFileSync(new URL("./market.ts", import.meta.url), "utf8")).not.toContain("exclude_symbols");
   });
 
   it("keeps universe equities and indexes, and batches inserts", () => {

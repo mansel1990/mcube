@@ -4,19 +4,27 @@ import { attributedUnits, registerCoreOpening } from "@/engine/longterm/register
 import { remainingUnassigned } from "@/engine/longterm/pockets";
 import { requireMliveSession } from "@/lib/mlive/auth";
 import { todayIst } from "@/lib/mlive/calendar";
+import { isLongGameEtf } from "@/lib/mlive/long-game-symbols";
 import { matchKiteUnits, parseTradebookCsv, reconstructFifo, tradebookChecksum } from "@/lib/mlive/tradebook";
+import { sql } from "@/lib/sql";
 
-const ETFS = new Set(["NIFTYBEES", "MID150BEES", "JUNIORBEES", "GOLDBEES", "LIQUIDBEES"]);
+async function eligibleSymbols(): Promise<{ secondary: string; attributed: string[] }> {
+  const settings = await sql`SELECT value FROM mlive.mlive_settings WHERE key = 'longterm_secondary'` as { value: unknown }[];
+  const held = await sql`SELECT symbol FROM mlive.mlive_longgame_holdings WHERE units <> 0` as { symbol: string }[];
+  const secondary = typeof settings[0]?.value === "string" ? settings[0].value.replace(/"/g, "") : "mid";
+  return { secondary, attributed: held.map((row) => String(row.symbol)) };
+}
 
 export async function GET() {
   const session = await requireMliveSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const holdings = await new MliveKite(false).holdings();
+    const eligible = await eligibleSymbols();
     const rows = [];
     for (const item of holdings) {
       const symbol = item.tradingsymbol.toUpperCase();
-      if (!ETFS.has(symbol)) continue;
+      if (!isLongGameEtf(symbol, eligible.secondary, eligible.attributed)) continue;
       const attributed = await attributedUnits(symbol);
       const units = remainingUnassigned(item.quantity, attributed);
       if (!(units > 0)) continue;
@@ -47,7 +55,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Registration targets Core." }, { status: 400 });
   }
   const symbol = String(body?.symbol ?? "").trim().toUpperCase();
-  if (!ETFS.has(symbol)) return NextResponse.json({ error: "Choose a Long Game ETF." }, { status: 400 });
+  const eligible = await eligibleSymbols();
+  if (!isLongGameEtf(symbol, eligible.secondary, eligible.attributed)) return NextResponse.json({ error: "Choose a Long Game ETF." }, { status: 400 });
   try {
     const holdings = await new MliveKite(false).holdings();
     const row = holdings.find((item) => item.tradingsymbol.toUpperCase() === symbol);

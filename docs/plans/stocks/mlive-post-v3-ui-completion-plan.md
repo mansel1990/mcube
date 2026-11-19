@@ -217,7 +217,7 @@ The canonical card, historical cards, verdict copy, and tests must use the same 
 
 Keep:
 
-- 4px Swing-blue edge;
+- 4px Swing-violet edge;
 - Momentum M10-6;
 - one-line description;
 - short Live pilot chip;
@@ -584,8 +584,8 @@ Do not continue saying “at open” after sending.
 ### Growth chart
 
 - add Long Game saffron series when EOD data exists;
-- keep Swing blue;
-- keep Nifty grey dashed;
+- keep Swing violet;
+- keep Nifty blue and dashed;
 - normalize visible series from a common date;
 - add legend with visible returns;
 - hide absent series rather than drawing zero.
@@ -622,7 +622,7 @@ Swing limits:
 - free cash;
 - open positions versus cap;
 - buys today versus cap;
-- blue/neutral thin bars.
+- Swing-violet/neutral thin bars.
 
 Long Game:
 
@@ -638,7 +638,7 @@ Recent activity:
 - three phone rows;
 - relative time;
 - plain language;
-- Swing blue marker;
+- Swing violet marker;
 - Long Game saffron marker;
 - system grey marker;
 - loss red marker for exits/stops.

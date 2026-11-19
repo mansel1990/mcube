@@ -5,7 +5,8 @@ import { createInterface } from "readline";
 import { createGunzip, gunzipSync, gzipSync } from "zlib";
 import { addDays, istMinutes, previousTradingDay, todayIst } from "@/lib/mlive/calendar";
 import { INTRADAY_BUILDING_END, INTRADAY_BUILDING_FROM } from "@/lib/mlive/research-bar";
-import { mq } from "../db";
+import { LONG_GAME_INSTRUMENT_SYMBOLS, longGameEtfSymbols, longtermDailyFrom } from "@/lib/mlive/long-game-symbols";
+import { mq, q } from "../db";
 import { MliveKite } from "../kite";
 import { holidaySet, loadSettings } from "../load";
 import { runJob } from "../run";
@@ -28,7 +29,7 @@ export const KITE_BACKOFF_MS = [2000, 5000, 15000] as const;
 
 const INDEXES = ["NIFTY 50", "NIFTY 500", "NIFTY BANK", "NIFTY IT", "NIFTY AUTO", "NIFTY PHARMA", "NIFTY FMCG", "NIFTY METAL", "NIFTY REALTY", "NIFTY ENERGY", "NIFTY INFRA", "NIFTY PSE", "NIFTY MEDIA", "NIFTY PSU BANK", "NIFTY FIN SERVICE"];
 
-export type SeriesId = "daily" | "5m-neon" | "5m-files" | "1m-files";
+export type SeriesId = "daily" | "5m-neon" | "5m-files" | "1m-files" | "longterm-daily";
 export type CandleInterval = "day" | "5minute" | "minute";
 export type StoreName = "neon" | "file";
 export type Candle = { date: string; open: number; high: number; low: number; close: number; volume: number };
@@ -45,7 +46,7 @@ export type SeriesPlan = {
   store: StoreName;
   table: CandleTable | null;
   fileKind: "5m" | "1m" | null;
-  where: "u.nifty500 = true" | "u.nifty200 = true" | "u.nifty100 = true";
+  where: "u.nifty500 = true" | "u.nifty200 = true" | "u.nifty100 = true" | "longterm";
   indexes: boolean;
   from: string;
   to: string;
@@ -61,7 +62,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 function isSeriesId(value: string): value is SeriesId {
-  return value === "daily" || value === "5m-neon" || value === "5m-files" || value === "1m-files";
+  return value === "daily" || value === "5m-neon" || value === "5m-files" || value === "1m-files" || value === "longterm-daily";
 }
 
 export function parseMarketArgs(argv: string[]): MarketArgs {
@@ -90,7 +91,7 @@ export function parseMarketArgs(argv: string[]): MarketArgs {
     } else if (arg === "--series" || arg.startsWith("--series=")) {
       const value = arg.startsWith("--series=") ? arg.slice("--series=".length) : argv[++i];
       if (!value || value.startsWith("--") || !isSeriesId(value)) {
-        throw new Error("--series needs daily, 5m-neon, 5m-files, or 1m-files");
+        throw new Error("--series needs daily, 5m-neon, 5m-files, 1m-files, or longterm-daily");
       }
       series = value;
     } else if (arg === "--refetch-gaps") {
@@ -169,12 +170,40 @@ export function seriesPlans(end: string): SeriesPlan[] {
   ];
 }
 
+/** Daily candles for the Long Game ETFs. They are not Nifty 500 members and they are not an intraday plan. */
+export function longtermDailyPlan(end: string, from = "2026-03-01"): SeriesPlan {
+  return {
+    id: "longterm-daily",
+    label: "longterm daily",
+    interval: "day",
+    store: "neon",
+    table: "candles_daily",
+    fileKind: null,
+    where: "longterm",
+    indexes: false,
+    from,
+    to: end,
+    chunk: "span",
+    span: 1800,
+    barsPerDay: null,
+  };
+}
+
 /** Daily job series. Retired Intraday keeps daily candles and drops the 5-minute plan. */
 export function dailyCandlePlanIds(retired: boolean): SeriesId[] {
   return retired ? ["daily"] : ["daily", "5m-neon"];
 }
 
+/** Swing daily plans plus the Long Game daily group. Core does not have to be enabled. */
+export function dailyMarketPlanIds(retired: boolean): SeriesId[] {
+  return [...dailyCandlePlanIds(retired), "longterm-daily"];
+}
+
 function plansForRun(end: string, oneSession: boolean, series?: SeriesId, sessionFrom = end): SeriesPlan[] {
+  if (series === "longterm-daily") {
+    const plan = longtermDailyPlan(end);
+    return [{ ...plan, from: oneSession && sessionFrom > plan.from ? sessionFrom : plan.from, to: end }];
+  }
   let plans = seriesPlans(end);
   if (oneSession) {
     plans = plans.filter((plan) => plan.store === "neon").map((plan) => ({
@@ -305,14 +334,16 @@ export function candleCsv(rows: Candle[]): string {
   return `${lines.join("\n")}\n`;
 }
 
-export function keepInstrumentRows(rows: InstrumentRow[], universe: ReadonlySet<string>): InstrumentRow[] {
+export function keepInstrumentRows(rows: InstrumentRow[], universe: ReadonlySet<string>, extras: ReadonlySet<string> = new Set()): InstrumentRow[] {
   const indexes = new Set<string>(INDEXES);
   const seen = new Set<string>();
   const kept: InstrumentRow[] = [];
   for (const row of rows) {
     if (!row.token || !row.symbol) continue;
     const index = indexes.has(row.symbol);
-    if (!index && (row.type !== "EQ" || !universe.has(row.symbol))) continue;
+    const extra = extras.has(row.symbol);
+    if (!index && !extra && (row.type !== "EQ" || !universe.has(row.symbol))) continue;
+    if (!index && extra && row.type !== "EQ") continue;
     if (seen.has(row.symbol)) continue;
     seen.add(row.symbol);
     kept.push(row);
@@ -695,9 +726,9 @@ export async function syncUniverse(): Promise<number> {
   return names.size;
 }
 
-async function refreshInstruments(kite: MliveKite, universe: ReadonlySet<string>): Promise<void> {
+async function refreshInstruments(kite: MliveKite, universe: ReadonlySet<string>, extras: ReadonlySet<string>): Promise<void> {
   const rows = await kiteCall(() => kite.instruments());
-  const kept = keepInstrumentRows(rows, universe);
+  const kept = keepInstrumentRows(rows, universe, extras);
   console.log(`instruments: ${kept.length} kept of ${rows.length}`);
   await insertBatched(
     (placeholders) =>
@@ -709,14 +740,40 @@ async function refreshInstruments(kite: MliveKite, universe: ReadonlySet<string>
   );
 }
 
+async function longGameDownloadSymbols(): Promise<string[]> {
+  try {
+    const settings = await q<{ value: unknown }>(`SELECT value FROM mlive.mlive_settings WHERE key = 'longterm_secondary'`);
+    const secondary = String(settings[0]?.value ?? "mid").replace(/"/g, "");
+    const held = await q<{ symbol: string }>(`SELECT DISTINCT symbol FROM mlive.mlive_longgame_holdings WHERE units <> 0`);
+    return longGameEtfSymbols(secondary, held.map((row) => String(row.symbol)));
+  } catch {
+    return longGameEtfSymbols("mid");
+  }
+}
+
+async function earliestOpenLot(): Promise<string | null> {
+  try {
+    const rows = await q<{ day: string | null }>(`SELECT min(acquired_on)::text AS day FROM mlive.mlive_longgame_lots WHERE qty_open > 0`);
+    const day = rows[0]?.day ? String(rows[0].day).slice(0, 10) : null;
+    return day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function symbolsFor(plan: SeriesPlan, only?: string[]): Promise<Array<{ token: number; symbol: string }>> {
-  const rows = await mq<{ token: string; symbol: string }>(
-    `SELECT i.token::text AS token, i.symbol
-     FROM instruments i
-     JOIN universe u ON u.symbol = i.symbol
-     WHERE ${plan.where}
-     ORDER BY i.symbol`
-  );
+  const rows = plan.where === "longterm"
+    ? await mq<{ token: string; symbol: string }>(
+      `SELECT token::text AS token, symbol FROM instruments WHERE symbol = ANY($1::text[]) ORDER BY symbol`,
+      [await longGameDownloadSymbols()]
+    )
+    : await mq<{ token: string; symbol: string }>(
+      `SELECT i.token::text AS token, i.symbol
+       FROM instruments i
+       JOIN universe u ON u.symbol = i.symbol
+       WHERE ${plan.where}
+       ORDER BY i.symbol`
+    );
   if (plan.indexes) {
     const indexes = await mq<{ token: string; symbol: string }>(
       `SELECT token::text AS token, symbol FROM instruments WHERE symbol = ANY($1::text[])`,
@@ -991,13 +1048,19 @@ async function run(options: { oneSession: boolean; only?: string[]; series?: Ser
   await ensureSchema();
   const kite = new MliveKite(false);
   const universe = await loadUniverse();
-  await refreshInstruments(kite, universe);
+  await refreshInstruments(kite, universe, new Set(LONG_GAME_INSTRUMENT_SYMBOLS));
   const end = todayIst();
   const sessionFrom = options.oneSession ? await sessionStart(end) : end;
   let plans = plansForRun(end, options.oneSession, options.series, sessionFrom);
   if (options.oneSession && !options.series) {
     const allowed = new Set(dailyCandlePlanIds(options.intradayRetired === true));
     plans = plans.filter((plan) => allowed.has(plan.id));
+    const from = longtermDailyFrom(await earliestOpenLot());
+    plans.push(longtermDailyPlan(end, sessionFrom > from ? sessionFrom : from));
+  }
+  if (!options.oneSession) {
+    const from = longtermDailyFrom(await earliestOpenLot());
+    plans = plans.map((plan) => plan.id === "longterm-daily" ? { ...plan, from } : plan);
   }
   if (options.oneSession && plans.some((plan) => plan.id === "1m-files" || plan.id === "5m-files")) {
     throw new Error("The daily market job cannot run a file plan.");

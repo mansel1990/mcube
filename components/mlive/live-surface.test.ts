@@ -12,7 +12,7 @@ describe("Core-only live Long Game", () => {
     expect(book).toContain("Register from Kite");
     expect(book).toContain("Turn on Core");
     expect(book).not.toContain("Radar");
-    expect(book).toContain("Nifty 50, same dates");
+    expect(book).toContain("vs Nifty");
     expect(book).toContain("Pocket cash");
     expect(book).not.toContain("Sample numbers");
     expect(book).not.toContain('value="radar"');

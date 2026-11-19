@@ -21,7 +21,7 @@ Do not change trading rules, strategy settings, order logic, Momentum behaviour,
 
 ## Fixed visual system
 
-Use the existing v3 colours without changing their values:
+Use the current Mansel Live colours. The later visual-polish decision moves Swing to violet and assigns the former blue family to Nifty 50:
 
 - Ink: `#14161C`
 - Raised ink: `#2A2D36`
@@ -29,9 +29,13 @@ Use the existing v3 colours without changing their values:
 - Card: `#FFFFFF`
 - Border: `#E4DFD3`
 - Muted text: `#55524B`
-- Swing: `#2F6FB5`
-- Swing tint: `#E3EDF8`
-- Swing text: `#1E4F86`
+- Swing: `#6B4FB3`
+- Swing tint: `#EEE9F8`
+- Swing text: `#49367D`
+- Swing on dark: `#B9A8F0`
+- Nifty 50: `#2F6FB5`
+- Nifty 50 tint: `#E3EDF8`
+- Nifty 50 text: `#1E4F86`
 - Long Game: `#F2A20C`
 - Long Game tint: `#FCEBC8`
 - Long Game text: `#6B3F00`
@@ -573,7 +577,7 @@ Card:
 
 - white;
 - radius 18px;
-- 4px Swing-blue top edge.
+- 4px Swing-violet top edge.
 
 Header:
 
@@ -827,9 +831,9 @@ Two-column row: 3fr chart and 2fr Coming up.
 
 Chart:
 
-- Swing blue, 3px;
+- Swing violet, 3px;
 - Long Game saffron, 3px;
-- Nifty grey `#B8B3A8`, dashed;
+- Nifty blue `#2F6FB5`, dashed;
 - returns normalized from a common date;
 - 1M, 3M, All;
 - legend includes each visible return.

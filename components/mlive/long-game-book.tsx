@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { formatLongDate, formatMoney, formatPp, formatPrice, formatSignedMoney, formatSignedPct, type ChartPoint, type PresentedLot, type ValuedHolding } from "@/lib/mlive/long-game-value";
+import { LongGameChart } from "./long-game-chart";
 import { RegisterFromKite } from "./long-game-register";
 import { LoadError, PageSkeleton } from "./loading";
 import { ReasonHelp } from "./reason-help";
 
-type Holding = { pocket: string; symbol: string; units: number; average: number; value: number };
 type HistoryRow = { date: string; pocket: string; what: string; moneyAdded: number | null; status: string };
 type Book = {
   core: boolean;
@@ -14,12 +15,18 @@ type Book = {
   value: number;
   moneyAdded: number;
   gain: number;
+  gainPct?: number | null;
   cash?: number;
-  niftySameDatesPct: number | null;
+  priceCaption?: string;
+  chartNote?: string | null;
+  vsNiftyPp?: number | null;
+  niftyAdjustments?: { flowDate: string; usedDate: string }[];
   pocketMoney?: { core: number };
   pending: { id: number; reason: string; suggested: number; expiresOn: string | null } | null;
   history: HistoryRow[];
-  holdings: Holding[];
+  holdings: ValuedHolding[];
+  lots?: PresentedLot[];
+  chart?: ChartPoint[];
   untracked?: { symbol: string; units: number; note: string }[];
   nextCheck: string;
 };
@@ -34,24 +41,20 @@ const SLEEVES = [
 ] as const;
 
 function inr(value: number): string {
-  return `₹${Math.round(value).toLocaleString("en-IN")}`;
+  return formatMoney(value);
 }
 
 function signed(value: number): string {
-  const sign = value > 0 ? "+" : value < 0 ? "−" : "";
-  return `${sign}${inr(Math.abs(value))}`;
+  return formatSignedMoney(value);
 }
 
 function signedPct(value: number | null): string {
   if (value == null || !Number.isFinite(value)) return "";
-  const sign = value > 0 ? "+" : value < 0 ? "−" : "";
-  return `${sign}${Math.abs(value).toFixed(1)}%`;
+  return formatSignedPct(value);
 }
 
 function longDay(iso: string): string {
-  const [year, month, date] = iso.split("-").map(Number);
-  if (!year || !month || !date) return iso;
-  return new Date(Date.UTC(year, month - 1, date)).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  return formatLongDate(iso);
 }
 
 function shortCheck(iso: string): string {
@@ -119,7 +122,7 @@ export function LongGameBook() {
   const coreHoldings = book.holdings.filter((row) => row.pocket === "core");
   const coreValue = coreHoldings.reduce((sum, row) => sum + row.value, 0);
   const coreAdded = book.pocketMoney?.core ?? book.moneyAdded;
-  const gainPct = book.moneyAdded > 0 ? (book.gain / book.moneyAdded) * 100 : null;
+  const gainPct = book.gainPct ?? (book.moneyAdded > 0 ? (book.gain / book.moneyAdded) * 100 : null);
   const untracked = book.untracked ?? [];
 
   return (
@@ -162,7 +165,7 @@ function OffBook({
   onTurnOn,
   onRegister,
 }: {
-  holdings: Holding[];
+  holdings: ValuedHolding[];
   value: number;
   onTurnOn: () => void;
   onRegister: () => void;
@@ -202,7 +205,7 @@ function LiveBook({
 }: {
   book: Book;
   sleeves: { key: string; symbol: string; name: string; target: number }[];
-  coreHoldings: Holding[];
+  coreHoldings: ValuedHolding[];
   coreAdded: number;
   gainPct: number | null;
   untracked: { symbol: string; units: number; note: string }[];
@@ -233,16 +236,17 @@ function LiveBook({
         </article>
         <article className="card stat">
           <p className="lbl">Gain</p>
-          <div className={`v n ${book.gain >= 0 ? "up" : "down"}`}>{signed(book.gain)}</div>
-          {gainPct != null && <p className={`sub ${book.gain >= 0 ? "up" : "down"}`}>{signedPct(gainPct)} since first entry</p>}
+          <div className={`v n ${gainClass(book.gain)}`}>{signed(book.gain)}</div>
+          {gainPct != null && <p className={`sub ${gainClass(book.gain)}`}>{signedPct(gainPct)} since first entry</p>}
         </article>
-        {book.niftySameDatesPct != null && (
+        {book.vsNiftyPp != null && (
           <article className="card stat nifty-stat">
-            <p className="lbl">Nifty 50, same dates</p>
-            <div className={`v n ${book.niftySameDatesPct >= 0 ? "up" : "down"}`}>{signedPct(book.niftySameDatesPct)}</div>
+            <p className="lbl">vs Nifty</p>
+            <div className={`v n ${pctClass(book.vsNiftyPp)}`}>{formatPp(book.vsNiftyPp).replace("vs Nifty: ", "")}</div>
           </article>
         )}
       </div>
+      {book.priceCaption && <p className="lg-note">{book.priceCaption}</p>}
 
       <article className="card book-card longgame lg-pocket">
         <div className="lg-pocket-head">
@@ -251,7 +255,7 @@ function LiveBook({
           </div>
           <div className="lg-pocket-value">
             <b className="n">{inr(value)}</b>
-            <span className={book.gain >= 0 ? "up" : "down"}>{signed(book.gain)}{gainPct != null ? <small> ({signedPct(gainPct)})</small> : null}</span>
+            <span className={gainClass(book.gain)}>{signed(book.gain)}{gainPct != null ? <small> ({signedPct(gainPct)})</small> : null}</span>
           </div>
         </div>
         <div className="lg-sleeves">
@@ -280,12 +284,19 @@ function LiveBook({
         </div>
       </article>
 
-      <p className="lg-note">The bar is the current share; the dark tick is the target. Pocket cash normally stays at ₹0.</p>
+      <div className="lg-register-row">
+        <p className="lg-note">The bar is the current share; the dark tick is the target. Pocket cash normally stays at ₹0.</p>
+        <button type="button" className="btn" onClick={onRegister}>Register from Kite</button>
+      </div>
       {untracked.length > 0 && (
-        <p className="lg-note">
-          {untracked.map((row) => `${row.symbol} ${row.units} units is in Kite and not in this book.`).join(" ")}{" "}
-          <button type="button" className="btn" onClick={onRegister}>Register from Kite</button>
-        </p>
+        <p className="lg-note">{untracked.map((row) => `${row.symbol} ${row.units} units is in Kite and not in this book.`).join(" ")}</p>
+      )}
+
+      {coreHoldings.length > 0 && <HoldingsTable rows={coreHoldings} />}
+      {(book.lots?.length ?? 0) > 0 && <LotsSection lots={book.lots ?? []} />}
+      <LongGameChart points={book.chart ?? []} note={book.chartNote ?? null} />
+      {(book.niftyAdjustments?.length ?? 0) > 0 && (
+        <p className="lg-note">{book.niftyAdjustments?.map((row) => `Nifty cash flow on ${longDay(row.flowDate)} used the close on ${longDay(row.usedDate)}.`).join(" ")}</p>
       )}
 
       {book.history.length > 0 && (
@@ -314,6 +325,150 @@ function LiveBook({
         </article>
       )}
     </>
+  );
+}
+
+function gainClass(value: number): string {
+  const rounded = Math.round(value * 100) / 100;
+  if (rounded === 0) return "";
+  return rounded > 0 ? "up" : "down";
+}
+
+function pctClass(value: number): string {
+  const rounded = Math.round(value * 10) / 10;
+  if (rounded === 0) return "";
+  return rounded > 0 ? "up" : "down";
+}
+
+function priceSource(row: ValuedHolding): string {
+  if (row.atCost || row.priceLabel) return row.priceLabel ?? "Price unavailable — shown at cost";
+  if (row.priceSource === "kite_holding" && row.priceAt) {
+    const time = new Date(row.priceAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "Asia/Kolkata" });
+    return `Kite ${time}`;
+  }
+  if (row.priceAt) return `${row.priceSource === "daily_close" ? "Daily close" : "Earlier close"} ${longDay(row.priceAt)}`;
+  return "";
+}
+
+function HoldingsTable({ rows }: { rows: ValuedHolding[] }) {
+  const showContribution = rows.some((row) => row.contribution != null);
+  const invested = rows.reduce((sum, row) => sum + row.invested, 0);
+  const value = rows.reduce((sum, row) => sum + row.value, 0);
+  const gain = rows.reduce((sum, row) => sum + row.gain, 0);
+  return (
+    <article className="card lg-holdings">
+      <h2>Holdings</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ETF</th>
+            <th>Sleeve</th>
+            <th className="r">Units</th>
+            <th className="r">Average cost</th>
+            <th className="r">Last price</th>
+            <th className="r">Value</th>
+            <th className="r">Invested</th>
+            <th className="r">Gain ₹</th>
+            <th className="r">Gain %</th>
+            {showContribution && <th className="r">Contribution to total gain</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.symbol}>
+              <td>{row.symbol}</td>
+              <td>{row.sleeveName}</td>
+              <td className="r n">{row.units.toLocaleString("en-IN")}</td>
+              <td className="r n">{formatPrice(row.average)}</td>
+              <td className="r n">{formatPrice(row.price)}<small>{priceSource(row)}</small></td>
+              <td className="r n">{inr(row.value)}</td>
+              <td className="r n">{inr(row.invested)}</td>
+              <td className={`r n ${gainClass(row.gain)}`}>{signed(row.gain)}</td>
+              <td className={`r n ${row.gainPct == null ? "" : pctClass(row.gainPct)}`}>{row.gainPct == null ? "" : signedPct(row.gainPct)}</td>
+              {showContribution && <td className={`r n ${row.contribution == null ? "" : pctClass(row.contribution)}`}>{row.contribution == null ? "" : signedPct(row.contribution)}</td>}
+            </tr>
+          ))}
+          <tr className="lg-total">
+            <td>Total</td>
+            <td />
+            <td />
+            <td />
+            <td />
+            <td className="r n">{inr(value)}</td>
+            <td className="r n">{inr(invested)}</td>
+            <td className={`r n ${gainClass(gain)}`}>{signed(gain)}</td>
+            <td />
+            {showContribution && <td className={`r n ${pctClass(gain)}`}>{signedPct(100)}</td>}
+          </tr>
+        </tbody>
+      </table>
+      <ul className="lg-holding-cards">
+        {rows.map((row) => (
+          <li key={row.symbol}>
+            <b>{row.symbol}</b>
+            <span>Sleeve <b>{row.sleeveName}</b></span>
+            <span>Units <b className="n">{row.units.toLocaleString("en-IN")}</b></span>
+            <span>Average cost <b className="n">{formatPrice(row.average)}</b></span>
+            <span>Last price <b className="n">{formatPrice(row.price)}</b> {priceSource(row)}</span>
+            <span>Value <b className="n">{inr(row.value)}</b></span>
+            <span>Invested <b className="n">{inr(row.invested)}</b></span>
+            <span>Gain ₹ <b className={`n ${gainClass(row.gain)}`}>{signed(row.gain)}</b></span>
+            <span>Gain % <b className={`n ${row.gainPct == null ? "" : pctClass(row.gainPct)}`}>{row.gainPct == null ? "" : signedPct(row.gainPct)}</b></span>
+            {showContribution && row.contribution != null && <span>Contribution to total gain <b className={`n ${pctClass(row.contribution)}`}>{signedPct(row.contribution)}</b></span>}
+          </li>
+        ))}
+      </ul>
+    </article>
+  );
+}
+
+function LotsSection({ lots }: { lots: PresentedLot[] }) {
+  return (
+    <details className="card lg-lots">
+      <summary>Your buy lots ({lots.length})</summary>
+      <table>
+        <thead>
+          <tr>
+            <th>Buy date</th>
+            <th className="r">Open units</th>
+            <th className="r">Buy price</th>
+            <th className="r">Cost</th>
+            <th className="r">Value now</th>
+            <th className="r">Gain ₹</th>
+            <th className="r">Gain %</th>
+            <th>Long-term date</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lots.map((lot) => (
+            <tr key={lot.id}>
+              <td className="n">{longDay(lot.date)}{lot.quality ? <em>{lot.quality}</em> : null}</td>
+              <td className="r n">{lot.units.toLocaleString("en-IN")}</td>
+              <td className="r n">{formatPrice(lot.price)}</td>
+              <td className="r n">{inr(lot.cost)}</td>
+              <td className="r n">{inr(lot.value)}</td>
+              <td className={`r n ${gainClass(lot.gain)}`}>{signed(lot.gain)}</td>
+              <td className={`r n ${lot.gainPct == null ? "" : pctClass(lot.gainPct)}`}>{lot.gainPct == null ? "" : signedPct(lot.gainPct)}</td>
+              <td className="n">{longDay(lot.longTermDate)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <ul className="lg-lot-cards">
+        {lots.map((lot) => (
+          <li key={lot.id}>
+            <span>Buy date <b className="n">{longDay(lot.date)}</b>{lot.quality ? <em>{lot.quality}</em> : null}</span>
+            <span>Open units <b className="n">{lot.units.toLocaleString("en-IN")}</b></span>
+            <span>Buy price <b className="n">{formatPrice(lot.price)}</b></span>
+            <span>Cost <b className="n">{inr(lot.cost)}</b></span>
+            <span>Value now <b className="n">{inr(lot.value)}</b></span>
+            <span>Gain ₹ <b className={`n ${gainClass(lot.gain)}`}>{signed(lot.gain)}</b></span>
+            <span>Gain % <b className={`n ${lot.gainPct == null ? "" : pctClass(lot.gainPct)}`}>{lot.gainPct == null ? "" : signedPct(lot.gainPct)}</b></span>
+            <span>Long-term date <b className="n">{longDay(lot.longTermDate)}</b></span>
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
