@@ -7,6 +7,7 @@ import type { PnlBook, PnlModel, PnlRange, PnlStrategyFilter, PnlTrade } from "@
 import { useIntradayRetired } from "./capabilities";
 import { ChartsBoard } from "./charts-board";
 import { TradePanel } from "./trade-panel";
+import { PageSkeleton } from "./loading";
 
 const BOOKS = ["all", "swing", "intraday"] as const;
 
@@ -77,7 +78,7 @@ export function ChartsView({ embedded = false }: { embedded?: boolean }) {
         ) : pnl ? (
           <ChartsBoard pnl={pnl} onOpen={setTrade} />
         ) : (
-          <p className="muted" role="status">Loading charts…</p>
+          <PageSkeleton kind="charts" label="Loading charts" />
         )}
         <TradePanel trade={trade} onClose={() => setTrade(null)} />
       </div>

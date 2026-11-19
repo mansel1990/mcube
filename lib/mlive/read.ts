@@ -434,6 +434,7 @@ export async function homePayload(displayName: string) {
     started,
     change: account - fund,
     trades: { buys, sells, maxBuys, maxSells, waiting: needsYou.length },
+    maxOpen: num(settings.max_open_positions ?? 6),
     books: {
       swing: { open: swingPositions.length, capital: fund },
       intraday: {

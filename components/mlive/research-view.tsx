@@ -6,18 +6,18 @@ import { Bar, BarChart, Cell, Line, LineChart, ResponsiveContainer, Tooltip, XAx
 import { istMinutes } from "@/lib/mlive/calendar";
 import { useIntradayRetired } from "./capabilities";
 import { LongGameResearch, RetiredStopped, SwingCanonical, type CanonicalRow } from "./research-dossier";
+import { LoadError, PageSkeleton } from "./loading";
+import { decisionById } from "@/lib/mlive/decision-registry";
+import { ReasonHelp } from "./reason-help";
 import { byQuarter, RESEARCH_STRATEGIES, type ResearchBook, type ResearchSample } from "@/lib/mlive/research-bar";
 import {
   aboutGist,
-  bandCounts,
   barFor,
   changeNote,
   dayMonth,
   duplicateBlock,
   heldbackQueueBlock,
   identityFromRun,
-  isLiveStrategy,
-  isParkedResearch,
   makeIdentity,
   PARKED_RESEARCH,
   researchCardStatus,
@@ -39,7 +39,6 @@ import {
   strategyIdea,
   strategyName,
   variantName,
-  verdictFor,
   type StoredRun,
 } from "@/lib/mlive/research-page";
 
@@ -105,6 +104,27 @@ type Payload = {
   error?: string;
 };
 
+function swingEvidence(payload: Payload): CanonicalRow[] {
+  const listed = payload.canonical ?? [];
+  if (listed.some((row) => row.strategy === "momentum")) return listed;
+  if (payload.run?.sample !== "heldback") return listed;
+  const momentum = payload.results.find((row) => row.strategy === "momentum");
+  if (!momentum || !payload.run) return listed;
+  const variant = typeof momentum.params.variant === "string" ? momentum.params.variant : "M10-6";
+  return [...listed, {
+    id: payload.run.id,
+    strategy: momentum.strategy,
+    variant,
+    profitFactor: momentum.profitFactor,
+    trades: momentum.trades,
+    halfYearsPct: momentum.halfYearsPct,
+    worstDrawdownPct: momentum.worstDrawdownPct,
+    avgNetPct: momentum.avgNetPct,
+    cagrPct: momentum.cagrPct,
+    window: "",
+  }];
+}
+
 export function ResearchView() {
   const router = useRouter();
   const params = useSearchParams();
@@ -132,6 +152,7 @@ export function ResearchView() {
   const [result, setResult] = useState("");
   const [tick, setTick] = useState(0);
   const [menu, setMenu] = useState(false);
+  const [about, setAbout] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -213,25 +234,7 @@ export function ResearchView() {
     variantId: typeof row.params.variant === "string" ? row.params.variant : null,
     band: resultBand(row.passed, row.failReasons.length),
   })));
-  const counts = bandCounts(cards);
   const enabled = payload?.strategiesEnabled ?? [];
-  const verdict = verdictFor({
-    book,
-    runs: payload?.runs.length ?? 0,
-    sample: payload?.run ? runSample : null,
-    strategiesEnabled: enabled,
-    rows: cards.map((row) => {
-      const anchor = isParkedResearch(book, row.strategy, row.variantId);
-      const pilot = isLiveStrategy(book, row.strategy, row.variantId, enabled);
-      return {
-        name: row.name,
-        passed: row.passed && !anchor,
-        fails: row.failReasons.length,
-        parked: anchor && !pilot,
-        pilot,
-      };
-    }),
-  });
   const stored = storedRuns(payload?.runs ?? []);
   const proposal = payload
     ? makeIdentity({ book, sample, strategies: picked, grid, engineSha: payload.engineSha, lastCandle: payload.lastCandle })
@@ -357,55 +360,79 @@ export function ResearchView() {
     : "";
 
   return (
-    <section className={`page${runLoading ? " research-switching" : ""}`} aria-busy={runLoading}>
+    <section className="page">
       <div className="page-head">
-        <div>
-          <h1>Research</h1>
-          <p className="sub">The evidence behind what is live, parked, or stopped.</p>
-          {summary && (
-            <div className="sub run-meta">
-              <span>{summary}</span>
-              {(payload?.runs.length ?? 0) > 0 && (
-                <span className="earlier-wrap" ref={menuRef}>
-                  <button type="button" className="earlier" aria-expanded={menu} aria-haspopup="listbox" disabled={runLoading} onClick={() => setMenu((value) => !value)}>
-                    <span className="kicker">Earlier runs</span>
-                    <span>Run {payload?.run?.id}</span>
-                    <span aria-hidden="true">▾</span>
-                  </button>
-                  {menu && (
-                    <div className="earlier-menu" role="listbox" aria-label="Earlier runs">
-                      {(payload?.runs ?? []).map((run) => {
-                        const option = runOption(run);
-                        return (
-                          <button type="button" key={run.id} role="option" disabled={runLoading} aria-selected={run.id === payload?.run?.id} className={run.id === payload?.run?.id ? "on" : undefined} onClick={() => chooseRun(run.id)}>
-                            <span className="row">
-                              <b>Run {run.id}</b>
-                              <span className={`chip ${option.tone}`}>{option.status}</span>
-                            </span>
-                            <span className="detail">{option.detail}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <div className="research-tabs" role="tablist" aria-label="Research book" onKeyDown={onTabs}>
-            <button type="button" role="tab" id="research-tab-swing" aria-selected={product === "swing"} aria-controls="research-panel" onClick={() => chooseBook("swing")}><i className="book-dot swing" aria-hidden="true" /> Swing</button>
-            <button type="button" role="tab" id="research-tab-longterm" aria-selected={product === "longterm"} aria-controls="research-panel" onClick={() => chooseBook("longterm")}><i className="book-dot longgame" aria-hidden="true" /> Long Game</button>
-          </div>
-          {product === "swing" && <button type="button" className={`btn new-run${open ? " on" : ""}`} aria-expanded={open} disabled={Boolean(active) || busy} title={moving ?? undefined} onClick={() => setOpen((value) => !value)}>New run</button>}
+        <h1>Research</h1>
+        <div className="research-tabs" role="tablist" aria-label="Research book" onKeyDown={onTabs}>
+          <button type="button" role="tab" id="research-tab-swing" aria-selected={product === "swing"} aria-controls="research-panel" onClick={() => chooseBook("swing")}><i className="book-dot swing" aria-hidden="true" /> Swing</button>
+          <button type="button" role="tab" id="research-tab-longterm" aria-selected={product === "longterm"} aria-controls="research-panel" onClick={() => chooseBook("longterm")}><i className="book-dot longgame" aria-hidden="true" /> Long Game</button>
         </div>
       </div>
 
+      {product === "swing" && !payload && !error && <PageSkeleton kind="research" label="Loading research" />}
+      {product === "swing" && !payload && error && <LoadError message={error} onRetry={() => { setError(null); setTick((value) => value + 1); }} />}
+
+      <div className="research-stack">
       <div id="research-panel" role="tabpanel" aria-labelledby={product === "swing" ? "research-tab-swing" : "research-tab-longterm"}>
-        {product === "longterm" ? <LongGameResearch /> : <SwingCanonical rows={payload?.canonical ?? []} />}
+        {product === "longterm" ? <LongGameResearch /> : payload ? <SwingCanonical rows={swingEvidence(payload)} /> : null}
       </div>
-      {product === "swing" && <>
+      {product === "swing" && payload && (
+      <>
+      <article className="card research-archive">
+        <header className="archive-bar">
+          <div className="archive-title">
+            <h2>Research archive</h2>
+            {(payload.runs.length ?? 0) > 0 && (
+              <span className="earlier-wrap" ref={menuRef}>
+                <button type="button" className="earlier" aria-expanded={menu} aria-haspopup="listbox" disabled={runLoading} onClick={() => setMenu((value) => !value)}>
+                  <span className="kicker">Earlier runs</span>
+                  <span>Run {payload.run?.id}</span>
+                  <span aria-hidden="true">▾</span>
+                </button>
+                {menu && (
+                  <div className="earlier-menu" role="listbox" aria-label="Earlier runs">
+                    {payload.runs.map((run) => {
+                      const option = runOption(run);
+                      return (
+                        <button type="button" key={run.id} role="option" disabled={runLoading} aria-selected={run.id === payload.run?.id} className={run.id === payload.run?.id ? "on" : undefined} onClick={() => chooseRun(run.id)}>
+                          <span className="row">
+                            <b>Run {run.id}</b>
+                            <span className={`chip ${option.tone}`}>{option.status}</span>
+                          </span>
+                          <span className="detail">{option.detail}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </span>
+            )}
+          </div>
+          {summary && <p className="sub">{summary}</p>}
+          <div className="archive-tools">
+            {payload.run?.status === "ok" && (
+              <button type="button" className={`chip about-chip${about ? " on" : ""}`} aria-expanded={about} onClick={() => { setAbout((value) => !value); setOpen(false); }}>About this run</button>
+            )}
+            <button type="button" className={`btn new-run${open ? " on" : ""}`} aria-expanded={open} disabled={Boolean(active) || busy} title={moving ?? undefined} onClick={() => { setOpen((value) => !value); setAbout(false); setMenu(false); }}>New run</button>
+          </div>
+        </header>
+        {about && payload.run?.status === "ok" && (
+          <div className="about-pop">
+            {aboutGist({
+              book,
+              sample: runSample,
+              window: span,
+              strategies: stringsOf(payload.run.params.strategies),
+              capital: objectOf(payload.run.params.capital),
+            }).map((bit) => (
+              <div key={bit.id} className={`about-bit ${bit.id.toLowerCase()}`}>
+                <span className="tag">{bit.label}</span>
+                <span>{bit.text}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {moving && <p className="sub research-progress">{moving}</p>}
       {intradayOff && payload?.retiredIntraday && (
         <details className="card" style={{ marginTop: 16 }}>
           <summary>Retired</summary>
@@ -413,70 +440,80 @@ export function ResearchView() {
         </details>
       )}
 
-      {runLoading && <p className="run-switch-status" role="status">Loading selected run…</p>}
+      {runLoading && <p className="run-switch-status" role="status">Reading the selected run…</p>}
 
       {open && (
-        <article className="card run-panel">
-          <h2>New run</h2>
-          <div className="seg" style={{ marginTop: 12 }}>
-            <button type="button" aria-pressed={sample === "building"} onClick={() => chooseSample("building")}>Building</button>
-            <button type="button" aria-pressed={sample === "heldback"} onClick={() => chooseSample("heldback")}>Held-back</button>
-          </div>
-          {sample === "heldback" && (
-            <label className="run-checks">
-              <input type="checkbox" checked={confirmHeldback} onChange={() => setConfirmHeldback((value) => !value)} />
-              Confirm held-back
-            </label>
-          )}
-          <div className="run-checks">
-            {RESEARCH_STRATEGIES[book].map((name) => {
-              const used = sample === "heldback" ? held.get(name) : undefined;
-              return (
-                <label key={name}>
-                  <input
-                    type="checkbox"
-                    checked={picked.includes(name)}
+        <div className="modal-back" onClick={() => setOpen(false)}>
+          <div className="modal run-sheet" role="dialog" aria-modal="true" aria-labelledby="new-run-title" onClick={(event) => event.stopPropagation()}>
+            <header className="run-sheet-head">
+              <div>
+                <h2 id="new-run-title">New run</h2>
+                <p>Choose the sample, then the strategies to test.</p>
+              </div>
+              <button type="button" className="story-close" onClick={() => setOpen(false)}>Close</button>
+            </header>
+            <div className="sample-picks">
+              <button type="button" aria-pressed={sample === "building"} onClick={() => chooseSample("building")}>
+                <b>Building</b>
+                <span>Try an idea before a sealed test.</span>
+              </button>
+              <button type="button" aria-pressed={sample === "heldback"} onClick={() => chooseSample("heldback")}>
+                <b>Held-back</b>
+                <span>One sealed sample. Confirm it before it runs.</span>
+              </button>
+            </div>
+            {sample === "heldback" && (
+              <label className="held-confirm">
+                <input type="checkbox" checked={confirmHeldback} onChange={() => setConfirmHeldback((value) => !value)} />
+                Confirm held-back
+              </label>
+            )}
+            <p className="run-label">Strategies</p>
+            <div className="strategy-picks">
+              {RESEARCH_STRATEGIES[book].map((name) => {
+                const used = sample === "heldback" ? held.get(name) : undefined;
+                const on = picked.includes(name);
+                return (
+                  <button
+                    type="button"
+                    key={name}
+                    className={on ? "on" : undefined}
+                    aria-pressed={on}
                     disabled={Boolean(used)}
-                    onChange={() => setPicked((current) => current.includes(name) ? current.filter((item) => item !== name) : [...current, name])}
-                  />
-                  {strategyName(name)}
-                  {used && <span className="muted">Held-back used on {dayMonth(used)}</span>}
-                </label>
-              );
-            })}
+                    onClick={() => setPicked((current) => current.includes(name) ? current.filter((item) => item !== name) : [...current, name])}
+                  >
+                    <b>{strategyName(name)}</b>
+                    <span>{used ? `Held-back used on ${dayMonth(used)}` : on ? "Included" : "Leave out"}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {[...held.entries()]
+              .filter(([name]) => !(RESEARCH_STRATEGIES[book] as readonly string[]).includes(name))
+              .map(([name, at]) => (
+                <p key={name} className="sub">{variantName(name)} · Held-back used on {dayMonth(at)}</p>
+              ))}
+            <label className="held-confirm">
+              <input type="checkbox" checked={grid} onChange={() => setGrid((value) => !value)} />
+              Settings range
+            </label>
+            <p className="sub">{researchStartLine(minutes)}. {RESEARCH_RUNTIME}</p>
+            {changed && <p className="sub">{changed}</p>}
+            {blockReason && <p className="run-block">{blockReason}</p>}
+            <div className="approval-actions">
+              <button type="button" className="btn" onClick={() => setOpen(false)}>Cancel</button>
+              <button type="button" className="btn primary" disabled={busy || Boolean(blockReason) || Boolean(active)} onClick={() => void startRun()}>
+                {busy ? "Queuing…" : "Queue run"}
+              </button>
+            </div>
           </div>
-          {[...held.entries()]
-            .filter(([name]) => !(RESEARCH_STRATEGIES[book] as readonly string[]).includes(name))
-            .map(([name, at]) => (
-              <p key={name} className="sub">{variantName(name)} · Held-back used on {dayMonth(at)}</p>
-            ))}
-          <label className="run-checks">
-            <input type="checkbox" checked={grid} onChange={() => setGrid((value) => !value)} />
-            Settings range
-          </label>
-          <p className="sub">{researchStartLine(minutes)}. {RESEARCH_RUNTIME}</p>
-          {changed && <p className="sub">{changed}</p>}
-          {blockReason && <p className="sub">{blockReason}</p>}
-          <button type="button" className="btn" style={{ marginTop: 12 }} disabled={busy || Boolean(blockReason) || Boolean(active)} onClick={() => void startRun()}>
-            {busy ? "Queuing…" : "Queue run"}
-          </button>
-        </article>
+        </div>
       )}
 
       {error && <p className="sub" style={{ color: "var(--down)" }}>{error}</p>}
-      {!payload && !error && <p className="sub">Loading research…</p>}
-
-      {payload && (
-        <article className={`card research-verdict ${verdict.tone}`}>
-          <p>{verdict.text}</p>
-          {cards.length > 0 && (
-            <p className="counts">Passed {counts.passed} · Close (fails 1–2 tests) {counts.close} · Failed {counts.failed}</p>
-          )}
-        </article>
-      )}
-      {moving && <p className="sub research-progress">{moving}</p>}
       {noCandles && <p className="sub">No candles for this series. The backtest did not call Kite.</p>}
       {payload?.run?.status === "error" && <p className="sub" style={{ color: "var(--down)" }}>{payload.run.error || "The run failed."}</p>}
+      </article>
 
       {showCards && (
         <div className="research-grid">
@@ -521,7 +558,12 @@ export function ResearchView() {
                     <div className="idea">{strategyIdea(row.strategy)}</div>
                   </div>
                   <div className="research-pills">
-                    {diagnostic ? <span className="chip quiet">Diagnostic</span> : status ? <span className={`chip ${status === PARKED_RESEARCH ? "wait" : "live"}`}>{status}</span> : (
+                    {diagnostic ? <span className="chip quiet">Diagnostic</span> : status === "Live pilot" ? (
+                      <ReasonHelp className="chip pilot-chip" text={decisionById("swing:momentum:M10-6")?.explanation ?? ""} label="Live pilot">
+                        <span className="pilot-mark" aria-hidden="true" />
+                        Live pilot
+                      </ReasonHelp>
+                    ) : status ? <span className={`chip ${status === PARKED_RESEARCH ? "wait" : "live"}`}>{status}</span> : (
                       <span className={`chip ${row.band === "passed" ? "ok" : row.band === "close" ? "wait" : "bad"}`}>
                         {row.band === "passed" ? "Passed" : row.band === "close" ? "Close" : "Failed"}
                       </span>
@@ -549,26 +591,6 @@ export function ResearchView() {
         <OverlapBlock rows={cards.map((row) => ({ strategy: row.strategy, name: row.name, band: row.band }))} cells={payload?.overlap ?? []} />
       )}
 
-      {payload?.run?.status === "ok" && (
-        <details className="card about-run gist">
-          <summary>About this run</summary>
-          <div className="about-bits">
-            {aboutGist({
-              book,
-              sample: runSample,
-              window: span,
-              strategies: stringsOf(payload.run.params.strategies),
-              capital: objectOf(payload.run.params.capital),
-            }).map((bit) => (
-              <div key={bit.id} className={`about-bit ${bit.id.toLowerCase()}`}>
-                <span className="tag">{bit.label}</span>
-                <span>{bit.text}</span>
-              </div>
-            ))}
-          </div>
-        </details>
-      )}
-
       {selected && payload?.run && (
         <StrategyDetail
           row={selected}
@@ -589,9 +611,12 @@ export function ResearchView() {
           csvHref={`/api/mlive/research/trades?run=${payload.run.id}&strategy=${selected.strategy}&params=${encodeURIComponent(selected.paramsKey)}&format=csv`}
         />
       )}
-      </>}
-      <div id="research-evidence" />
-      <RetiredStopped />
+      </>
+      )}
+      <div id="research-evidence">
+        <RetiredStopped />
+      </div>
+      </div>
     </section>
   );
 }
@@ -672,7 +697,7 @@ function StrategyDetail(props: {
                   <YAxis hide domain={["auto", "auto"]} />
                   <Tooltip />
                   <Line type="monotone" dataKey="portfolio" name="Portfolio" stroke="var(--ink)" dot={false} strokeWidth={2} />
-                  {hasNifty && <Line type="monotone" dataKey="nifty" name="Nifty 50" stroke="var(--open)" dot={false} strokeWidth={2} strokeDasharray="4 4" />}
+                  {hasNifty && <Line type="monotone" dataKey="nifty" name="Nifty 50" stroke="var(--nifty)" dot={false} strokeWidth={2} strokeDasharray="4 4" />}
                 </LineChart>
               </ResponsiveContainer>
             </div>

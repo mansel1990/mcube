@@ -93,6 +93,25 @@ export function auditPhrase(action: string): string {
   return AUDIT_PHRASES[action] ?? action.replaceAll("_", " ").replaceAll(".", " ");
 }
 
+export function relativeTime(iso: string, now = Date.now()): string {
+  const then = Date.parse(iso);
+  if (!Number.isFinite(then)) return "";
+  const minutes = Math.max(0, Math.round((now - then) / 60000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 36) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+export function activityMark(action: string): "swing" | "longgame" | "system" | "loss" {
+  const name = action.toLowerCase();
+  if (name.includes("longgame") || name.includes("longterm")) return "longgame";
+  if (name.includes("sell") || name.includes("stop") || name.includes("exit") || name.includes("reject")) return "loss";
+  if (name.startsWith("setting") || name.startsWith("state") || name.includes("system")) return "system";
+  return "swing";
+}
+
 export function relativeLabel(diffPp: number | null): string | null {
   if (diffPp == null || !Number.isFinite(diffPp)) return null;
   const sign = diffPp > 0 ? "+" : diffPp < 0 ? "−" : "";

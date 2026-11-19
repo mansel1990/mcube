@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { AuditView } from "@/components/mlive/audit-view";
+import { PageSkeleton } from "@/components/mlive/loading";
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams;
@@ -10,7 +11,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   if (tab === "pnl" || tab === "trades") redirect(`/live-trade-mansel/reports?tab=${tab}${bookQuery}`);
   if (tab === "charts") redirect(`/live-trade-mansel/charts${book ? `?book=${book}` : ""}`);
   return (
-    <Suspense fallback={<p className="page">Loading audit…</p>}>
+    <Suspense fallback={<PageSkeleton kind="audit" label="Loading audit" />}>
       <AuditView />
     </Suspense>
   );

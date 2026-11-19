@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useIntradayRetired } from "./capabilities";
 import { TodayBoard } from "./today-board";
+import { LoadError, PageSkeleton } from "./loading";
 import type { LongtermProposalView } from "./longterm-proposal-banner";
 
 type Holding = {
@@ -76,7 +77,7 @@ export function HomeView() {
     if (res.ok) await load();
   }
 
-  if (error) return <p className="page">{error}</p>;
-  if (!data) return <p className="page">Loading the book…</p>;
+  if (error) return <LoadError message={error} onRetry={() => { setError(null); void load(); }} />;
+  if (!data) return <PageSkeleton kind="today" label="Loading Today" />;
   return <TodayBoard data={data} prices={prices} pending={pending} intradayOff={intradayOff} onAct={(id, action) => void act(id, action)} />;
 }

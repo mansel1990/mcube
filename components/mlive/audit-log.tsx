@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { alertBody, alertSections, auditLabel, collapseAlerts, groupAuditByDay } from "@/lib/mlive/rules";
 import { notifyAlertsChanged } from "./alert-count";
 import { useIntradayRetired } from "./capabilities";
+import { PageSkeleton } from "./loading";
 
 type AuditRow = { id: number; ts: string; actor: string; action: string; symbol: string | null; side: "BUY" | "SELL" | null; reason: string; repeat: number };
 type AuditPage = { rows: AuditRow[]; page: number; pageSize: number; total: number };
@@ -155,7 +156,7 @@ export function AuditLog({
         </div>
       ) : (
         <div className="card audit-log" aria-busy={busy}>
-          {busy && <p className="muted" role="status">Loading the log…</p>}
+          {busy && <PageSkeleton kind="audit" label="Loading the log" />}
           {failed && <p className="sub" role="status">The log did not load.</p>}
           {!busy && !failed && days.length === 0 && <p className="sub">Nothing in this view yet.</p>}
           {days.length > 0 && (

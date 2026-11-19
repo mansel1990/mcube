@@ -54,7 +54,7 @@ export async function benchmarkReport(book: string, now = new Date()): Promise<B
 }
 
 function emptyPeriods(): BenchmarkPeriod[] {
-  const blank: BenchmarkSlice = { oursPct: null, niftyPct: null, diffPp: null, daysAhead: 0, marketDays: 0 };
+  const blank: BenchmarkSlice = { oursPct: null, niftyPct: null, diffPp: null, gainInr: null, daysAhead: 0, marketDays: 0 };
   return [
     { id: "start", label: "Since start", ...blank },
     { id: "month", label: "This month", ...blank },

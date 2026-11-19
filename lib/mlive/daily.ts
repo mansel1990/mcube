@@ -42,6 +42,7 @@ export type DailyReport = {
   timeline: TimelineStep[];
   prevDay: string;
   nextDay: string | null;
+  nextSession: string;
 };
 
 type AuditBit = {
@@ -311,6 +312,7 @@ export async function dailyReport(requested: string | null, now = new Date()): P
     timeline,
     prevDay: previousTradingDay(day, holidays),
     nextDay: nextTradingDay(day, holidays) <= today ? nextTradingDay(day, holidays) : null,
+    nextSession: nextTradingDay(day, holidays),
   };
 }
 

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { NIFTY_REASON_NOTE } from "@/lib/mlive/nifty-reason";
 import type { SystemStatus, SystemStep } from "@/lib/mlive/system-status";
+import { PageSkeleton } from "./loading";
 
 const PILL: Record<SystemStep["mark"], string> = {
   done: "Done",
@@ -31,7 +32,7 @@ export function SystemView({ onReport }: { onReport?: (day: string) => void }) {
   }, []);
 
   if (error) return <p className="sub" role="status">{error}</p>;
-  if (!status) return <p className="muted" role="status">Loading system status…</p>;
+  if (!status) return <PageSkeleton kind="audit" label="Loading system status" />;
 
   return (
     <div className="audit-layout">

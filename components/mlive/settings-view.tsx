@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { haltReasonText } from "@/lib/mlive/rules";
 import { useIntradayRetired } from "./capabilities";
+import { LoadError, PageSkeleton } from "./loading";
 
 type Settings = Record<string, unknown>;
 type Payload = {
@@ -97,10 +98,15 @@ export function SettingsView() {
   const [confirmAuto, setConfirmAuto] = useState(false);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState(kiteFlag === "connected" ? "Kite is connected." : "");
+  const [failed, setFailed] = useState(false);
 
   async function load() {
     const res = await fetch("/api/mlive/settings");
-    if (!res.ok) return;
+    if (!res.ok) {
+      setFailed(true);
+      return;
+    }
+    setFailed(false);
     const body = (await res.json()) as Payload;
     setPayload(body);
     const settings = body.settings;
@@ -183,7 +189,8 @@ export function SettingsView() {
     await load();
   }
 
-  if (!payload) return <p className="page">Loading settings…</p>;
+  if (failed) return <LoadError message="Settings could not be loaded." onRetry={() => { setFailed(false); void load(); }} />;
+  if (!payload) return <PageSkeleton kind="settings" label="Loading settings" />;
   const connectedAt = payload.kite?.connectedAt
     ? new Date(payload.kite.connectedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })
     : "";

@@ -8,6 +8,12 @@ export const MLIVE_COLOURS = {
   muted: "#55524B",
   onInk: "#FFFFFF",
   swing: {
+    book: "#6B4FB3",
+    tint: "#EEE9F8",
+    text: "#49367D",
+    onDark: "#B9A8F0",
+  },
+  nifty: {
     book: "#2F6FB5",
     tint: "#E3EDF8",
     text: "#1E4F86",
@@ -34,13 +40,20 @@ export const MLIVE_CONTRAST_PAIRS: ContrastPair[] = [
   { name: "white on ink button", text: MLIVE_COLOURS.onInk, background: MLIVE_COLOURS.ink },
   { name: "white on raised nav", text: MLIVE_COLOURS.onInk, background: MLIVE_COLOURS.raised },
   { name: "ink on saffron mark", text: MLIVE_COLOURS.ink, background: MLIVE_COLOURS.longGame.book },
+  { name: "swing book on card", text: MLIVE_COLOURS.swing.book, background: MLIVE_COLOURS.card },
   { name: "swing text on tint", text: MLIVE_COLOURS.swing.text, background: MLIVE_COLOURS.swing.tint },
   { name: "swing on dark", text: MLIVE_COLOURS.swing.onDark, background: MLIVE_COLOURS.ink },
+  { name: "nifty book on card", text: MLIVE_COLOURS.nifty.book, background: MLIVE_COLOURS.card },
+  { name: "nifty text on tint", text: MLIVE_COLOURS.nifty.text, background: MLIVE_COLOURS.nifty.tint },
+  { name: "nifty on dark", text: MLIVE_COLOURS.nifty.onDark, background: MLIVE_COLOURS.ink },
   { name: "long game text on tint", text: MLIVE_COLOURS.longGame.text, background: MLIVE_COLOURS.longGame.tint },
+  { name: "profit tint on ink", text: MLIVE_COLOURS.profit.tint, background: MLIVE_COLOURS.ink },
+  { name: "loss tint on ink", text: MLIVE_COLOURS.loss.tint, background: MLIVE_COLOURS.ink },
   { name: "profit text on tint", text: MLIVE_COLOURS.profit.text, background: MLIVE_COLOURS.profit.tint },
   { name: "profit on page", text: MLIVE_COLOURS.profit.book, background: MLIVE_COLOURS.page },
   { name: "loss text on tint", text: MLIVE_COLOURS.loss.text, background: MLIVE_COLOURS.loss.tint },
   { name: "loss on page", text: MLIVE_COLOURS.loss.book, background: MLIVE_COLOURS.page },
+  { name: "open on open tint", text: "#55524B", background: "#EEEAE2" },
 ];
 
 function channel(hex: string, index: number): number {

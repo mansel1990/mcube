@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { DailyReport } from "@/lib/mlive/daily";
 import { NIFTY_REASON_NOTE } from "@/lib/mlive/nifty-reason";
 import { inr, signed } from "./format";
+import { PageSkeleton } from "./loading";
 
 function pct(value: number | null): string {
   if (value == null || !Number.isFinite(value)) return "—";
@@ -52,7 +53,7 @@ export function AuditDaily({ day, onDay, onSystem }: { day: string; onDay: (day:
   }, [day]);
 
   if (error) return <p className="sub" role="status">{error}</p>;
-  if (!report) return <p className="muted" role="status">Loading the report…</p>;
+  if (!report) return <PageSkeleton kind="audit" label="Loading the report" />;
 
   const held = report.rules.filter((rule) => rule.ok !== false).length;
   const niftyNote = report.niftyReason ? NIFTY_REASON_NOTE[report.niftyReason] : null;

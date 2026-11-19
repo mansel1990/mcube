@@ -118,7 +118,12 @@ export function RegisterFromKite({ open, onClose }: { open: boolean; onClose: ()
           <h2 id={titleId}>Register from Kite</h2>
           <button type="button" className="btn" onClick={close}>Close</button>
         </div>
-        {rows == null && <p className="sub">Reading Kite…</p>}
+        {rows == null && (
+          <>
+            <p className="sr-only" role="status">Loading holdings</p>
+            <div className="skel skel-card" aria-hidden="true" />
+          </>
+        )}
         {rows?.length === 0 && (
           <>
             <p>No Long Game ETFs in your Kite yet.</p>

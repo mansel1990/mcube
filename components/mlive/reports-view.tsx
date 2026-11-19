@@ -9,6 +9,7 @@ import { useIntradayRetired } from "./capabilities";
 import { LongGameReport } from "./long-game-book";
 import { ReportsPnl, TradesTable } from "./reports-pnl";
 import { TradePanel } from "./trade-panel";
+import { PageSkeleton } from "./loading";
 import type { PnlModel, PnlTrade } from "@/lib/mlive/pnl";
 
 type Ledger = {
@@ -173,8 +174,8 @@ export function ReportsView({ embedded = false, forced = "pnl" }: { embedded?: b
           <p>{book === "intraday" ? "No intraday trades yet. The book starts after a strategy passes the bar." : book === "swing" ? "No swing trades yet. The book starts after a strategy passes the bar." : "No trades yet. The book starts after a strategy passes the bar."}</p>
         </div>
       )}
-      {longView !== "longgame" && tab === "pnl" && (pnl ? (pnl.empty ? null : <ReportsPnl pnl={pnl} onOpen={setTrade} query={query} result={result === "won" || result === "lost" ? result : "all"} tradesHref={`/live-trade-mansel/reports?${new URLSearchParams({ ...Object.fromEntries(params.entries()), tab: "trades" }).toString()}`} />) : <p className="muted" role="status">Loading P&L…</p>)}
-      {longView !== "longgame" && tab === "trades" && (pnl ? (pnl.empty ? null : <TradesTable pnl={pnl} onOpen={setTrade} query={query} result={result === "won" || result === "lost" ? result : "all"} headerFilters />) : <p className="muted" role="status">Loading trades…</p>)}
+      {longView !== "longgame" && tab === "pnl" && (pnl ? (pnl.empty ? null : <ReportsPnl pnl={pnl} onOpen={setTrade} query={query} result={result === "won" || result === "lost" ? result : "all"} tradesHref={`/live-trade-mansel/reports?${new URLSearchParams({ ...Object.fromEntries(params.entries()), tab: "trades" }).toString()}`} />) : <PageSkeleton kind="reports" label="Loading P&L" />)}
+      {longView !== "longgame" && tab === "trades" && (pnl ? (pnl.empty ? null : <TradesTable pnl={pnl} onOpen={setTrade} query={query} result={result === "won" || result === "lost" ? result : "all"} headerFilters />) : <PageSkeleton kind="reports" label="Loading trades" />)}
 
       {tab === "ledger" && ledger && (
         <>
@@ -278,7 +279,7 @@ export function ReportsView({ embedded = false, forced = "pnl" }: { embedded?: b
           {auditBusy ? (
             <p className="muted" role="status" aria-live="polite" style={{ padding: 20 }}>
               <span className="spin" aria-hidden="true" />
-              Loading {auditPlace}…
+              Reading {auditPlace}…
             </p>
           ) : (
             <>
@@ -306,7 +307,7 @@ export function ReportsView({ embedded = false, forced = "pnl" }: { embedded?: b
           )}
           <div className="field">
             <button type="button" className="btn" disabled={auditBusy || page === 0} onClick={() => setPage((current) => Math.max(0, current - 1))}>Newer</button>
-            <span className="muted" role="status">{auditBusy ? `Loading ${auditPlace}…` : total === 0 ? "No rows" : `${auditPlace} · ${from}–${to} of ${total}`}</span>
+            <span className="muted" role="status">{auditBusy ? `Reading ${auditPlace}…` : total === 0 ? "No rows" : `${auditPlace} · ${from}–${to} of ${total}`}</span>
             <button type="button" className="btn" disabled={auditBusy || to >= total} onClick={() => setPage((current) => current + 1)}>Older</button>
           </div>
         </div>

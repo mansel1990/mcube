@@ -129,9 +129,7 @@ describe("research page copy", () => {
     expect(effectiveStrategiesEnabled(["momentum"])).toEqual(["momentum"]);
     expect(effectiveStrategiesEnabled('["momentum","nope"]')).toEqual(["momentum"]);
     expect(effectiveStrategiesEnabled(undefined)).toEqual(["rs", "ema"]);
-    expect(researchCardStatus("swing", "momentum", "M10-6", ["momentum"])).toBe(
-      "Live pilot · owner's choice · did not pass all tests",
-    );
+    expect(researchCardStatus("swing", "momentum", "M10-6", ["momentum"])).toBe("Live pilot");
     expect(researchCardStatus("swing", "momentum", "M10-6", ["rs", "ema"])).toBe("Parked · research only");
     expect(researchCardStatus("swing", "momentum", "M10-10", ["momentum"])).toBeNull();
     expect(isLiveStrategy("swing", "momentum", "M10-6", ["momentum"])).toBe(true);
@@ -142,7 +140,7 @@ describe("research page copy", () => {
     const live = verdictFor({ ...base, strategiesEnabled: ["momentum"] });
     const parked = verdictFor({ ...base, strategiesEnabled: ["rs", "ema"] });
     expect(live.tone).toBe("open");
-    expect(live.text).toBe("No strategy passed every test. Momentum M10-6 runs as a live pilot by owner's choice.");
+    expect(live.text).toBe("Momentum M10-6 is a live pilot.");
     expect(live.text).not.toMatch(/recommended/);
     expect(parked.text).toBe("No strategy is recommended. Momentum is Parked · research only, not a recommendation.");
     expect(bandCounts([{ band: resultBand(false, rows[0].fails) }])).toEqual({ passed: 0, close: 1, failed: 0 });

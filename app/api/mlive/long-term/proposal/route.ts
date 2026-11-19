@@ -8,8 +8,16 @@ import {
   insertLongtermDecisions,
   loadPendingProposal,
   markProposal,
+  proposalView,
   readProposalGate,
 } from "@/engine/longterm/proposal-db";
+
+export async function GET() {
+  const session = await requireMliveSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const proposal = await loadPendingProposal();
+  return NextResponse.json({ proposal: proposal ? proposalView(proposal) : null });
+}
 
 export async function POST(request: Request) {
   const session = await requireMliveSession();

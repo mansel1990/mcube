@@ -4,9 +4,12 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { PnlModel } from "@/lib/mlive/pnl";
 import { istMinutes } from "@/lib/mlive/calendar";
+import { decisionById } from "@/lib/mlive/decision-registry";
 import { decisionState, sendWindowState } from "@/lib/mlive/decision-state";
+import { SCHEDULE } from "@/lib/mlive/schedule";
 import { inr, signed } from "./format";
-import { ReasonHelp } from "./reason-help";
+import { ActionPill } from "./reason-help";
+import { LoadError, PageSkeleton } from "./loading";
 
 type Holding = { symbol: string; strategy: string; qty: number; avg: number; stop: number; since: string | null; gtt?: boolean; exitMode?: "gtt" | "weekly" };
 type Idea = { symbol: string; strategy: string; result: string; reason: string };
@@ -41,15 +44,37 @@ function shortDay(iso: string): string {
 
 function DecisionChip({ result, held, reason, mode }: { result: string; held: boolean; reason: string; mode: "auto" | "approve" | "paused" }) {
   if (held) return <span className="chip bought">Held</span>;
-  if (result === "logged") return <span className="chip dead">Logged</span>;
+  if (result === "logged") return <span className="chip off-pill">Logged</span>;
   const view = decisionState({ mode, side: "BUY", outcome: result, sendWindow: sendWindowState("BUY", istMinutes()), reason });
-  const tone = view.tone === "loss" ? "loss-pill" : view.tone === "swing" ? "swing-pill" : view.tone === "profit" ? "profit-pill" : "";
-  return (
-    <span className={`chip ${tone}`}>
-      {view.label}
-      <ReasonHelp text={view.explanation} />
-    </span>
-  );
+  return <ActionPill label={view.label} text={view.explanation} tone={view.tone} />;
+}
+
+const STRATEGY_TILES = [
+  { id: "rs", decision: "swing:rs" },
+  { id: "ema", decision: "swing:ema" },
+  { id: "momentum", decision: "swing:momentum:M10-6" },
+] as const;
+
+function strategyLife(id: string, decisionId: string, enabled: boolean): { label: string; className: string; live: boolean } {
+  const decision = decisionById(decisionId);
+  if (decision?.status === "live_pilot") return { label: "Live pilot", className: "swing-pill", live: true };
+  if (decision?.status === "stopped") return { label: "Stopped", className: "off-pill", live: false };
+  if (decision?.status === "retired") return { label: "Retired", className: "off-pill", live: false };
+  if (decision?.status === "parked") return { label: "Parked", className: "off-pill", live: false };
+  if (enabled && id !== "momentum") return { label: "On", className: "swing-pill", live: false };
+  return { label: "Parked", className: "off-pill", live: false };
+}
+
+function evidenceLine(row: ResearchRow | undefined): string | null {
+  if (!row || (row.profitFactor == null && row.averageNet == null && row.trades <= 0)) return null;
+  const sample = row.sample === "heldback" || row.sample === "held" ? "Held-back" : row.sample === "building" ? "Building" : "";
+  const parts = [
+    row.profitFactor == null ? null : `Profit factor ${row.profitFactor.toFixed(2)}`,
+    row.averageNet == null ? null : `per trade ${(row.averageNet * 100).toFixed(2)}%`,
+    row.trades > 0 ? `${row.trades} trades` : null,
+  ].filter((part): part is string => Boolean(part)).slice(0, 3);
+  if (parts.length === 0) return null;
+  return sample ? `${sample} · ${parts.join(" · ")}` : parts.join(" · ");
 }
 
 function nameOf(strategy: string): string {
@@ -105,8 +130,8 @@ export function SwingView() {
     return () => window.clearTimeout(timer);
   }, []);
 
-  if (error) return <p className="page">{error}</p>;
-  if (!data) return <p className="page">Loading the swing book…</p>;
+  if (error) return <LoadError message={error} onRetry={() => window.location.reload()} />;
+  if (!data) return <PageSkeleton kind="swing" label="Loading Swing" />;
 
   const openPnl = data.holdings.reduce((sum, row) => sum + ((prices[row.symbol] ?? row.avg) - row.avg) * row.qty, 0);
   const todayPnl = data.todayMove?.amount ?? 0;
@@ -116,21 +141,22 @@ export function SwingView() {
   const exitsArmed = data.holdings.filter((row) => row.gtt || row.exitMode === "weekly").length;
   const bought = data.ideas.rows.filter((row) => row.result === "sent" || held.has(row.symbol)).length;
   const paused = data.state?.status.startsWith("paused");
-  const strategies = ["rs", "ema", ...(data.enabledStrategies ?? []), ...new Set((research ?? []).map((row) => row.strategy))].filter((name, index, list) => list.indexOf(name) === index);
+  const mode = paused ? "paused" : data.state?.mode === "auto" ? "auto" : "approve";
+  const scanAt = SCHEDULE.find((step) => step.kind === "import-ideas")?.time ?? "";
 
   return (
-    <section className="page">
+    <section className="page book-page">
       <h1 className="page-title">Swing</h1>
       {!data.kite.connected && <p className="sub">Kite is not logged in, so last prices stay blank.</p>}
       {paused && <p className="sub">The engine is paused. Open positions stay, and new buys wait.</p>}
-      <article className="card book-card swing divided" style={{ marginTop: 16 }}>
+      <article className="card book-card swing divided">
         <div><span className="lbl">{todayLabel}</span><b className={todayPnl >= 0 ? "up" : "down"}>{signed(todayPnl)}</b>{data.todayMove?.note ? <span className="sub">{data.todayMove.note}</span> : null}</div>
         <div><span className="lbl">Open positions</span><b className={openPnl >= 0 ? "up" : "down"}>{signed(openPnl)}</b></div>
         <div><span className="lbl">This month</span><b className={monthPnl >= 0 ? "up" : "down"}>{signed(monthPnl)}</b></div>
         <div><span className="lbl">Free to invest</span><b className="n">{inr(data.engineCanUse)}</b></div>
       </article>
 
-      <article className="card" style={{ marginTop: 16, overflow: "auto" }}>
+      <article className="card book-card swing" style={{ overflow: "auto" }}>
         <div className="card-h" style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
           <h2>Positions</h2>
           <span className={`chip ${data.holdings.length > 0 && exitsArmed < data.holdings.length ? "loss" : ""}`}>
@@ -166,51 +192,61 @@ export function SwingView() {
         )}
       </article>
 
-      <div className="today-lower">
+      <div className="swing-lower">
         <article className="card">
-          <div className="card-h" style={{ display: "flex", justifyContent: "space-between" }}>
+          <div className="card-h idea-head">
             <h2>Today&apos;s ideas</h2>
-            <span className="muted">{data.ideas.rows.length} ideas · {bought} bought</span>
+            <span className="idea-count">
+              <span className="count">{data.ideas.rows.length}</span>
+              {bought > 0 ? <span className="chip">{bought} bought</span> : null}
+            </span>
           </div>
-          {data.ideas.rows.length === 0 && <p className="sub">No ideas yet. The next scan is at 18:00.</p>}
+          {data.ideas.rows.length === 0 && (
+            <div className="ideas-empty">
+              <span aria-hidden="true">◷</span>
+              <b>No ideas yet</b>
+              {scanAt ? <p>Next scan at {scanAt}</p> : null}
+            </div>
+          )}
           {data.ideas.rows.slice(0, 8).map((row) => {
             const already = held.has(row.symbol);
             return (
               <div className="act-line" key={`${row.strategy}-${row.symbol}`}>
                 <div style={{ flex: 1 }}>
                   <b>{row.symbol}</b>
+                  <span className="muted"> {nameOf(row.strategy)}</span>
                   <div className="muted">{already ? "Already in the book" : row.reason}</div>
                 </div>
-                <DecisionChip result={row.result} held={already} reason={row.reason} mode={data.state?.status.startsWith("paused") ? "paused" : data.state?.mode === "auto" ? "auto" : "approve"} />
+                <DecisionChip result={row.result} held={already} reason={row.reason} mode={mode} />
               </div>
             );
           })}
         </article>
-        <article className="card">
-          <div className="card-h"><h2>Strategies</h2></div>
+        <section className="strategy-panel">
+          <h2>Strategies</h2>
           <div className="strategy-grid">
-            {strategies.map((name) => {
-              const rows = (research ?? []).filter((row) => row.strategy === name);
+            {STRATEGY_TILES.map((tile) => {
+              const rows = (research ?? []).filter((row) => row.strategy === tile.id || (tile.id === "momentum" && row.strategy === "momentum"));
               const picked = rows.find((row) => row.sample === "heldback" || row.sample === "held") ?? rows.find((row) => row.sample === "building") ?? rows[0];
-              const passed = rows.filter((row) => row.passed).length;
-              const livePilot = data.enabledStrategies?.includes(name) === true;
-              const status = livePilot ? (name === "momentum" ? "Pilot" : "On") : rows.length === 0 ? "Off" : passed === rows.length ? "On" : passed > 0 ? "Retiring" : "Off";
+              const life = strategyLife(tile.id, tile.decision, data.enabledStrategies?.includes(tile.id) === true);
+              const decision = decisionById(tile.decision);
+              const metrics = evidenceLine(picked);
               return (
-                <div key={name} className="card" style={{ padding: 14 }}>
+                <div key={tile.id} className={`strategy-tile${life.live ? " live" : ""}`}>
                   <div className="book-top">
-                    <b>{nameOf(name)}</b>
-                    <span className={`chip ${status === "On" || status === "Pilot" ? "bought" : status === "Retiring" ? "sold" : "dead"}`}>{status}</span>
+                    <b>{tile.id === "momentum" ? "Momentum M10-6" : nameOf(tile.id)}</b>
+                    <span className={`chip ${life.className}`}>{life.label}</span>
                   </div>
-                  <p className="sub">Profit factor {picked?.profitFactor == null ? "—" : picked.profitFactor.toFixed(2)} · per trade {picked?.averageNet == null ? "—" : `${(picked.averageNet * 100).toFixed(2)}%`} · {picked ? `${picked.trades} trades` : "—"}</p>
-                  <p className="muted">{picked?.note || "Live delivery book"}</p>
+                  <p>{decision?.reason || "No current evidence summary"}</p>
+                  {metrics ? <p className="sub">{metrics}</p> : null}
                 </div>
               );
             })}
           </div>
-        </article>
+        </section>
       </div>
 
-      <article className="card" style={{ marginTop: 16 }}>
+      <article className="card">
         <div className="card-h" style={{ display: "flex", justifyContent: "space-between" }}>
           <h2>Closed trades</h2>
           <Link href="/live-trade-mansel/reports?tab=trades&book=swing">All trades in Reports</Link>

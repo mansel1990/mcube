@@ -293,7 +293,7 @@ export function ChartsBoard({ pnl, onOpen }: { pnl: PnlModel; onOpen?: (trade: P
                 )}
                 {live && <ReferenceDot x={shortDate(live.date)} y={live.value} r={5} fill="var(--profit)" />}
                 <Area type="monotone" dataKey="value" name="Mansel Live" stroke="var(--profit)" fill="url(#acct)" strokeWidth={2} dot={account.length < 3} {...anim} />
-                {showNifty && <Area type="monotone" dataKey="nifty" name="Nifty 50" stroke="var(--open)" fill="transparent" strokeWidth={2} connectNulls dot={false} {...anim} />}
+                {showNifty && <Area type="monotone" dataKey="nifty" name="Nifty 50" stroke="var(--nifty)" fill="transparent" strokeWidth={2} strokeDasharray="6 4" connectNulls dot={false} {...anim} />}
               </AreaChart>
             </ResponsiveContainer>
           </Shell>

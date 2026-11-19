@@ -7,14 +7,16 @@ describe("Core-only live Long Game", () => {
   const research = readFileSync(new URL("./research-view.tsx", import.meta.url), "utf8");
   const guard = readFileSync(new URL("../../engine/longterm/override.ts", import.meta.url), "utf8");
 
-  it("hides Radar from the live book and registration", () => {
+  it("shows the book when no suggestion is pending, and registration stays on Core", () => {
+    expect(book).toContain("No suggestion waiting");
+    expect(book).toContain("Register from Kite");
+    expect(book).toContain("Turn on Core");
+    expect(book).not.toContain("Radar");
+    expect(book).toContain("Nifty 50, same dates");
+    expect(book).toContain("Pocket cash");
+    expect(book).not.toContain("Sample numbers");
     expect(book).not.toContain('value="radar"');
-    expect(book).not.toContain("Radar pocket");
-    expect(book).toContain("Radar remains off");
-    const beforeConfirm = book.slice(0, book.indexOf("async function turnOn"));
-    expect(beforeConfirm).not.toContain("long-game/enable");
-    expect(book).toContain('fetch("/api/mlive/long-game/enable"');
-    expect(register).not.toContain("radar");
+    expect(register).not.toContain('value="radar"');
     expect(register).toContain("Register from Kite");
   });
 

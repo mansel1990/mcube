@@ -6,6 +6,7 @@ export type BenchmarkSlice = {
   oursPct: number | null;
   niftyPct: number | null;
   diffPp: number | null;
+  gainInr: number | null;
   daysAhead: number;
   marketDays: number;
 };
@@ -18,7 +19,8 @@ export type DayStep = { date: string; ours: number; nifty: number };
  */
 export function benchmarkSlice(values: DayValue[], flows: CashFlow[], closes: NiftyClose[]): BenchmarkSlice {
   const steps = pairedSteps(values, flows, closes);
-  if (steps.length === 0) return { oursPct: null, niftyPct: null, diffPp: null, daysAhead: 0, marketDays: 0 };
+  const gainInr = flowGain(values, flows);
+  if (steps.length === 0) return { oursPct: null, niftyPct: null, diffPp: null, gainInr, daysAhead: 0, marketDays: 0 };
   let ours = 1;
   let nifty = 1;
   let ahead = 0;
@@ -33,9 +35,26 @@ export function benchmarkSlice(values: DayValue[], flows: CashFlow[], closes: Ni
     oursPct,
     niftyPct,
     diffPp: oursPct - niftyPct,
+    gainInr,
     daysAhead: ahead,
     marketDays: steps.length,
   };
+}
+
+/** Rupee change after deposits and withdrawals. A deposit is not a gain. */
+export function flowGain(values: DayValue[], flows: CashFlow[]): number | null {
+  const ordered = [...values].filter((row) => row.value > 0).sort((a, b) => a.date.localeCompare(b.date));
+  if (ordered.length < 2) return null;
+  const start = ordered[0];
+  const end = ordered[ordered.length - 1];
+  let deposits = 0;
+  let withdrawals = 0;
+  for (const flow of flows) {
+    if (flow.date <= start.date || flow.date > end.date) continue;
+    deposits += flow.deposit;
+    withdrawals += flow.withdrawal;
+  }
+  return end.value - start.value - deposits + withdrawals;
 }
 
 export function pairedSteps(values: DayValue[], flows: CashFlow[], closes: NiftyClose[]): DayStep[] {

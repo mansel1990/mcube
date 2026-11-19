@@ -112,8 +112,8 @@ export function isLiveStrategy(
 }
 
 export const PARKED_RESEARCH = "Parked · research only";
-export const LIVE_PILOT_STATUS = "Live pilot · owner's choice · did not pass all tests";
-export const LIVE_PILOT_LINE = "No strategy passed every test. Momentum M10-6 runs as a live pilot by owner's choice.";
+export const LIVE_PILOT_STATUS = "Live pilot";
+export const LIVE_PILOT_LINE = "Momentum M10-6 is a live pilot.";
 
 /** Chip for the frozen M10-6 card. Null for every other strategy. */
 export function researchCardStatus(
