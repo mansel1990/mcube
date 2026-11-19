@@ -3,7 +3,10 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { PnlModel } from "@/lib/mlive/pnl";
+import { istMinutes } from "@/lib/mlive/calendar";
+import { decisionState, sendWindowState } from "@/lib/mlive/decision-state";
 import { inr, signed } from "./format";
+import { ReasonHelp } from "./reason-help";
 
 type Holding = { symbol: string; strategy: string; qty: number; avg: number; stop: number; since: string | null; gtt?: boolean; exitMode?: "gtt" | "weekly" };
 type Idea = { symbol: string; strategy: string; result: string; reason: string };
@@ -15,7 +18,7 @@ type Home = {
   spark: { date: string | null; value: number }[];
   kite: { connected: boolean; matches: boolean };
   trades?: { buys: number; maxBuys: number };
-  state?: { status: string };
+  state?: { status: string; mode?: string };
   todayMove?: { beforeOpen: boolean; amount: number; note: string | null };
   enabledStrategies?: string[];
 };
@@ -34,6 +37,19 @@ function shortDay(iso: string): string {
   const [year, month, date] = iso.split("-").map(Number);
   if (!year || !month || !date) return iso;
   return new Date(Date.UTC(year, month - 1, date)).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+}
+
+function DecisionChip({ result, held, reason, mode }: { result: string; held: boolean; reason: string; mode: "auto" | "approve" | "paused" }) {
+  if (held) return <span className="chip bought">Held</span>;
+  if (result === "logged") return <span className="chip dead">Logged</span>;
+  const view = decisionState({ mode, side: "BUY", outcome: result, sendWindow: sendWindowState("BUY", istMinutes()), reason });
+  const tone = view.tone === "loss" ? "loss-pill" : view.tone === "swing" ? "swing-pill" : view.tone === "profit" ? "profit-pill" : "";
+  return (
+    <span className={`chip ${tone}`}>
+      {view.label}
+      <ReasonHelp text={view.explanation} />
+    </span>
+  );
 }
 
 function nameOf(strategy: string): string {
@@ -104,7 +120,7 @@ export function SwingView() {
 
   return (
     <section className="page">
-      <h1 className="page-title"><span className="book-dot swing" /> Swing</h1>
+      <h1 className="page-title">Swing</h1>
       {!data.kite.connected && <p className="sub">Kite is not logged in, so last prices stay blank.</p>}
       {paused && <p className="sub">The engine is paused. Open positions stay, and new buys wait.</p>}
       <article className="card book-card swing divided" style={{ marginTop: 16 }}>
@@ -165,9 +181,7 @@ export function SwingView() {
                   <b>{row.symbol}</b>
                   <div className="muted">{already ? "Already in the book" : row.reason}</div>
                 </div>
-                <span className={`chip ${already ? "bought" : row.result === "sent" ? "bought" : row.result === "proposed" ? "work" : "dead"}`}>
-                  {already ? "Held" : row.result === "sent" ? "Bought" : row.result === "proposed" ? "Needs you" : "Skipped"}
-                </span>
+                <DecisionChip result={row.result} held={already} reason={row.reason} mode={data.state?.status.startsWith("paused") ? "paused" : data.state?.mode === "auto" ? "auto" : "approve"} />
               </div>
             );
           })}

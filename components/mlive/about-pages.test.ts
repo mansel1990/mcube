@@ -61,11 +61,12 @@ describe("shareable about pages", () => {
     expect(rules).toContain("EMA Pullback — parked");
     expect(rules).toContain("RS Resilience — parked");
     expect(rules).toContain("There is no price stop");
-    expect(rules).toContain("longgame-frozen-v2");
-    expect(rules).toContain("50% concentration gate still fails");
-    expect(rules).toContain("inspection only");
-    expect(rules).toContain("longterm_max_changes_per_year");
-    expect(rules).toContain("longterm_proposal_expiry_days");
+    expect(rules).toContain("id=\"long-game\"");
+    expect(rules).toContain("40% Nifty 50, 20% Midcap 150, 25% Gold and 15% Liquid");
+    expect(rules).toContain("Core is the only live Long Game scope");
+    expect(rules).toContain("run 17");
+    expect(rules).toContain("14.2%");
+    expect(rules).toContain("12.5%");
     expect(rules).toContain("Last updated 18 Nov 2026");
     expect(rules).toContain("4,000");
     expect(rules).toContain("15:00");

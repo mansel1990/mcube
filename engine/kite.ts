@@ -4,7 +4,14 @@ import { kiteAvailableCash, kiteErrorMessage } from "@/lib/mlive/rules";
 import { todayIst } from "@/lib/mlive/calendar";
 import { asDate, q } from "./db";
 
-export type KiteHolding = { tradingsymbol: string; settled: number; t1: number; quantity: number };
+export type KiteHolding = {
+  tradingsymbol: string;
+  settled: number;
+  t1: number;
+  quantity: number;
+  averagePrice?: number;
+  lastPrice?: number;
+};
 export type KiteOrder = {
   order_id: string;
   status: string;
@@ -73,7 +80,17 @@ export class MliveKite {
     return rows.map((row) => {
       const settled = shareCount(row.quantity);
       const t1 = shareCount(row.t1_quantity);
-      return { tradingsymbol: row.tradingsymbol, settled, t1, quantity: settled + t1 };
+      const prices = row as { average_price?: number; last_price?: number };
+      const averagePrice = Number(prices.average_price);
+      const lastPrice = Number(prices.last_price);
+      return {
+        tradingsymbol: row.tradingsymbol,
+        settled,
+        t1,
+        quantity: settled + t1,
+        averagePrice: Number.isFinite(averagePrice) ? averagePrice : 0,
+        lastPrice: Number.isFinite(lastPrice) ? lastPrice : 0,
+      };
     });
   }
 

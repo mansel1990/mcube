@@ -1,6 +1,6 @@
 import { M10_6_POLICY, requiresProtectiveGtt } from "@/engine/live-strategies";
-import { LONGTERM_FROZEN_V2, LONGTERM_FROZEN_V3 } from "@/engine/longterm/rules";
-import { DEFAULT_LONGTERM_COSTS, DEFAULT_REPRESENTATIVE_ETFS } from "@/engine/longterm/variants";
+import { LONGTERM_FROZEN_V2 } from "@/engine/longterm/rules";
+import { RADAR_RULES_PARAGRAPH } from "@/lib/mlive/decision-registry";
 import {
   INTRADAY_SURVIVORSHIP,
   RESEARCH_STRATEGIES,
@@ -86,8 +86,6 @@ export function rulesModelFrom(input: unknown): RulesModel {
   const entry = record(safe.intraday_entry_window);
   const entryBefore = text(entry.before, "09:20");
   const entryAfter = text(entry.after, "14:30");
-  const changes = number(safe.longterm_max_changes_per_year, LONGTERM_FROZEN_V2.eventsPerYearMax);
-  const expiryDays = number(safe.longterm_proposal_expiry_days, 3);
   const lastUpdated = text(root.lastUpdated, LONGTERM_FROZEN_V2.decidedOn);
 
   const strategies = catalog(enabled, longGameLive).map((item) => ({
@@ -127,7 +125,7 @@ export function rulesModelFrom(input: unknown): RulesModel {
       entryAfter,
     }),
     testing: testingLines(),
-    longGame: longGameLines({ live: longGameLive, changes, expiryDays }),
+    longGame: longGameLines(),
   };
 }
 
@@ -254,24 +252,10 @@ function testingLines(): string[] {
   ];
 }
 
-function longGameLines(input: { live: boolean; changes: number; expiryDays: number }): string[] {
-  const rules = LONGTERM_FROZEN_V2;
-  const etfs = `${DEFAULT_REPRESENTATIVE_ETFS.nifty50.symbol}, ${DEFAULT_REPRESENTATIVE_ETFS.secondary.symbol}, and ${DEFAULT_REPRESENTATIVE_ETFS.gold.symbol}`;
+function longGameLines(): string[] {
   return [
-    `${rules.version}, decided ${rules.decidedOn} by the ${rules.decider}. ${rules.reasons.unchanged}`,
-    rules.reasons.eventsPerYear,
-    rules.reasons.afterTax,
-    `${rules.reasons.concentration} The 50% concentration gate still fails when one sleeve or one year dominates. The override allows inspection only and does not turn that fail into a pass.`,
-    input.live
-      ? "Long Game is in the enabled strategies."
-      : "Long Game is not enabled. It is not live and it is not a recommendation. No allocation change is proposed, and no Long Game order is placed, until a held-back run for the chosen variant says it qualifies for live design and the owner turns it on.",
-    `When that is on, each allocation change needs the owner's approval. At most ${input.changes} approved changes count in a calendar year (longterm_max_changes_per_year). A proposal that is not approved within ${input.expiryDays} trading days expires (longterm_proposal_expiry_days). Rejected and expired proposals do not count. The trades, when approved, use the representative ETFs ${etfs}. Costs in that test are slippage ${percent(DEFAULT_LONGTERM_COSTS.slippagePct)} and transaction cost ${percent(DEFAULT_LONGTERM_COSTS.transactionCostPct)}.`,
-    "The balanced research target is 60% equity, 25% gold and 15% liquid. Equity is 40% Nifty 50 and 20% Next 50 or Midcap 150. Static variants rebalance in March and when a sleeve drifts more than 5 percentage points. RADAR variants change only when their warning and staged-entry rules fire. Sells are sent before buys.",
-    `${LONGTERM_FROZEN_V3.version}, decided ${LONGTERM_FROZEN_V3.decidedOn}. Core is ${LONGTERM_FROZEN_V3.core}. Radar is ${LONGTERM_FROZEN_V3.radar}. Core needs no held-back test because it is a fixed mix with no signals.`,
-    `Run ${LONGTERM_FROZEN_V3.run15.id} remains a failed building gate. STATIC-MID after-tax CAGR ${LONGTERM_FROZEN_V3.run15.staticMidAfterTaxCagrPct}%. RADAR-MID after-tax CAGR ${LONGTERM_FROZEN_V3.run15.radarMidAfterTaxCagrPct}%. RADAR-MID concentration ${LONGTERM_FROZEN_V3.run15.radarMidConcentrationPct}%. STATIC-MID building drawdown ${LONGTERM_FROZEN_V3.run15.staticMidBuildingDrawdownPct}%. RADAR-MID building drawdown ${LONGTERM_FROZEN_V3.run15.radarMidBuildingDrawdownPct}%. The override does not convert any failed check to a pass.`,
-    LONGTERM_FROZEN_V3.ownerReason,
-    "One inspection is allowed with research --book longterm --heldback --confirm-heldback --owner-override longgame-frozen-v3 --no-grid --variant STATIC-MID,RADAR-MID. It is inspection only. The override is consumed only after that run finishes ok and both STATIC-MID and RADAR-MID result rows are stored. A queued, running, failed, cancelled, or out-of-memory run does not consume it.",
-    "Radar may activate only when the latest valid held-back run contains STATIC-MID and RADAR-MID, RADAR-MID maximum drawdown is at most 15%, and that drawdown is lower than STATIC-MID over the same held-back window. The older qualifies-for-live-design conclusion is not the v3 activation rule.",
+    "Core is the only live Long Game scope. The fixed mix is 40% Nifty 50, 20% Midcap 150, 25% Gold and 15% Liquid.",
+    RADAR_RULES_PARAGRAPH,
   ];
 }
 

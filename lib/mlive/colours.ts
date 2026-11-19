@@ -24,6 +24,7 @@ export const MLIVE_COLOURS = {
 
 export type ContrastPair = { name: string; text: string; background: string };
 
+/** Book colour is not used on navigation. Active navigation is white text on raised ink. */
 /** Text and background pairs the Mansel Live UI actually paints. */
 export const MLIVE_CONTRAST_PAIRS: ContrastPair[] = [
   { name: "text on page", text: MLIVE_COLOURS.text, background: MLIVE_COLOURS.page },

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireMliveSession } from "@/lib/mlive/auth";
+import { nextTradingDay, todayIst } from "@/lib/mlive/calendar";
 import { sql } from "@/lib/sql";
 
 type Setting = { key: string; value: unknown };
@@ -41,6 +42,8 @@ export async function GET() {
     untracked: [] as { symbol: string; units: number; note: string }[],
     needsYou: [] as { symbol: string; units: number; note: string }[],
     history: [] as { kind: string; amount: number; pocket: string }[],
+    holdings: [] as { pocket: string; symbol: string; units: number; average: number; value: number }[],
+    nextCheck: nextTradingDay(todayIst(), new Set()),
   };
   try {
     const holdings = await sql`SELECT pocket, symbol, units, avg_price FROM mlive.mlive_longgame_holdings` as Holding[];
@@ -50,7 +53,16 @@ export async function GET() {
       if (row.pocket === "radar") empty.pockets.radar += worth;
       else empty.pockets.core += worth;
       if (String(row.symbol).toUpperCase() === "NIFTYBEES") empty.nifty += worth;
+      empty.holdings.push({
+        pocket: row.pocket,
+        symbol: String(row.symbol).toUpperCase(),
+        units: num(row.units),
+        average: num(row.avg_price),
+        value: worth,
+      });
     }
+    const holidays = await sql`SELECT trade_date::text AS trade_date FROM mlive.mlive_holidays`;
+    empty.nextCheck = nextTradingDay(todayIst(), new Set(holidays.map((row) => String(row.trade_date).slice(0, 10))));
     const ledger = await sql`SELECT kind, amount, pocket FROM mlive.mlive_longgame_ledger WHERE kind IN ('deposit', 'opening_holding')` as Ledger[];
     empty.moneyAdded = ledger.reduce((sum, row) => sum + num(row.amount), 0);
     empty.gain = empty.value - empty.moneyAdded;

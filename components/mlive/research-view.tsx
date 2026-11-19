@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Bar, BarChart, Cell, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { istMinutes } from "@/lib/mlive/calendar";
 import { useIntradayRetired } from "./capabilities";
-import { LongTermView } from "./long-term-view";
+import { LongGameResearch, RetiredStopped, SwingCanonical, type CanonicalRow } from "./research-dossier";
 import { byQuarter, RESEARCH_STRATEGIES, type ResearchBook, type ResearchSample } from "@/lib/mlive/research-bar";
 import {
   aboutGist,
@@ -100,6 +100,7 @@ type Payload = {
   building: { strategy: string; avgNetPct: number | null }[];
   heldback: { strategy: string; at: string | null }[];
   strategiesEnabled: string[];
+  canonical?: CanonicalRow[];
   retiredIntraday?: string | null;
   error?: string;
 };
@@ -108,7 +109,9 @@ export function ResearchView() {
   const router = useRouter();
   const params = useSearchParams();
   const intradayOff = useIntradayRetired();
-  const book: ResearchBook = !intradayOff && params.get("book") === "intraday" ? "intraday" : "swing";
+  const requested = params.get("book");
+  const product: "swing" | "longterm" = requested === "longterm" ? "longterm" : "swing";
+  const book: ResearchBook = product === "longterm" ? "swing" : (!intradayOff && requested === "intraday" ? "intraday" : "swing");
   const runRaw = params.get("run");
   const runId = runRaw && Number.isFinite(Number(runRaw)) ? Number(runRaw) : null;
   const [payload, setPayload] = useState<Payload | null>(null);
@@ -142,6 +145,10 @@ export function ResearchView() {
   }, [book]);
 
   useEffect(() => {
+    if (product === "longterm") {
+      setRunLoading(false);
+      return;
+    }
     let cancelled = false;
     const timer = window.setTimeout(() => {
       const query = new URLSearchParams({ book, benchmark: "1" });
@@ -182,7 +189,7 @@ export function ResearchView() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [book, runId, tick, router]);
+  }, [product, book, runId, tick, router]);
 
   const active = (payload?.runs ?? []).find((run) => run.status === "queued" || run.status === "running") ?? null;
   useEffect(() => {
@@ -282,10 +289,19 @@ export function ResearchView() {
     };
   }, [menu]);
 
-  function chooseBook(next: ResearchBook) {
-    if (next === book) return;
-    setRunLoading(true);
-    router.replace(`/live-trade-mansel/research?book=${next}`, { scroll: false });
+  function chooseBook(next: "swing" | "longterm") {
+    if (next === product) return;
+    if (next === "swing") setRunLoading(true);
+    const query = new URLSearchParams();
+    query.set("book", next);
+    if (next === "swing" && runId) query.set("run", String(runId));
+    router.replace(`/live-trade-mansel/research?${query}`, { scroll: false });
+  }
+
+  function onTabs(event: React.KeyboardEvent) {
+    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+    event.preventDefault();
+    chooseBook(product === "swing" ? "longterm" : "swing");
   }
 
   function chooseRun(id: number) {
@@ -345,6 +361,7 @@ export function ResearchView() {
       <div className="page-head">
         <div>
           <h1>Research</h1>
+          <p className="sub">The evidence behind what is live, parked, or stopped.</p>
           {summary && (
             <div className="sub run-meta">
               <span>{summary}</span>
@@ -377,14 +394,18 @@ export function ResearchView() {
           )}
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <div className="seg">
-            <button type="button" data-tone="swing" aria-pressed={book === "swing"} onClick={() => chooseBook("swing")}>Swing</button>
-            {!intradayOff && <button type="button" data-tone="intraday" aria-pressed={book === "intraday"} onClick={() => chooseBook("intraday")}>Intraday</button>}
+          <div className="research-tabs" role="tablist" aria-label="Research book" onKeyDown={onTabs}>
+            <button type="button" role="tab" id="research-tab-swing" aria-selected={product === "swing"} aria-controls="research-panel" onClick={() => chooseBook("swing")}><i className="book-dot swing" aria-hidden="true" /> Swing</button>
+            <button type="button" role="tab" id="research-tab-longterm" aria-selected={product === "longterm"} aria-controls="research-panel" onClick={() => chooseBook("longterm")}><i className="book-dot longgame" aria-hidden="true" /> Long Game</button>
           </div>
-          <button type="button" className={`btn new-run${open ? " on" : ""}`} aria-expanded={open} disabled={Boolean(active) || busy} title={moving ?? undefined} onClick={() => setOpen((value) => !value)}>New run</button>
+          {product === "swing" && <button type="button" className={`btn new-run${open ? " on" : ""}`} aria-expanded={open} disabled={Boolean(active) || busy} title={moving ?? undefined} onClick={() => setOpen((value) => !value)}>New run</button>}
         </div>
       </div>
 
+      <div id="research-panel" role="tabpanel" aria-labelledby={product === "swing" ? "research-tab-swing" : "research-tab-longterm"}>
+        {product === "longterm" ? <LongGameResearch /> : <SwingCanonical rows={payload?.canonical ?? []} />}
+      </div>
+      {product === "swing" && <>
       {intradayOff && payload?.retiredIntraday && (
         <details className="card" style={{ marginTop: 16 }}>
           <summary>Retired</summary>
@@ -568,10 +589,9 @@ export function ResearchView() {
           csvHref={`/api/mlive/research/trades?run=${payload.run.id}&strategy=${selected.strategy}&params=${encodeURIComponent(selected.paramsKey)}&format=csv`}
         />
       )}
-      <div style={{ marginTop: 24 }}>
-        <h2>Long Game comparison</h2>
-        <LongTermView />
-      </div>
+      </>}
+      <div id="research-evidence" />
+      <RetiredStopped />
     </section>
   );
 }

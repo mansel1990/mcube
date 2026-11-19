@@ -90,10 +90,18 @@ export async function GET(request: NextRequest) {
     const mapped = (results as Record<string, unknown>[]).map((row) => ({ ...mapResult(row), sample, note }));
     const selectedRun = selected ? mapRun(selected as RunRow) : null;
     const window = paramsWindow(selectedRun?.params);
-    const [sha, candle, benchmark] = await Promise.all([
+    const [sha, candle, benchmark, canonicalRows] = await Promise.all([
       Promise.resolve(engineSha()),
       lastCandle(book),
       wantBenchmark && window ? loadNiftyCloses(window.from, window.to).then((loaded) => loaded.closes) : Promise.resolve([]),
+      sql`
+        SELECT DISTINCT ON (r.strategy)
+               u.id, r.strategy, r.params->>'variant' AS variant, r.profit_factor, r.trades,
+               r.half_years_profitable_pct, r.worst_drawdown_pct, r.avg_net_pct, r.cagr_pct
+          FROM mlive.mlive_research_results r
+          JOIN mlive.mlive_research_runs u ON u.id = r.run_id
+         WHERE u.book = ${book} AND u.sample = 'heldback' AND u.status = 'ok' AND r.is_default
+         ORDER BY r.strategy, u.id DESC`,
     ]);
     return NextResponse.json({
       engineSha: sha,
@@ -122,6 +130,18 @@ export async function GET(request: NextRequest) {
         at: stamp(row.finished_at),
       })),
       strategiesEnabled: effectiveStrategiesEnabled(strategySetting[0]?.value),
+      canonical: (canonicalRows as Record<string, unknown>[]).map((row) => ({
+        id: Number(row.id),
+        strategy: String(row.strategy),
+        variant: row.variant == null ? null : String(row.variant),
+        profitFactor: row.profit_factor == null ? null : Number(row.profit_factor),
+        trades: row.trades == null ? null : Number(row.trades),
+        halfYearsPct: row.half_years_profitable_pct == null ? null : Number(row.half_years_profitable_pct),
+        worstDrawdownPct: row.worst_drawdown_pct == null ? null : Number(row.worst_drawdown_pct),
+        avgNetPct: row.avg_net_pct == null ? null : Number(row.avg_net_pct),
+        cagrPct: row.cagr_pct == null ? null : Number(row.cagr_pct),
+        window: "",
+      })),
       retiredIntraday: intradayRetiredSentence((await sql`
         SELECT u.id, u.sample, r.strategy, r.profit_factor, r.trades
           FROM mlive.mlive_research_results r

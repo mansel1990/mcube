@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Plus_Jakarta_Sans } from "next/font/google";
+import { Inter, Space_Grotesk } from "next/font/google";
 import { requireMliveUser } from "@/lib/mlive/auth";
 import { isTradingDay, todayIst } from "@/lib/mlive/calendar";
 import { kiteSessionStatus } from "@/lib/mlive/kite-session";
@@ -11,7 +11,7 @@ import { MliveFrame } from "@/components/mlive/frame";
 import "./mlive.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-mlive" });
-const display = Plus_Jakarta_Sans({ subsets: ["latin"], weight: ["600", "700"], variable: "--font-mlive-display" });
+const display = Space_Grotesk({ subsets: ["latin"], weight: ["600", "700"], variable: "--font-mlive-display" });
 
 export const dynamic = "force-dynamic";
 

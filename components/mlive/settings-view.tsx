@@ -254,7 +254,7 @@ export function SettingsView() {
       </div>
       <div className="set-grid" style={{ marginTop: 16 }}>
         <div className="card">
-          <div className="card-h"><h2><i className="book-dot" style={{ background: "var(--swing)", marginRight: 8 }} />Swing book</h2></div>
+          <div className="card-h"><h2>Swing book</h2></div>
           <Field label="Trading limit" unit="₹" value={limit} onChange={(value) => { setLimit(value); setDirty(true); }} />
           <Field label="Most in one order" unit="%" value={draft.max_order_pct ?? ""} onChange={(value) => edit("max_order_pct", value)} />
           <Field label="Risk per trade" unit="%" value={draft.risk_pct ?? ""} onChange={(value) => edit("risk_pct", value)} />
@@ -266,7 +266,7 @@ export function SettingsView() {
           ))}
         </div>
         {!intradayOff && <div className="card">
-          <div className="card-h"><h2><i className="book-dot" style={{ background: "var(--intraday)", marginRight: 8 }} />Intraday book</h2></div>
+          <div className="card-h"><h2>Intraday book</h2></div>
           <Field label="Capital" unit="₹" value={draft.intraday_capital_inr ?? ""} onChange={(value) => edit("intraday_capital_inr", value)} />
           <div className="field">
             <div><b>Leverage</b><small>Buying power ₹{Number.isFinite(capital) ? capital.toLocaleString("en-IN") : "—"}. No leverage.</small></div>

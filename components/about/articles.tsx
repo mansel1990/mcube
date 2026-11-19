@@ -30,7 +30,7 @@ export function RulesArticle({ model }: { model: RulesModel }) {
       </ul>
       <h2>How strategies are tested</h2>
       {model.testing.map((line) => <p key={line}>{line}</p>)}
-      <h2>Long Game</h2>
+      <h2 id="long-game">Long Game</h2>
       {model.longGame.map((line) => <p key={line}>{line}</p>)}
     </article>
   );
